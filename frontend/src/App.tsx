@@ -42,14 +42,14 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-black relative overflow-hidden">
+    <div className="h-dvh w-full bg-black relative overflow-hidden">
       <TopBar onSearch={handleSearch} onUploadClick={() => setShowUpload(true)} />
 
       {loading && (
         <div className="h-full w-full flex items-center justify-center text-white/60 text-sm">Loading videos…</div>
       )}
       {!loading && error && (
-        <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3">
+        <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
           <p>{error}</p>
           <button onClick={loadAll} className="text-brand-cyan underline">
             Retry
@@ -57,7 +57,7 @@ export default function App() {
         </div>
       )}
       {!loading && !error && videos.length === 0 && (
-        <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3">
+        <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
           <p>No videos yet.</p>
           <button onClick={() => setShowUpload(true)} className="text-brand-cyan underline">
             Upload the first one

@@ -28,4 +28,10 @@ RUN mkdir -p uploads/videos uploads/posters uploads/products
 
 EXPOSE 4000
 
+# Lets `docker ps` and any orchestrator (Compose, Swarm, ECS, Railway,
+# Render, etc.) know when the API is actually accepting requests, not
+# just that the process has started.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=10 \
+  CMD node -e "require('http').get('http://localhost:4000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+
 CMD ["./docker-entrypoint.sh"]

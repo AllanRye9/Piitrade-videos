@@ -20,12 +20,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-neutral-950">
-      <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-white/10">
-        <div>
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-white/10">
+        <div className="min-w-0">
           <h1 className="text-white font-semibold">Piitrade admin</h1>
-          <p className="text-white/40 text-xs">{admin?.email}</p>
+          <p className="text-white/40 text-xs truncate">{admin?.email}</p>
         </div>
-        <button onClick={logout} className="text-white/60 text-sm">
+        <button onClick={logout} className="tap-target shrink-0 text-white/60 text-sm">
           Log out
         </button>
       </div>

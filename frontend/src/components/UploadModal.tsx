@@ -51,10 +51,10 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/70">
-      <div className="w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-y-auto">
+      <div className="safe-bottom safe-left safe-right w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-white font-semibold text-sm">Upload video</span>
-          <button onClick={onClose} className="text-white/60 text-sm">
+          <button onClick={onClose} className="tap-target -mr-2 text-white/60 text-sm">
             Close
           </button>
         </div>

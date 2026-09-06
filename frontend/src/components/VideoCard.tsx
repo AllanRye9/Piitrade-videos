@@ -141,17 +141,20 @@ export default function VideoCard({ video, active }: Props) {
         </div>
       )}
 
-      <button onClick={toggleMute} className="absolute top-4 right-4 text-white text-xl bg-black/30 rounded-full w-9 h-9">
+      <button
+        onClick={toggleMute}
+        className="tap-target safe-right absolute top-4 right-4 text-white text-xl bg-black/30 rounded-full flex items-center justify-center"
+      >
         {muted ? '🔇' : '🔊'}
       </button>
 
-      <div className="absolute left-3 right-16 bottom-6 text-white">
-        <p className="font-semibold text-sm drop-shadow">{video.title}</p>
+      <div className="safe-left safe-bottom absolute left-3 right-16 sm:right-20 bottom-4 text-white">
+        <p className="font-semibold text-sm drop-shadow break-words">{video.title}</p>
         {video.description && <p className="text-xs text-white/80 mt-1 line-clamp-2 drop-shadow">{video.description}</p>}
       </div>
 
-      <div className="absolute right-3 bottom-6 flex flex-col items-center gap-5">
-        <button onClick={handleLike} className="flex flex-col items-center text-white">
+      <div className="safe-right safe-bottom absolute right-2 sm:right-3 bottom-4 flex flex-col items-center gap-3 sm:gap-5">
+        <button onClick={handleLike} className="tap-target flex flex-col items-center justify-center text-white">
           <span className={`text-2xl ${liked ? 'scale-110' : ''} transition-transform`}>{liked ? '❤️' : '🤍'}</span>
           <span className="text-xs mt-1">{formatCount(likes)}</span>
         </button>
@@ -160,20 +163,20 @@ export default function VideoCard({ video, active }: Props) {
             e.stopPropagation();
             setShowComments(true);
           }}
-          className="flex flex-col items-center text-white"
+          className="tap-target flex flex-col items-center justify-center text-white"
         >
           <span className="text-2xl">💬</span>
           <span className="text-xs mt-1">{formatCount(commentCount)}</span>
         </button>
-        <button onClick={handleFavorite} className="flex flex-col items-center text-white">
+        <button onClick={handleFavorite} className="tap-target flex flex-col items-center justify-center text-white">
           <span className="text-2xl">{favorited ? '⭐' : '☆'}</span>
           <span className="text-xs mt-1">Save</span>
         </button>
-        <button onClick={openCrop} className="flex flex-col items-center text-white">
+        <button onClick={openCrop} className="tap-target flex flex-col items-center justify-center text-white">
           <span className="text-2xl">🔍</span>
           <span className="text-xs mt-1">Search</span>
         </button>
-        <button onClick={handleDownload} className="flex flex-col items-center text-white">
+        <button onClick={handleDownload} className="tap-target flex flex-col items-center justify-center text-white">
           <span className="text-2xl">⬇️</span>
           <span className="text-xs mt-1">Save</span>
         </button>

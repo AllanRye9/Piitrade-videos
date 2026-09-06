@@ -46,10 +46,10 @@ export default function VideosTab() {
   return (
     <div className="space-y-2">
       {videos.map((v) => (
-        <div key={v.id} className="bg-white/5 rounded-xl p-3 flex gap-3">
+        <div key={v.id} className="bg-white/5 rounded-xl p-3 flex flex-wrap sm:flex-nowrap gap-3">
           <img
             src={v.poster || undefined}
-            className="w-24 h-16 object-cover rounded-lg bg-black shrink-0"
+            className="w-20 h-14 sm:w-24 sm:h-16 object-cover rounded-lg bg-black shrink-0"
             alt={v.title}
           />
           <div className="flex-1 min-w-0">

@@ -160,20 +160,20 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 text-white">
-        <button onClick={onCancel} className="text-sm font-medium">
+      <div className="safe-top flex items-center justify-between px-2 sm:px-4 py-3 text-white">
+        <button onClick={onCancel} className="tap-target px-2 text-sm font-medium">
           Cancel
         </button>
-        <span className="text-sm text-white/70">Drag to select an item</span>
+        <span className="text-xs sm:text-sm text-white/70 text-center px-2">Drag to select an item</span>
         <button
           onClick={confirmSelection}
           disabled={!rect || rect.w < 6 || rect.h < 6 || !!error}
-          className="text-sm font-semibold text-brand-cyan disabled:text-white/30"
+          className="tap-target px-2 text-sm font-semibold text-brand-cyan disabled:text-white/30"
         >
           Search
         </button>
       </div>
-      <div className="relative flex-1 mx-4 mb-6 rounded-xl overflow-hidden bg-black">
+      <div className="safe-bottom safe-left safe-right relative flex-1 mx-3 sm:mx-4 mb-4 sm:mb-6 rounded-xl overflow-hidden bg-black">
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full touch-none cursor-crosshair"

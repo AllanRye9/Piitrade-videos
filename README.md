@@ -15,6 +15,20 @@ ffmpeg (video thumbnails), JWT + bcrypt (admin auth), Docker Compose.
 docker compose up --build
 ```
 
+> **This app is not deployable on Vercel.** Vercel runs stateless
+> serverless functions for a single framework — it has no persistent
+> Postgres database, no writable disk for uploaded videos, and no
+> `ffmpeg`/native-binary support, all of which this backend needs. If
+> you previously saw an error like `npm install --prefix frontend`
+> failing to find `frontend/frontend/package.json`, that was Vercel's
+> "Root Directory" project setting already pointed at `frontend` while
+> the install command *also* prefixed `frontend`, doubling the path —
+> but even fixed, Vercel still can't run the stateful backend. Deploy
+> with Docker instead (see below), on any host that can run
+> `docker compose`: a local machine, a VPS (DigitalOcean, Hetzner,
+> Linode…), or a platform with Docker/Compose support (Railway,
+> Render, Fly.io, AWS ECS/App Runner, etc.).
+
 Then open **http://localhost:8080** for the app, or
 **http://localhost:8080/admin/register** to set up the admin dashboard.
 

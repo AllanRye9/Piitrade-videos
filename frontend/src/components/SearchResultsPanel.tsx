@@ -10,13 +10,13 @@ interface Props {
 export default function SearchResultsPanel({ loading, error, results, onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 text-white">
+      <div className="safe-top flex items-center justify-between px-4 py-3 text-white">
         <span className="text-sm font-semibold">Similar items</span>
-        <button onClick={onClose} className="text-sm text-white/70">
+        <button onClick={onClose} className="tap-target -mr-2 text-sm text-white/70">
           Close
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 pb-6">
+      <div className="safe-bottom safe-left safe-right flex-1 overflow-y-auto px-4 pb-6">
         {loading && <p className="text-white/60 text-sm mt-8 text-center">Searching…</p>}
         {error && <p className="text-red-400 text-sm mt-8 text-center">{error}</p>}
         {!loading && !error && results && results.length === 0 && (
