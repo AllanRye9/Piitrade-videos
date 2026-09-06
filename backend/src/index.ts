@@ -12,8 +12,20 @@ for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR]) {
 
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
+const allowedOrigins = (process.env.FRONTEND_URL || 'https://piitrade-videos.vercel.app,http://localhost:5173,http://localhost:8080')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Origin is not allowed by CORS'));
+    }
+  },
+}));
 app.use(express.json());
 app.use('/uploads', express.static(UPLOAD_ROOT));
 
