@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/CommentModal.tsx","./src/components/CropOverlay.tsx","./src/components/SearchResultsPanel.tsx","./src/components/TopBar.tsx","./src/components/UploadModal.tsx","./src/components/VideoCard.tsx","./src/components/VideoFeed.tsx"],"version":"5.9.3"}
