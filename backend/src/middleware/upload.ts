@@ -2,6 +2,7 @@ import multer from 'multer';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { UPLOAD_ROOT } from '../paths';
+import { HttpError } from '../lib/httpError';
 
 function makeStorage(subdir: string) {
   return multer.diskStorage({
@@ -18,7 +19,7 @@ export const uploadVideo = multer({
   limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.startsWith('video/')) {
-      cb(new Error('Only video files are allowed'));
+      cb(new HttpError(400, 'Only video files are allowed'));
       return;
     }
     cb(null, true);
@@ -30,7 +31,7 @@ export const uploadImage = multer({
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
-      cb(new Error('Only image files are allowed'));
+      cb(new HttpError(400, 'Only image files are allowed'));
       return;
     }
     cb(null, true);

@@ -23,6 +23,8 @@ model Video {
 
   commentList    Comment[]
   states         UserVideoState[]
+
+  @@index([createdAt])
 }
 
 model Comment {
@@ -32,6 +34,8 @@ model Comment {
   author    String   @default("Guest")
   text      String
   createdAt DateTime @default(now())
+
+  @@index([videoId])
 }
 
 // Per-browser-session like/favorite/save state, keyed by an anonymous
@@ -47,11 +51,12 @@ model UserVideoState {
   saved     Boolean @default(false)
 
   @@unique([sessionId, videoId])
+  @@index([videoId])
 }
 
 // Product catalog used by visual search. `phash` is a 64-bit perceptual
-// hash (as hex) computed once at seed time and compared against the
-// hash of the user's cropped selection using Hamming distance.
+// hash (as hex) computed once at seed/creation time and compared against
+// the hash of the user's cropped selection using Hamming distance.
 model Product {
   id            String @id @default(cuid())
   name          String
@@ -59,4 +64,14 @@ model Product {
   category      String
   imageFilename String
   phash         String
+}
+
+// Admin accounts for the /admin dashboard. This app has no public user
+// accounts — regular visitors interact anonymously via a per-browser
+// session id (see UserVideoState). Only admins log in.
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
 }

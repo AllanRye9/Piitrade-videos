@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
 import { prisma } from '../db';
 import { uploadVideo } from '../middleware/upload';
 import { extractPoster, getVideoDuration } from '../lib/thumbnail';
-import { POSTERS_DIR, VIDEOS_DIR } from '../paths';
+import { POSTERS_DIR } from '../paths';
+import { HttpError } from '../lib/httpError';
 
 const router = Router();
 
@@ -23,15 +24,14 @@ type VideoRecord = {
   createdAt: Date;
 };
 
+type StateRecord = { videoId: string; liked: boolean; favorited: boolean; saved: boolean };
+
 function getSessionId(req: Request): string {
   const id = req.header('x-session-id');
   return id && id.trim() ? id.trim() : 'anonymous';
 }
 
-async function serializeVideo(video: VideoRecord, sessionId: string) {
-  const state = await prisma.userVideoState.findUnique({
-    where: { sessionId_videoId: { sessionId, videoId: video.id } },
-  });
+function serialize(video: VideoRecord, state?: StateRecord) {
   return {
     id: video.id,
     title: video.title,
@@ -49,12 +49,27 @@ async function serializeVideo(video: VideoRecord, sessionId: string) {
   };
 }
 
+/**
+ * Batch-fetches per-session interaction state for a list of videos in a
+ * single query and returns a videoId -> state map. Doing this instead of
+ * one findUnique() per video (as an earlier version of this route did)
+ * avoids an N+1 query pattern that would otherwise issue one extra
+ * round-trip to Postgres per video in the feed.
+ */
+async function fetchStatesFor(videoIds: string[], sessionId: string): Promise<Map<string, StateRecord>> {
+  if (videoIds.length === 0) return new Map();
+  const states = await prisma.userVideoState.findMany({
+    where: { sessionId, videoId: { in: videoIds } },
+  });
+  return new Map(states.map((s: StateRecord) => [s.videoId, s]));
+}
+
 // GET /api/videos
 router.get('/', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
-  const videos = await prisma.video.findMany({ orderBy: { createdAt: 'desc' } });
-  const serialized = await Promise.all(videos.map((v: VideoRecord) => serializeVideo(v, sessionId)));
-  res.json({ videos: serialized });
+  const videos: VideoRecord[] = await prisma.video.findMany({ orderBy: { createdAt: 'desc' } });
+  const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
+  res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id))) });
 });
 
 // GET /api/videos/search?q=
@@ -65,7 +80,7 @@ router.get('/search', async (req: Request, res: Response) => {
     res.json({ videos: [] });
     return;
   }
-  const videos = await prisma.video.findMany({
+  const videos: VideoRecord[] = await prisma.video.findMany({
     where: {
       OR: [
         { title: { contains: q, mode: 'insensitive' } },
@@ -74,29 +89,26 @@ router.get('/search', async (req: Request, res: Response) => {
     },
     orderBy: { createdAt: 'desc' },
   });
-  const serialized = await Promise.all(videos.map((v: VideoRecord) => serializeVideo(v, sessionId)));
-  res.json({ videos: serialized });
+  const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
+  res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id))) });
 });
 
 // GET /api/videos/:id
 router.get('/:id', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
-  const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-  if (!video) {
-    res.status(404).json({ error: 'Video not found' });
-    return;
-  }
-  await prisma.video.update({ where: { id: video.id }, data: { views: { increment: 1 } } });
-  res.json({ video: await serializeVideo({ ...video, views: video.views + 1 }, sessionId) });
+  const video: VideoRecord | null = await prisma.video.findUnique({ where: { id: req.params.id } });
+  if (!video) throw new HttpError(404, 'Video not found');
+
+  const updated = await prisma.video.update({ where: { id: video.id }, data: { views: { increment: 1 } } });
+  const stateMap = await fetchStatesFor([video.id], sessionId);
+  res.json({ video: serialize(updated, stateMap.get(video.id)) });
 });
 
 // POST /api/videos  (multipart: video, title, description)
 router.post('/', uploadVideo.single('video'), async (req: Request, res: Response) => {
   const file = req.file;
-  if (!file) {
-    res.status(400).json({ error: 'No video file uploaded' });
-    return;
-  }
+  if (!file) throw new HttpError(400, 'No video file uploaded');
+
   const title = String(req.body.title || 'Untitled').slice(0, 200);
   const description = String(req.body.description || '').slice(0, 1000);
 
@@ -115,46 +127,19 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
   }
 
   const video = await prisma.video.create({
-    data: {
-      title,
-      description,
-      filename: file.filename,
-      posterFilename,
-      mimeType: file.mimetype,
-      size: file.size,
-      duration,
-    },
+    data: { title, description, filename: file.filename, posterFilename, mimeType: file.mimetype, size: file.size, duration },
   });
 
-  res.status(201).json({ video: await serializeVideo(video, getSessionId(req)) });
+  res.status(201).json({ video: serialize(video) });
 });
 
-// DELETE /api/videos/:id
-router.delete('/:id', async (req: Request, res: Response) => {
-  const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-  if (!video) {
-    res.status(404).json({ error: 'Video not found' });
-    return;
-  }
-  await prisma.video.delete({ where: { id: video.id } });
-  const videoFile = path.join(VIDEOS_DIR, video.filename);
-  if (fs.existsSync(videoFile)) fs.unlinkSync(videoFile);
-  if (video.posterFilename) {
-    const posterFile = path.join(POSTERS_DIR, video.posterFilename);
-    if (fs.existsSync(posterFile)) fs.unlinkSync(posterFile);
-  }
-  res.status(204).send();
-});
-
-async function toggleState(field: 'liked' | 'favorited' | 'saved', likeDelta: 0 | 1 | -1 = 0) {
+function makeToggleHandler(field: 'liked' | 'favorited' | 'saved') {
   return async (req: Request, res: Response) => {
     const sessionId = getSessionId(req);
     const videoId = req.params.id;
     const video = await prisma.video.findUnique({ where: { id: videoId } });
-    if (!video) {
-      res.status(404).json({ error: 'Video not found' });
-      return;
-    }
+    if (!video) throw new HttpError(404, 'Video not found');
+
     const existing = await prisma.userVideoState.findUnique({
       where: { sessionId_videoId: { sessionId, videoId } },
     });
@@ -176,9 +161,9 @@ async function toggleState(field: 'liked' | 'favorited' | 'saved', likeDelta: 0 
   };
 }
 
-router.post('/:id/like', async (req, res) => (await toggleState('liked'))(req, res));
-router.post('/:id/favorite', async (req, res) => (await toggleState('favorited'))(req, res));
-router.post('/:id/save', async (req, res) => (await toggleState('saved'))(req, res));
+router.post('/:id/like', makeToggleHandler('liked'));
+router.post('/:id/favorite', makeToggleHandler('favorited'));
+router.post('/:id/save', makeToggleHandler('saved'));
 
 // GET /api/videos/:id/comments
 router.get('/:id/comments', async (req: Request, res: Response) => {
@@ -192,18 +177,13 @@ router.get('/:id/comments', async (req: Request, res: Response) => {
 // POST /api/videos/:id/comments  { text, author? }
 router.post('/:id/comments', async (req: Request, res: Response) => {
   const text = String(req.body.text || '').trim().slice(0, 500);
-  if (!text) {
-    res.status(400).json({ error: 'Comment text is required' });
-    return;
-  }
+  if (!text) throw new HttpError(400, 'Comment text is required');
+
   const author = String(req.body.author || 'Guest').slice(0, 60);
   const videoId = req.params.id;
 
   const video = await prisma.video.findUnique({ where: { id: videoId } });
-  if (!video) {
-    res.status(404).json({ error: 'Video not found' });
-    return;
-  }
+  if (!video) throw new HttpError(404, 'Video not found');
 
   const [comment] = await prisma.$transaction([
     prisma.comment.create({ data: { videoId, author, text } }),

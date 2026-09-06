@@ -136,6 +136,8 @@ async function main() {
   }
 
   console.log('Seed complete.');
+  console.log('No admin account was created automatically (avoids a hardcoded default password).');
+  console.log('Visit /admin/register once to create the first admin account — the setup code is not required for the first one.');
 }
 
 main()

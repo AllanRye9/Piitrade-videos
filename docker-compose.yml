@@ -24,6 +24,9 @@ services:
       DATABASE_URL: postgresql://piitrade:piitrade@postgres:5432/piitrade
       PORT: 4000
       UPLOAD_DIR: /app/uploads
+      # Set these to real secrets before deploying publicly.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
+      ADMIN_SETUP_CODE: ${ADMIN_SETUP_CODE:-}
     volumes:
       - uploads:/app/uploads
     ports:

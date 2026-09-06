@@ -30,3 +30,36 @@ export interface VisualSearchResult {
   image: string;
   match: number;
 }
+
+export interface AdminUser {
+  id: string;
+  email: string;
+}
+
+export interface AdminVideo {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  poster: string | null;
+  likes: number;
+  views: number;
+  comments: number;
+  createdAt: string;
+}
+
+export interface AdminProduct {
+  id: string;
+  name: string;
+  price: string;
+  category: string;
+  image: string;
+}
+
+export interface AdminStats {
+  videos: number;
+  comments: number;
+  products: number;
+  totalViews: number;
+  totalLikes: number;
+}

@@ -1,6 +1,7 @@
-import type { Video, Comment, VisualSearchResult } from './types';
+import type { Video, Comment, VisualSearchResult, AdminUser, AdminVideo, AdminProduct, AdminStats } from './types';
 
 const SESSION_KEY = 'piitrade_session_id';
+const ADMIN_TOKEN_KEY = 'piitrade_admin_token';
 
 function getSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
@@ -9,6 +10,15 @@ function getSessionId(): string {
     localStorage.setItem(SESSION_KEY, id);
   }
   return id;
+}
+
+export function getAdminToken(): string | null {
+  return localStorage.getItem(ADMIN_TOKEN_KEY);
+}
+
+export function setAdminToken(token: string | null) {
+  if (token) localStorage.setItem(ADMIN_TOKEN_KEY, token);
+  else localStorage.removeItem(ADMIN_TOKEN_KEY);
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -21,6 +31,24 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `Request failed: ${res.status}`);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+async function adminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getAdminToken();
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    if (res.status === 401) setAdminToken(null);
     throw new Error(body.error || `Request failed: ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
@@ -83,4 +111,55 @@ export const api = {
       body: form,
     });
   },
+};
+
+export const adminApi = {
+  register: (email: string, password: string, setupCode?: string) =>
+    request<{ token: string; admin: AdminUser }>('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, setupCode }),
+    }),
+
+  login: (email: string, password: string) =>
+    request<{ token: string; admin: AdminUser }>('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }),
+
+  me: () => adminRequest<{ admin: AdminUser }>('/api/auth/me'),
+
+  stats: () => adminRequest<AdminStats>('/api/admin/stats'),
+
+  listVideos: () => adminRequest<{ videos: AdminVideo[] }>('/api/admin/videos'),
+  updateVideo: (id: string, data: { title?: string; description?: string }) =>
+    adminRequest<{ video: AdminVideo }>(`/api/admin/videos/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  deleteVideo: (id: string) => adminRequest<void>(`/api/admin/videos/${id}`, { method: 'DELETE' }),
+
+  getVideoComments: (id: string) => adminRequest<{ comments: Comment[] }>(`/api/admin/videos/${id}/comments`),
+  deleteComment: (id: string) => adminRequest<void>(`/api/admin/comments/${id}`, { method: 'DELETE' }),
+
+  listProducts: () => adminRequest<{ products: AdminProduct[] }>('/api/admin/products'),
+  createProduct: (name: string, price: string, category: string, image: File) => {
+    const form = new FormData();
+    form.append('name', name);
+    form.append('price', price);
+    form.append('category', category);
+    form.append('image', image);
+    return adminRequest<{ product: AdminProduct }>('/api/admin/products', { method: 'POST', body: form });
+  },
+  updateProduct: (id: string, data: { name?: string; price?: string; category?: string; image?: File }) => {
+    const form = new FormData();
+    if (data.name !== undefined) form.append('name', data.name);
+    if (data.price !== undefined) form.append('price', data.price);
+    if (data.category !== undefined) form.append('category', data.category);
+    if (data.image) form.append('image', data.image);
+    return adminRequest<{ product: AdminProduct }>(`/api/admin/products/${id}`, { method: 'PATCH', body: form });
+  },
+  deleteProduct: (id: string) => adminRequest<void>(`/api/admin/products/${id}`, { method: 'DELETE' }),
 };
