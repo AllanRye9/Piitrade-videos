@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Video } from '../types';
 import { api } from '../api';
+import { mediaUrl } from '../config';
 import CropOverlay from './CropOverlay';
 import SearchResultsPanel from './SearchResultsPanel';
 import CommentModal from './CommentModal';
@@ -92,7 +93,7 @@ export default function VideoCard({ video, active }: Props) {
   function handleDownload(e: React.MouseEvent) {
     e.stopPropagation();
     const a = document.createElement('a');
-    a.href = video.url;
+    a.href = mediaUrl(video.url) || video.url;
     a.download = `${video.title || 'video'}.mp4`;
     document.body.appendChild(a);
     a.click();
@@ -125,8 +126,8 @@ export default function VideoCard({ video, active }: Props) {
     <div className="relative h-full w-full snap-start flex items-center justify-center bg-black">
       <video
         ref={videoRef}
-        src={video.url}
-        poster={video.poster || undefined}
+        src={mediaUrl(video.url)}
+        poster={mediaUrl(video.poster)}
         loop
         muted={muted}
         playsInline

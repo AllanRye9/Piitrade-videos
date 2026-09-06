@@ -9,6 +9,10 @@ import { HttpError } from '../lib/httpError';
 
 const router = Router();
 
+// Enforced server-side (in addition to the instant client-side check)
+// since the client can't be trusted — never rely on it alone.
+const MAX_DURATION_SECONDS = 60;
+
 type VideoRecord = {
   id: string;
   title: string;
@@ -112,10 +116,22 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
   const title = String(req.body.title || 'Untitled').slice(0, 200);
   const description = String(req.body.description || '').slice(0, 1000);
 
+  // Read the duration first, before doing any (comparatively expensive)
+  // poster-frame extraction — an over-length or unreadable clip is
+  // rejected immediately instead of wasting an ffmpeg screenshot pass
+  // on a file we're about to delete anyway.
+  const duration = await getVideoDuration(file.path);
+  if (duration === null) {
+    fs.unlinkSync(file.path);
+    throw new HttpError(422, 'Could not read this video — please upload a valid .mp4 file');
+  }
+  if (duration > MAX_DURATION_SECONDS) {
+    fs.unlinkSync(file.path);
+    throw new HttpError(400, `Videos must be ${MAX_DURATION_SECONDS} seconds or less (this one is ${Math.round(duration)}s)`);
+  }
+
   let posterFilename: string | null = null;
-  let duration: number | null = null;
   try {
-    duration = await getVideoDuration(file.path);
     const posterName = `${path.parse(file.filename).name}.jpg`;
     await extractPoster(file.path, POSTERS_DIR, posterName);
     if (fs.existsSync(path.join(POSTERS_DIR, posterName))) {

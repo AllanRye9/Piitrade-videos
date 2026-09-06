@@ -1,4 +1,5 @@
 import type { Video, Comment, VisualSearchResult, AdminUser, AdminVideo, AdminProduct, AdminStats } from './types';
+import { API_BASE } from './config';
 
 const SESSION_KEY = 'piitrade_session_id';
 const ADMIN_TOKEN_KEY = 'piitrade_admin_token';
@@ -22,7 +23,7 @@ export function setAdminToken(token: string | null) {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       ...(options.headers || {}),
@@ -39,7 +40,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 async function adminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getAdminToken();
-  const res = await fetch(path, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       ...(options.headers || {}),
@@ -70,7 +71,7 @@ export const api = {
       form.append('description', description);
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/videos');
+      xhr.open('POST', `${API_BASE}/api/videos`);
       xhr.setRequestHeader('X-Session-Id', getSessionId());
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));

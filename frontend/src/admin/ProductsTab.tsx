@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { adminApi } from '../api';
+import { mediaUrl } from '../config';
 import type { AdminProduct } from '../types';
 
 export default function ProductsTab() {
@@ -99,7 +100,7 @@ export default function ProductsTab() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {products.map((p) => (
             <div key={p.id} className="bg-white/5 rounded-lg overflow-hidden">
-              <img src={p.image} alt={p.name} className="w-full aspect-square object-cover" />
+              <img src={mediaUrl(p.image)} alt={p.name} className="w-full aspect-square object-cover" />
               <div className="p-2">
                 <p className="text-white text-xs font-medium truncate">{p.name}</p>
                 <p className="text-white/50 text-[11px]">{p.price}</p>

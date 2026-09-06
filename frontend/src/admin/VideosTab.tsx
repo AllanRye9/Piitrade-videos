@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { adminApi } from '../api';
+import { mediaUrl } from '../config';
 import type { AdminVideo } from '../types';
 
 export default function VideosTab() {
@@ -48,7 +49,7 @@ export default function VideosTab() {
       {videos.map((v) => (
         <div key={v.id} className="bg-white/5 rounded-xl p-3 flex flex-wrap sm:flex-nowrap gap-3">
           <img
-            src={v.poster || undefined}
+            src={mediaUrl(v.poster)}
             className="w-20 h-14 sm:w-24 sm:h-16 object-cover rounded-lg bg-black shrink-0"
             alt={v.title}
           />

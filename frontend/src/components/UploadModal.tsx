@@ -7,6 +7,8 @@ interface Props {
   onUploaded: (video: Video) => void;
 }
 
+const MAX_DURATION_SECONDS = 60;
+
 export default function UploadModal({ onClose, onUploaded }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -14,7 +16,25 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   const [description, setDescription] = useState('');
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  function isMp4(f: File): boolean {
+    const nameIsMp4 = /\.mp4$/i.test(f.name);
+    // Some OS/browser combos report an empty mimetype for local files —
+    // in that case fall back to the extension alone. If a mimetype IS
+    // reported, it must actually say mp4.
+    const typeIsMp4 = f.type === '' ? true : f.type === 'video/mp4';
+    return nameIsMp4 && typeIsMp4;
+  }
+
+  function rejectFile(message: string, url: string | null) {
+    if (url) URL.revokeObjectURL(url);
+    setFile(null);
+    setPreviewUrl(null);
+    setError(message);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
 
   function handleFile(f: File | null) {
     setError(null);
@@ -24,13 +44,40 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
       setPreviewUrl(null);
       return;
     }
-    if (!f.type.startsWith('video/')) {
-      setError('Please choose a video file.');
+    if (!isMp4(f)) {
+      rejectFile('Only .mp4 files are supported.', null);
       return;
     }
-    setFile(f);
-    setPreviewUrl(URL.createObjectURL(f));
-    if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ''));
+
+    // Check the clip's length before doing anything else with it. Using
+    // preload="metadata" on a throwaway <video> reads just the file's
+    // header/duration — for a local file this is effectively instant
+    // and never fetches or decodes the actual video frames, so an
+    // oversized or invalid clip is rejected without any wasted work
+    // (no preview render, no upload attempt).
+    const url = URL.createObjectURL(f);
+    const probe = document.createElement('video');
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = () => {
+      const duration = probe.duration;
+      if (!Number.isFinite(duration) || duration <= 0) {
+        rejectFile('Could not read this video — please choose a different .mp4 file.', url);
+        return;
+      }
+      if (duration > MAX_DURATION_SECONDS) {
+        rejectFile(`Videos must be ${MAX_DURATION_SECONDS} seconds or less (this one is ${Math.round(duration)}s).`, url);
+        return;
+      }
+      setChecking(false);
+      setFile(f);
+      setPreviewUrl(url);
+      if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ''));
+    };
+    probe.onerror = () => {
+      rejectFile('Could not read this video — please choose a different .mp4 file.', url);
+    };
+    setChecking(true);
+    probe.src = url;
   }
 
   async function submit() {
@@ -63,10 +110,12 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
           {!previewUrl ? (
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-full aspect-video rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center text-white/60 text-sm gap-2"
+              disabled={checking}
+              className="w-full aspect-video rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center text-white/60 text-sm gap-2 disabled:opacity-60"
             >
               <span className="text-3xl">＋</span>
-              Choose a video file
+              {checking ? 'Checking video…' : 'Choose a .mp4 file'}
+              <span className="text-white/40 text-xs">MP4 only · up to {MAX_DURATION_SECONDS}s</span>
             </button>
           ) : (
             <video src={previewUrl} controls className="w-full aspect-video rounded-xl bg-black" />
@@ -74,7 +123,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
           <input
             ref={fileInputRef}
             type="file"
-            accept="video/*"
+            accept=".mp4,video/mp4"
             className="hidden"
             onChange={(e) => handleFile(e.target.files?.[0] || null)}
           />
@@ -107,7 +156,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
           ) : (
             <button
               onClick={submit}
-              disabled={!file}
+              disabled={!file || checking}
               className="w-full bg-brand-pink disabled:bg-white/10 disabled:text-white/40 text-white font-semibold text-sm rounded-lg py-2.5"
             >
               Post

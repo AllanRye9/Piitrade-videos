@@ -1,4 +1,5 @@
 import type { VisualSearchResult } from '../types';
+import { mediaUrl } from '../config';
 
 interface Props {
   loading: boolean;
@@ -26,7 +27,7 @@ export default function SearchResultsPanel({ loading, error, results, onClose }:
           <div className="grid grid-cols-2 gap-3 mt-2">
             {results.map((r) => (
               <div key={r.id} className="bg-white/5 rounded-lg overflow-hidden">
-                <img src={r.image} alt={r.name} className="w-full aspect-square object-cover" />
+                <img src={mediaUrl(r.image)} alt={r.name} className="w-full aspect-square object-cover" />
                 <div className="p-2">
                   <p className="text-white text-xs font-medium line-clamp-2">{r.name}</p>
                   <div className="flex items-center justify-between mt-1">

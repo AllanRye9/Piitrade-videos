@@ -15,19 +15,35 @@ ffmpeg (video thumbnails), JWT + bcrypt (admin auth), Docker Compose.
 docker compose up --build
 ```
 
-> **This app is not deployable on Vercel.** Vercel runs stateless
-> serverless functions for a single framework — it has no persistent
-> Postgres database, no writable disk for uploaded videos, and no
-> `ffmpeg`/native-binary support, all of which this backend needs. If
-> you previously saw an error like `npm install --prefix frontend`
-> failing to find `frontend/frontend/package.json`, that was Vercel's
-> "Root Directory" project setting already pointed at `frontend` while
-> the install command *also* prefixed `frontend`, doubling the path —
-> but even fixed, Vercel still can't run the stateful backend. Deploy
-> with Docker instead (see below), on any host that can run
-> `docker compose`: a local machine, a VPS (DigitalOcean, Hetzner,
-> Linode…), or a platform with Docker/Compose support (Railway,
-> Render, Fly.io, AWS ECS/App Runner, etc.).
+> **Deploying the frontend to Vercel:** Vercel can host the frontend
+> (it's a static Vite build), but it **cannot run the backend** — no
+> persistent Postgres, no writable disk for uploaded videos, no
+> `ffmpeg`/native-binary support. This repo includes a `vercel.json`
+> that builds the frontend correctly, but two dashboard settings must
+> be correct or Vercel will keep prepending paths itself and you'll
+> see errors like `frontend/frontend/package.json`:
+>
+> 1. **Project Settings → General → Root Directory**: leave it blank
+>    (repository root), *not* `frontend`. `vercel.json` already does
+>    `npm install --prefix frontend` itself — if Root Directory is
+>    also set to `frontend`, the two combine into a doubled,
+>    non-existent path.
+> 2. **Project Settings → Build & Development Settings**: clear any
+>    custom Install/Build Command override so `vercel.json` is what
+>    actually runs (a saved dashboard override takes priority over the
+>    file and re-introduces the same crash).
+>
+> Then set an environment variable **`VITE_API_BASE_URL`** to wherever
+> you host the backend (e.g. `https://api.yourapp.com`, from Railway,
+> Render, Fly.io, or a VPS running `docker compose`) — the frontend
+> uses it to reach `/api` and `/uploads` cross-origin. On that backend
+> host, also set **`ALLOWED_ORIGIN`** to your Vercel URL so CORS
+> allows it. Without a backend deployed somewhere, the Vercel-hosted
+> frontend will load but every API call (feed, upload, admin) will
+> fail — Vercel is only ever the static half of this app.
+>
+> The simplest correct deployment remains everything together via
+> Docker Compose (below), on a VPS or any Docker-friendly host.
 
 Then open **http://localhost:8080** for the app, or
 **http://localhost:8080/admin/register** to set up the admin dashboard.
