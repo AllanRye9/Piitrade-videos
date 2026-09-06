@@ -6,11 +6,11 @@
     "rewrites": [
         {
             "source": "/api/:path*",
-            "destination": "https://piitrade-videos.vercel.app/api/:path*"
+            "destination": "https://backend.onrender.com/api/:path*"
         },
         {
             "source": "/uploads/:path*",
-            "destination": "https://piitrade-videos.vercel.app/uploads/:path*"
+            "destination": "https://backend.onrender.com/uploads/:path*"
         },
         {
             "source": "/(.*)",
