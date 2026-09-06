@@ -1,18 +1,13 @@
 services:
-  # 1. Native Managed PostgreSQL Database
-  - type: db
-    name: piitrade-postgres
-    databaseName: piitrade
-    user: piitrade
-    plan: free # Change to "starter" or higher for production use
-
-  # 2. Backend Web Service
+  # Backend Web Service
   - type: web
-    name: piitrade-backend
+    name: backend
     env: docker
-    dockerfilePath: ./backend/Dockerfile # Points to your backend folder
-    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: starter
     region: oregon # Ensure all services are in the same region for free internal networking
+    healthCheckPath: /api/health
     envVars:
       - key: PORT
         value: 4000
@@ -25,18 +20,19 @@ services:
     disk:
       name: piitrade-uploads
       mountPath: /var/data/uploads
-      sizeGB: 1 # Free tier does not include disks; requires a paid service plan (e.g., starter)
+      sizeGB: 1
 
-  # 3. Frontend Web Service
+  # Frontend Web Service
   - type: web
     name: piitrade-frontend
     env: docker
-    dockerfilePath: ./frontend/Dockerfile # Points to your frontend folder
+    rootDir: frontend
+    dockerfilePath: ./Dockerfile
     plan: free
     region: oregon
-    envVars:
-      - key: BACKEND_URL
-        fromService:
-          name: piitrade-backend
-          type: web
-          property: host
+
+databases:
+  - name: piitrade-postgres
+    databaseName: piitrade
+    user: piitrade
+    plan: free

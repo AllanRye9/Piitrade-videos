@@ -1,29 +1,20 @@
 {
-    "services": {
-        "frontend": {
-            "root": "frontend",
-            "framework": "vite"
-        },
-        "backend": {
-            "root": "backend",
-            "framework": "express",
-            "entrypoint": "dist/index.js" 
-        }
-    },
+    "framework": "vite",
+    "installCommand": "npm install --prefix frontend",
+    "buildCommand": "npm run build --prefix frontend",
+    "outputDirectory": "frontend/dist",
     "rewrites": [
         {
-            "source": "/api(/.*)?",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
+            "source": "/api/:path*",
+            "destination": "https://backend.onrender.com/api/:path*"
+        },
+        {
+            "source": "/uploads/:path*",
+            "destination": "https://backend.onrender.com/uploads/:path*"
         },
         {
             "source": "/(.*)",
-            "destination": {
-                "type": "service",
-                "service": "frontend"
-            }
+            "destination": "/index.html"
         }
     ]
 }
