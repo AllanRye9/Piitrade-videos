@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Video {
+  id             String   @id @default(cuid())
+  title          String
+  description    String   @default("")
+  filename       String
+  posterFilename String?
+  mimeType       String
+  size           Int
+  duration       Float?
+  likes          Int      @default(0)
+  views          Int      @default(0)
+  comments       Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  commentList    Comment[]
+  states         UserVideoState[]
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  author    String   @default("Guest")
+  text      String
+  createdAt DateTime @default(now())
+}
+
+// Per-browser-session like/favorite/save state, keyed by an anonymous
+// session id the frontend generates and stores in localStorage.
+// This avoids requiring a login system while still persisting state.
+model UserVideoState {
+  id        String  @id @default(cuid())
+  sessionId String
+  videoId   String
+  video     Video   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  liked     Boolean @default(false)
+  favorited Boolean @default(false)
+  saved     Boolean @default(false)
+
+  @@unique([sessionId, videoId])
+}
+
+// Product catalog used by visual search. `phash` is a 64-bit perceptual
+// hash (as hex) computed once at seed time and compared against the
+// hash of the user's cropped selection using Hamming distance.
+model Product {
+  id            String @id @default(cuid())
+  name          String
+  price         String
+  category      String
+  imageFilename String
+  phash         String
+}

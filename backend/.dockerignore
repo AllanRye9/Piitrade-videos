@@ -1,0 +1,7 @@
+node_modules
+dist
+uploads/videos/*
+uploads/posters/*
+uploads/products/*
+.git
+.env

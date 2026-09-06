@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+backend/uploads/videos/*
+backend/uploads/posters/*
+backend/uploads/products/*
+!backend/uploads/**/.gitkeep
+frontend/dist/
+.DS_Store
