@@ -42,31 +42,38 @@ export default function App() {
   }
 
   return (
-    <div className="h-dvh w-full bg-black relative overflow-hidden">
-      <TopBar onSearch={handleSearch} onUploadClick={() => setShowUpload(true)} />
+    // On phones this fills the whole viewport, same as before. From
+    // `sm` up (tablets, laptops, desktops) the feed is boxed into a
+    // fixed-width, phone-proportioned column centered on the screen —
+    // the same layout TikTok/Reels/Shorts use on the web — instead of
+    // one video stretching edge-to-edge across a wide monitor.
+    <div className="h-dvh w-full bg-black sm:bg-neutral-950 flex items-center justify-center overflow-hidden">
+      <div className="relative h-full w-full sm:h-[94dvh] sm:max-h-[900px] sm:w-[420px] sm:rounded-2xl sm:overflow-hidden sm:shadow-2xl sm:shadow-black/60 bg-black">
+        <TopBar onSearch={handleSearch} onUploadClick={() => setShowUpload(true)} />
 
-      {loading && (
-        <div className="h-full w-full flex items-center justify-center text-white/60 text-sm">Loading videos…</div>
-      )}
-      {!loading && error && (
-        <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
-          <p>{error}</p>
-          <button onClick={loadAll} className="text-brand-cyan underline">
-            Retry
-          </button>
-        </div>
-      )}
-      {!loading && !error && videos.length === 0 && (
-        <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
-          <p>No videos yet.</p>
-          <button onClick={() => setShowUpload(true)} className="text-brand-cyan underline">
-            Upload the first one
-          </button>
-        </div>
-      )}
-      {!loading && !error && videos.length > 0 && <VideoFeed videos={videos} />}
+        {loading && (
+          <div className="h-full w-full flex items-center justify-center text-white/60 text-sm">Loading videos…</div>
+        )}
+        {!loading && error && (
+          <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
+            <p>{error}</p>
+            <button type="button" onClick={loadAll} className="text-brand-cyan underline">
+              Retry
+            </button>
+          </div>
+        )}
+        {!loading && !error && videos.length === 0 && (
+          <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
+            <p>No videos yet.</p>
+            <button type="button" onClick={() => setShowUpload(true)} className="text-brand-cyan underline">
+              Upload the first one
+            </button>
+          </div>
+        )}
+        {!loading && !error && videos.length > 0 && <VideoFeed videos={videos} />}
 
-      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />}
+        {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />}
+      </div>
     </div>
   );
 }

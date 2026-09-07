@@ -161,11 +161,12 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
       <div className="safe-top flex items-center justify-between px-2 sm:px-4 py-3 text-white">
-        <button onClick={onCancel} className="tap-target px-2 text-sm font-medium">
+        <button type="button" onClick={onCancel} className="tap-target px-2 text-sm font-medium">
           Cancel
         </button>
         <span className="text-xs sm:text-sm text-white/70 text-center px-2">Drag to select an item</span>
         <button
+          type="button"
           onClick={confirmSelection}
           disabled={!rect || rect.w < 6 || rect.h < 6 || !!error}
           className="tap-target px-2 text-sm font-semibold text-brand-cyan disabled:text-white/30"

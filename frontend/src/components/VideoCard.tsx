@@ -6,6 +6,7 @@ import CropOverlay from './CropOverlay';
 import SearchResultsPanel from './SearchResultsPanel';
 import CommentModal from './CommentModal';
 import type { VisualSearchResult } from '../types';
+import { Heart, MessageCircle, Bookmark, Search, Download, Volume2, VolumeX, Play } from 'lucide-react';
 
 interface Props {
   video: Video;
@@ -24,6 +25,7 @@ export default function VideoCard({ video, active }: Props) {
   const [muted, setMuted] = useState(true);
   const [liked, setLiked] = useState(video.liked);
   const [favorited, setFavorited] = useState(video.favorited);
+  const [saved, setSaved] = useState(video.saved);
   const [likes, setLikes] = useState(video.likes);
   const [commentCount, setCommentCount] = useState(video.comments);
   const [showCrop, setShowCrop] = useState(false);
@@ -79,6 +81,8 @@ export default function VideoCard({ video, active }: Props) {
     }
   }
 
+  // "Favorite" — saving a video to a personal favorites shelf. Kept
+  // distinct from "Download" (below), which saves the file itself.
   async function handleFavorite(e: React.MouseEvent) {
     e.stopPropagation();
     setFavorited((f) => !f);
@@ -90,7 +94,12 @@ export default function VideoCard({ video, active }: Props) {
     }
   }
 
-  function handleDownload(e: React.MouseEvent) {
+  // "Download" — saves the actual file to the device AND records the
+  // server-side `saved` flag (the same field the Profile page's
+  // Downloads tab reads back), so the two stay in sync instead of the
+  // button doing a local browser download that no other part of the
+  // app knows happened.
+  async function handleDownload(e: React.MouseEvent) {
     e.stopPropagation();
     const a = document.createElement('a');
     a.href = mediaUrl(video.url) || video.url;
@@ -98,6 +107,16 @@ export default function VideoCard({ video, active }: Props) {
     document.body.appendChild(a);
     a.click();
     a.remove();
+
+    if (!saved) {
+      setSaved(true);
+      try {
+        const res = await api.save(video.id);
+        setSaved(res.saved);
+      } catch {
+        setSaved(false);
+      }
+    }
   }
 
   function openCrop(e: React.MouseEvent) {
@@ -138,15 +157,19 @@ export default function VideoCard({ video, active }: Props) {
 
       {!playing && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-16 h-16 rounded-full bg-black/40 flex items-center justify-center text-white text-3xl">▶</div>
+          <div className="w-16 h-16 rounded-full bg-black/40 flex items-center justify-center text-white">
+            <Play size={28} fill="currentColor" strokeWidth={0} className="ml-1" />
+          </div>
         </div>
       )}
 
       <button
+        type="button"
         onClick={toggleMute}
-        className="tap-target safe-right absolute top-4 right-4 text-white text-xl bg-black/30 rounded-full flex items-center justify-center"
+        aria-label={muted ? 'Unmute video' : 'Mute video'}
+        className="tap-target safe-right absolute top-4 right-4 text-white bg-black/30 rounded-full flex items-center justify-center"
       >
-        {muted ? '🔇' : '🔊'}
+        {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
       </button>
 
       <div className="safe-left safe-bottom absolute left-3 right-16 sm:right-20 bottom-4 text-white">
@@ -155,31 +178,66 @@ export default function VideoCard({ video, active }: Props) {
       </div>
 
       <div className="safe-right safe-bottom absolute right-2 sm:right-3 bottom-4 flex flex-col items-center gap-3 sm:gap-5">
-        <button onClick={handleLike} className="tap-target flex flex-col items-center justify-center text-white">
-          <span className={`text-2xl ${liked ? 'scale-110' : ''} transition-transform`}>{liked ? '❤️' : '🤍'}</span>
+        <button
+          type="button"
+          onClick={handleLike}
+          aria-label={liked ? 'Unlike' : 'Like'}
+          aria-pressed={liked}
+          className="tap-target flex flex-col items-center justify-center text-white"
+        >
+          <Heart
+            size={26}
+            className={`transition-transform ${liked ? 'scale-110 text-brand-pink' : ''}`}
+            fill={liked ? 'currentColor' : 'none'}
+            strokeWidth={liked ? 0 : 2}
+          />
           <span className="text-xs mt-1">{formatCount(likes)}</span>
         </button>
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             setShowComments(true);
           }}
+          aria-label="View comments"
           className="tap-target flex flex-col items-center justify-center text-white"
         >
-          <span className="text-2xl">💬</span>
+          <MessageCircle size={26} />
           <span className="text-xs mt-1">{formatCount(commentCount)}</span>
         </button>
-        <button onClick={handleFavorite} className="tap-target flex flex-col items-center justify-center text-white">
-          <span className="text-2xl">{favorited ? '⭐' : '☆'}</span>
-          <span className="text-xs mt-1">Save</span>
+        <button
+          type="button"
+          onClick={handleFavorite}
+          aria-label={favorited ? 'Remove from favorites' : 'Favorite'}
+          aria-pressed={favorited}
+          className="tap-target flex flex-col items-center justify-center text-white"
+        >
+          <Bookmark
+            size={26}
+            className={favorited ? 'text-brand-cyan' : ''}
+            fill={favorited ? 'currentColor' : 'none'}
+            strokeWidth={favorited ? 0 : 2}
+          />
+          <span className="text-xs mt-1">Favorite</span>
         </button>
-        <button onClick={openCrop} className="tap-target flex flex-col items-center justify-center text-white">
-          <span className="text-2xl">🔍</span>
+        <button
+          type="button"
+          onClick={openCrop}
+          aria-label="Search similar products in this frame"
+          className="tap-target flex flex-col items-center justify-center text-white"
+        >
+          <Search size={26} />
           <span className="text-xs mt-1">Search</span>
         </button>
-        <button onClick={handleDownload} className="tap-target flex flex-col items-center justify-center text-white">
-          <span className="text-2xl">⬇️</span>
-          <span className="text-xs mt-1">Save</span>
+        <button
+          type="button"
+          onClick={handleDownload}
+          aria-label="Download video"
+          aria-pressed={saved}
+          className="tap-target flex flex-col items-center justify-center text-white"
+        >
+          <Download size={26} className={saved ? 'text-brand-cyan' : ''} />
+          <span className="text-xs mt-1">Download</span>
         </button>
       </div>
 

@@ -12,6 +12,29 @@ html, body, #root {
   text-size-adjust: 100%;
 }
 
+/* `100dvh` (dynamic viewport height) is what actually keeps the app
+   from jumping around as mobile browser chrome shows/hides, but it's
+   only supported in fairly recent engines (Safari 15.4+, Chrome/Edge
+   108+, Firefox 101+). Every element that uses Tailwind's `h-dvh` /
+   `max-h-[*dvh]` utilities gets a plain `vh` value written first as a
+   fallback — CSS silently ignores the `dvh` line in older browsers,
+   so they simply keep the `vh` value instead of breaking. Because
+   this stylesheet loads after Tailwind's own utilities, this rule's
+   `vh` fallback still applies everywhere first before `dvh` steps in
+   on browsers that support it. */
+.h-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+.modal-max-h-90 {
+  max-height: 90vh;
+  max-height: 90dvh;
+}
+.modal-max-h-80 {
+  max-height: 80vh;
+  max-height: 80dvh;
+}
+
 body {
   /* Avoids the classic mobile-web "tap flash" and lets our own
      buttons control their own touch feedback instead. */
@@ -24,6 +47,10 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+  /* Restores native momentum/inertial scrolling on older iOS Safari
+     (Safari has scrolled all elements with momentum by default since
+     iOS 13, but this keeps older embedded webviews smooth too). */
+  -webkit-overflow-scrolling: touch;
 }
 
 .snap-y-mandatory {
@@ -31,6 +58,18 @@ body {
 }
 .snap-start {
   scroll-snap-align: start;
+}
+
+/* Firefox/older WebKit builds render focus rings inconsistently on
+   custom rounded buttons; give every interactive element in the app
+   one consistent, visible focus style so keyboard/switch-device users
+   aren't stranded on any browser. */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--tw-focus-color, #25f4ee);
+  outline-offset: 2px;
 }
 
 /* iOS Safari zooms the page in when a focused input's font-size is

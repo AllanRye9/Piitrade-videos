@@ -4,10 +4,36 @@ import { API_BASE } from './config';
 const SESSION_KEY = 'piitrade_session_id';
 const ADMIN_TOKEN_KEY = 'piitrade_admin_token';
 
+/**
+ * `crypto.randomUUID()` is only available in secure contexts (HTTPS)
+ * on fairly recent browsers (Safari 15.4+, Chrome/Edge 92+, Firefox
+ * 95+) — older engines, and plain-HTTP local/LAN testing, don't have
+ * it. This falls back to `crypto.getRandomValues` (near-universal),
+ * and finally to `Math.random` so the app still works end-to-end
+ * everywhere rather than throwing on session creation.
+ */
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 function getSessionId(): string {
   let id = localStorage.getItem(SESSION_KEY);
   if (!id) {
-    id = crypto.randomUUID();
+    id = generateUUID();
     localStorage.setItem(SESSION_KEY, id);
   }
   return id;

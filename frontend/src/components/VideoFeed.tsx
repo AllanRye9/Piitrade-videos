@@ -14,6 +14,16 @@ export default function VideoFeed({ videos }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
+    // IntersectionObserver is supported by every evergreen browser but
+    // missing from a handful of very old / embedded webviews. Rather
+    // than crash there, fall back to always treating the first video
+    // as active — it still plays, it just won't auto-advance as the
+    // user scrolls on that particular browser.
+    if (typeof IntersectionObserver === 'undefined') {
+      setActiveIndex(0);
+      return;
+    }
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {

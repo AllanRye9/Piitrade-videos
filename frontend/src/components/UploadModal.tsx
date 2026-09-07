@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { api } from '../api';
 import type { Video } from '../types';
+import { X, Plus } from 'lucide-react';
 
 interface Props {
   onClose: () => void;
@@ -98,22 +99,23 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/70">
-      <div className="safe-bottom safe-left safe-right w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl max-h-[90dvh] overflow-y-auto">
+      <div className="safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-white font-semibold text-sm">Upload video</span>
-          <button onClick={onClose} className="tap-target -mr-2 text-white/60 text-sm">
-            Close
+          <button type="button" onClick={onClose} aria-label="Close upload dialog" className="tap-target -mr-2 text-white/60">
+            <X size={20} />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
           {!previewUrl ? (
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={checking}
               className="w-full aspect-video rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center text-white/60 text-sm gap-2 disabled:opacity-60"
             >
-              <span className="text-3xl">＋</span>
+              <Plus size={28} />
               {checking ? 'Checking video…' : 'Choose a .mp4 file'}
               <span className="text-white/40 text-xs">MP4 only · up to {MAX_DURATION_SECONDS}s</span>
             </button>
@@ -155,6 +157,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
             </div>
           ) : (
             <button
+              type="button"
               onClick={submit}
               disabled={!file || checking}
               className="w-full bg-brand-pink disabled:bg-white/10 disabled:text-white/40 text-white font-semibold text-sm rounded-lg py-2.5"

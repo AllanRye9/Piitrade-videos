@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Comment } from '../types';
 import { api } from '../api';
+import { markVideoCommented } from '../profileActivity';
+import { X, Send } from 'lucide-react';
 
 interface Props {
   videoId: string;
@@ -35,6 +37,7 @@ export default function CommentModal({ videoId, onClose, onCommentPosted }: Prop
       const res = await api.postComment(videoId, trimmed);
       setComments((prev) => [res.comment, ...prev]);
       onCommentPosted(res.comments);
+      markVideoCommented(videoId);
       setText('');
     } catch (err) {
       console.error(err);
@@ -45,11 +48,11 @@ export default function CommentModal({ videoId, onClose, onCommentPosted }: Prop
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/60">
-      <div className="safe-bottom safe-left safe-right w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl max-h-[80dvh] flex flex-col">
+      <div className="safe-bottom safe-left safe-right modal-max-h-80 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-white font-semibold text-sm">Comments</span>
-          <button onClick={onClose} className="tap-target -mr-2 text-white/60 text-sm">
-            Close
+          <button type="button" onClick={onClose} aria-label="Close comments" className="tap-target -mr-2 text-white/60">
+            <X size={20} />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-2">
@@ -74,11 +77,13 @@ export default function CommentModal({ videoId, onClose, onCommentPosted }: Prop
             maxLength={500}
           />
           <button
+            type="button"
             onClick={submit}
             disabled={!text.trim() || posting}
-            className="text-brand-pink font-semibold text-sm disabled:text-white/30"
+            aria-label="Post comment"
+            className="tap-target text-brand-pink disabled:text-white/30 flex items-center justify-center"
           >
-            Post
+            <Send size={20} />
           </button>
         </div>
       </div>

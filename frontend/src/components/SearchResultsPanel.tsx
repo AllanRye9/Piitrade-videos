@@ -1,5 +1,6 @@
 import type { VisualSearchResult } from '../types';
 import { mediaUrl } from '../config';
+import { X } from 'lucide-react';
 
 interface Props {
   loading: boolean;
@@ -13,8 +14,8 @@ export default function SearchResultsPanel({ loading, error, results, onClose }:
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
       <div className="safe-top flex items-center justify-between px-4 py-3 text-white">
         <span className="text-sm font-semibold">Similar items</span>
-        <button onClick={onClose} className="tap-target -mr-2 text-sm text-white/70">
-          Close
+        <button type="button" onClick={onClose} aria-label="Close search results" className="tap-target -mr-2 text-white/70">
+          <X size={20} />
         </button>
       </div>
       <div className="safe-bottom safe-left safe-right flex-1 overflow-y-auto px-4 pb-6">
@@ -24,7 +25,7 @@ export default function SearchResultsPanel({ loading, error, results, onClose }:
           <p className="text-white/60 text-sm mt-8 text-center">No similar products found.</p>
         )}
         {!loading && !error && results && results.length > 0 && (
-          <div className="grid grid-cols-2 gap-3 mt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
             {results.map((r) => (
               <div key={r.id} className="bg-white/5 rounded-lg overflow-hidden">
                 <img src={mediaUrl(r.image)} alt={r.name} className="w-full aspect-square object-cover" />
