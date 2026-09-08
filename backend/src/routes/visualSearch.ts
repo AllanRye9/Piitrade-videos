@@ -42,6 +42,7 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
       description: p.description,
       productUrl: p.url,
       inStock: p.inStock ?? true,
+      sellerId: p.sellerId,
       match: 100,
     }));
     res.json({ results, identification: identification.text });

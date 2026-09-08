@@ -3,6 +3,7 @@ CREATE TABLE "MarketplaceLink" (
     "id" TEXT NOT NULL,
     "sessionId" TEXT NOT NULL,
     "marketplaceToken" TEXT NOT NULL,
+    "marketplaceRefreshToken" TEXT NOT NULL,
     "marketplaceUserId" TEXT NOT NULL,
     "linkedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

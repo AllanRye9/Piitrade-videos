@@ -7,7 +7,10 @@ import type {
   AdminProduct,
   AdminStats,
   MarketplaceAccountStatus,
-  MarketplaceCheckoutResult,
+  MarketplaceRegistrationResult,
+  MarketplaceCheckoutResponse,
+  MarketplaceCountry,
+  CartItem,
 } from './types';
 import { API_BASE } from './config';
 
@@ -158,18 +161,22 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
-  marketplaceRegister: (email: string, password: string, name?: string) =>
-    request<MarketplaceAccountStatus>('/api/marketplace/register', {
+  // The marketplace requires email verification before login, so this
+  // never returns a linked session — see MarketplaceRegistrationResult.
+  marketplaceRegister: (email: string, password: string, name: string, country: MarketplaceCountry) =>
+    request<MarketplaceRegistrationResult>('/api/marketplace/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ email, password, name, country }),
     }),
 
-  marketplaceCheckout: (items: Array<{ productId: string; quantity: number }>) =>
-    request<MarketplaceCheckoutResult>('/api/marketplace/checkout', {
+  marketplaceCheckout: (items: CartItem[]) =>
+    request<MarketplaceCheckoutResponse>('/api/marketplace/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({
+        items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, sellerId: i.sellerId })),
+      }),
     }),
 };
 

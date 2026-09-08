@@ -173,12 +173,15 @@ export default function VideoCard({ video, active }: Props) {
   function addToCart(result: VisualSearchResult) {
     setCart((prev) => {
       if (prev.some((i) => i.productId === result.id)) return prev;
-      return [...prev, { productId: result.id, name: result.name, price: result.price, image: result.image, quantity: 1 }];
+      return [
+        ...prev,
+        { productId: result.id, name: result.name, price: result.price, image: result.image, quantity: 1, sellerId: result.sellerId },
+      ];
     });
   }
 
-  function handleCheckoutComplete() {
-    setCart([]);
+  function handleCheckoutComplete(remainingProductIds: string[]) {
+    setCart((prev) => prev.filter((i) => remainingProductIds.includes(i.productId)));
     resumeWatching();
   }
 

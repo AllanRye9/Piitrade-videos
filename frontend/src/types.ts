@@ -35,6 +35,11 @@ export interface VisualSearchResult {
   description?: string;
   productUrl?: string;
   inStock?: boolean;
+  /** The marketplace seller this listing belongs to — carried through
+   *  to checkout so items can be grouped into same-seller orders
+   *  (the marketplace requires every item in one order to share a
+   *  seller). Absent for local phash-catalog results. */
+  sellerId?: string;
 }
 
 /** One item the viewer has added to the in-video shopping cart. */
@@ -44,16 +49,36 @@ export interface CartItem {
   price: string;
   image: string;
   quantity: number;
+  sellerId?: string;
 }
 
 export interface MarketplaceAccountStatus {
   linked: boolean;
 }
 
+/** Countries the marketplace accepts at registration. */
+export type MarketplaceCountry = 'UAE' | 'UGANDA' | 'KENYA' | 'CHINA';
+
+/** Registering never returns a usable session — the marketplace
+ *  requires email verification before login. */
+export interface MarketplaceRegistrationResult {
+  linked: false;
+  verificationRequired: true;
+  message: string;
+}
+
 export interface MarketplaceCheckoutResult {
   orderId: string;
+  orderNumber?: string;
   status: string;
   redirectUrl?: string;
+}
+
+/** One order per seller group — checkout can produce more than one
+ *  order when the cart contains items from different sellers. */
+export interface MarketplaceCheckoutResponse {
+  orders: MarketplaceCheckoutResult[];
+  failed?: Array<{ items: Array<{ productId: string; quantity: number }>; error: string }>;
 }
 
 export interface AdminUser {

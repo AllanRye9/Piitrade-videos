@@ -2,23 +2,38 @@ import { HttpError } from './httpError';
 
 /**
  * Client for the external image-identification service configured via
- * the AI_SEARCH env var (its base URL). That service is the `worker/`
- * app in this repo (see worker/worker.js) — a small standalone service
- * that wraps a vision model — but AI_SEARCH can point at any service
- * that implements the same contract:
+ * the AI_SEARCH env var (its base URL, no trailing slash). This is the
+ * real production Cloudflare Worker (Workers AI: ResNet-50 for
+ * /classify, Llama 4 Scout for /identify, Llama 3.2 3B for /describe —
+ * the same worker used elsewhere for AI-powered listing generation),
+ * NOT the small Express stub checked into worker/worker.js in this
+ * repo. That stub is a local-dev fallback that predates this contract;
+ * this client always talks to the real worker's actual routes:
  *
- *   POST {AI_SEARCH}
+ *   POST {AI_SEARCH}/identify
  *     multipart/form-data, field "image" (the cropped selection, JPEG or PNG)
- *   -> 200 { "text": "<short identification of the item>", "labels"?: string[] }
+ *   -> 200 {
+ *        success: true,
+ *        description: string,       // 2-4 sentence identification
+ *        suggestedTitle: string,    // short (<=70 char) listing-style name —
+ *                                    // this is what we use as the search phrase,
+ *                                    // since it's already cleaned/title-cased
+ *                                    // and scoped to a specific product name
+ *      }
+ *   -> 4xx/5xx { success: false, error: string }
  *
- * Optional AI_SEARCH_API_KEY is sent as a Bearer token if set.
+ * There is no `labels` field in this worker's response — AiIdentification
+ * only carries the single identification phrase actually returned.
+ *
+ * AI_SEARCH_API_KEY is still sent as a Bearer token if set, for forward
+ * compatibility, but the current worker does not check it (no auth is
+ * enforced server-side there today).
  */
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
 export interface AiIdentification {
   text: string;
-  labels?: string[];
 }
 
 export async function identifyImage(imageBuffer: Buffer, mimeType: string): Promise<AiIdentification> {
@@ -35,7 +50,7 @@ export async function identifyImage(imageBuffer: Buffer, mimeType: string): Prom
 
   let res: Response;
   try {
-    res = await fetch(endpoint, {
+    res = await fetch(`${endpoint.replace(/\/+$/, '')}/identify`, {
       method: 'POST',
       headers: process.env.AI_SEARCH_API_KEY ? { Authorization: `Bearer ${process.env.AI_SEARCH_API_KEY}` } : undefined,
       body: form,
@@ -50,17 +65,33 @@ export async function identifyImage(imageBuffer: Buffer, mimeType: string): Prom
     clearTimeout(timeout);
   }
 
-  if (!res.ok) {
-    throw new HttpError(502, `Image identification service returned ${res.status}`);
+  // The worker returns { success: false, error } with an appropriate
+  // status (400/413/500/etc) on failure — surface that message rather
+  // than a generic one when it's present, since it's usually specific
+  // (e.g. "Image too large", "No image data received").
+  const data = (await res.json().catch(() => null)) as
+    | { success?: boolean; description?: unknown; suggestedTitle?: unknown; error?: unknown }
+    | null;
+
+  if (!res.ok || !data || data.success === false) {
+    const message = typeof data?.error === 'string' && data.error.trim() ? data.error.trim() : undefined;
+    throw new HttpError(
+      res.status === 413 ? 413 : res.status === 400 ? 400 : 502,
+      message || `Image identification service returned ${res.status}`
+    );
   }
 
-  const data = (await res.json().catch(() => null)) as { text?: unknown; labels?: unknown } | null;
-  if (!data || typeof data.text !== 'string' || !data.text.trim()) {
+  // Prefer the worker's cleaned, listing-style suggestedTitle as the
+  // search phrase — it's short and specific by design (see the
+  // worker's IDENTIFY_PROMPT/extractSuggestedTitle). Fall back to the
+  // fuller description only if a title couldn't be extracted.
+  const suggestedTitle = typeof data.suggestedTitle === 'string' ? data.suggestedTitle.trim() : '';
+  const description = typeof data.description === 'string' ? data.description.trim() : '';
+  const text = suggestedTitle || description;
+
+  if (!text) {
     throw new HttpError(502, 'Image identification service returned no result');
   }
 
-  return {
-    text: data.text.trim(),
-    labels: Array.isArray(data.labels) ? data.labels.filter((l): l is string => typeof l === 'string') : undefined,
-  };
+  return { text };
 }

@@ -107,14 +107,18 @@ rectangle), then runs one of two search paths:
 
 - **AI + marketplace pipeline** (used when both `AI_SEARCH` and
   `MARKETPLACE_API` are set): the cropped selection is sent to
-  `AI_SEARCH` (the bundled `worker/` service by default — see below)
-  for identification, and the resulting text is used to query
-  `MARKETPLACE_API` for matching products. See
-  `backend/src/lib/aiSearch.ts` and `backend/src/lib/marketplace.ts`
-  for the exact request/response contracts each service is expected
-  to implement — **the marketplace one is an assumption**, since the
-  real marketplace's API shape isn't known here; adjust
-  `marketplace.ts` to match it if different.
+  `AI_SEARCH` — in production this should be the real Piitrade
+  image-identification Cloudflare Worker (the same one used elsewhere
+  for AI-powered listing generation); the bundled `worker/` service
+  (see below) is only a local-dev stand-in with the same response
+  shape — for identification, and the resulting text is used to query
+  the **real Piitrade marketplace's** `GET /api/listings` search. This
+  is wired against that marketplace's actual API (its repo was
+  reviewed directly), not an assumed contract — see
+  `backend/src/lib/marketplace.ts` for the exact endpoints/fields, and
+  `backend/src/lib/aiSearch.ts` for the exact `AI_SEARCH` response
+  shape it expects (`{ success, description, suggestedTitle }`), and
+  the marketplace-specific behavior below.
 - **Local phash fallback** (used otherwise, e.g. local dev): the
   original perceptual-hash match against the seeded product catalog,
   unchanged.
@@ -125,28 +129,51 @@ result adds it to an in-video cart; once the cart has an item, a blue
 
 1. Checks whether this browser session already has a linked
    marketplace account (`GET /api/marketplace/account`).
-2. If not, prompts login/register, then checks out immediately after.
+2. If not, prompts login/register.
+   - **Login** proceeds straight into checkout.
+   - **Register does NOT** — the marketplace requires email
+     verification before its `/api/auth/login` will succeed (this is
+     enforced by the marketplace itself, not a choice made here), so
+     registering shows a "check your email, then log in" screen
+     instead of pretending checkout can continue immediately.
 3. If already linked, checks out immediately.
 4. On success (or on cancel at any point), the video **resumes
    watching** — it's paused only for the duration of this flow, never
    permanently.
 
-The marketplace's own auth token is stored server-side only (see the
-`MarketplaceLink` Prisma model), keyed by the same anonymous
-`X-Session-Id` used elsewhere in the app — it's never sent to the
-browser.
+**Same-seller order grouping.** The marketplace's `POST /api/orders`
+requires every item in one order to belong to the same seller. Since
+an AI-identified search can surface products from different sellers,
+checkout groups cart items by `sellerId` (carried through from the
+search result) and places one order per seller. If the cart has items
+from 3 sellers, checkout produces up to 3 orders; if one seller's
+group fails, the rest still go through and the failed items stay in
+the cart rather than the whole checkout failing.
+
+**Session tokens.** The marketplace's access token expires in ~1h;
+rather than asking a returning viewer to log in again, checkout
+transparently exchanges the stored refresh token for a new access
+token on a 401 and retries once. Both tokens are stored server-side
+only (see the `MarketplaceLink` Prisma model), keyed by the same
+anonymous `X-Session-Id` used elsewhere in the app — neither is ever
+sent to the browser. The refresh token itself is extracted by hand
+from the marketplace's httpOnly `Set-Cookie` on login, since this is
+a server-to-server call rather than a browser session.
 
 ### The `worker/` service
 
-`worker/worker.js` is a small, separate Express service that
-implements the `AI_SEARCH` contract by calling Anthropic's API
-(vision) to identify the marked region. It's intentionally its own
-service — its own API key, timeout profile, and scaling — not bundled
-into the backend, so swapping in a different vision model/provider
-only ever means changing where `AI_SEARCH` points. `docker-compose.yml`
-runs it alongside the backend and frontend automatically. It needs
-`ANTHROPIC_API_KEY` set; without it, it returns a clear 503 rather
-than a broken response.
+`worker/worker.js` is a small, separate Express service that is a
+**local-dev stand-in** for the real production identification
+service — it implements the same `AI_SEARCH` response envelope
+(`{ success, description, suggestedTitle }`) by calling Anthropic's
+API (vision) to identify the marked region, rather than the real
+worker's Workers AI models. It's intentionally its own service — its
+own API key, timeout profile, and scaling — not bundled into the
+backend, so swapping between it and the real worker only ever means
+changing where `AI_SEARCH` points (no code change). `docker-compose.yml`
+runs it alongside the backend and frontend automatically for local
+dev. It needs `ANTHROPIC_API_KEY` set; without it, it returns a clear
+503 rather than a broken response.
 
 ### Sizing fix
 

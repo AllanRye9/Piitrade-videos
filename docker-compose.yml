@@ -32,10 +32,9 @@ services:
       # In-video visual search: AI identify + marketplace lookup. Both
       # must be set for this pipeline to run — otherwise the local
       # phash catalog match is used instead (see README).
-      AI_SEARCH: ${AI_SEARCH:-http://worker:8787/identify}
+      AI_SEARCH: ${AI_SEARCH:-http://worker:8787}
       AI_SEARCH_API_KEY: ${AI_SEARCH_API_KEY:-}
       MARKETPLACE_API: ${MARKETPLACE_API:-}
-      MARKETPLACE_API_KEY: ${MARKETPLACE_API_KEY:-}
     volumes:
       - uploads:/app/uploads
     ports:

@@ -1,19 +1,28 @@
 import { useEffect, useState } from 'react';
-import type { CartItem } from '../types';
+import type { CartItem, MarketplaceCheckoutResult, MarketplaceCountry } from '../types';
 import { api } from '../api';
 import { mediaUrl } from '../config';
-import { X, LogIn, UserPlus, CheckCircle2 } from 'lucide-react';
+import { X, LogIn, UserPlus, CheckCircle2, MailCheck } from 'lucide-react';
 
 interface Props {
   items: CartItem[];
   /** User dismissed the modal without completing checkout — resume watching, keep the cart. */
   onCancel: () => void;
-  /** Checkout completed and the user chose to continue watching — clear the cart, resume watching. */
-  onComplete: () => void;
+  /** Checkout finished and the user chose to continue watching. Passes
+   *  the productIds that did NOT get ordered (empty if everything
+   *  succeeded) so the cart only clears what was actually placed. */
+  onComplete: (remainingProductIds: string[]) => void;
 }
 
-type Stage = 'checking' | 'auth' | 'confirm' | 'processing' | 'success' | 'error';
+type Stage = 'checking' | 'auth' | 'verify' | 'confirm' | 'processing' | 'success' | 'error';
 type AuthMode = 'login' | 'register';
+
+const COUNTRIES: Array<{ value: MarketplaceCountry; label: string }> = [
+  { value: 'UAE', label: 'UAE' },
+  { value: 'UGANDA', label: 'Uganda' },
+  { value: 'KENYA', label: 'Kenya' },
+  { value: 'CHINA', label: 'China' },
+];
 
 export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
   const [stage, setStage] = useState<Stage>('checking');
@@ -21,8 +30,11 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [country, setCountry] = useState<MarketplaceCountry | ''>('');
   const [error, setError] = useState<string | null>(null);
-  const [orderId, setOrderId] = useState<string | null>(null);
+  const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
+  const [orders, setOrders] = useState<MarketplaceCheckoutResult[]>([]);
+  const [failedItems, setFailedItems] = useState<Array<{ productId: string; quantity: number }>>([]);
 
   // On open, find out whether this browser session already has a
   // linked marketplace account — if so, skip straight to confirming
@@ -49,10 +61,9 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
     setStage('processing');
     setError(null);
     try {
-      const result = await api.marketplaceCheckout(
-        items.map((i) => ({ productId: i.productId, quantity: i.quantity }))
-      );
-      setOrderId(result.orderId);
+      const result = await api.marketplaceCheckout(items);
+      setOrders(result.orders);
+      setFailedItems(result.failed?.flatMap((f) => f.items) ?? []);
       setStage('success');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Checkout failed');
@@ -66,21 +77,38 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
       setError('Email and password are required');
       return;
     }
+    if (authMode === 'register' && (!name.trim() || !country)) {
+      setError('Name and country are required');
+      return;
+    }
+
     setStage('processing');
     setError(null);
     try {
       if (authMode === 'login') {
         await api.marketplaceLogin(email.trim(), password);
+        // Linked — go straight into checkout rather than making the
+        // viewer press another button.
+        await runCheckout();
       } else {
-        await api.marketplaceRegister(email.trim(), password, name.trim() || undefined);
+        // Registering does NOT log the viewer in — the marketplace
+        // requires email verification first. Show that instead of
+        // pretending checkout can continue immediately.
+        const result = await api.marketplaceRegister(email.trim(), password, name.trim(), country as MarketplaceCountry);
+        setVerifyMessage(result.message);
+        setStage('verify');
       }
-      // Linked — go straight into checkout rather than making the
-      // viewer press another button.
-      await runCheckout();
     } catch (err) {
       setError(err instanceof Error ? err.message : authMode === 'login' ? 'Login failed' : 'Registration failed');
       setStage('auth');
     }
+  }
+
+  function backToLoginAfterVerifying() {
+    setAuthMode('login');
+    setPassword('');
+    setError(null);
+    setStage('auth');
   }
 
   const total = items.length;
@@ -102,8 +130,8 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
         </div>
 
         <div className="p-4 space-y-4">
-          {/* Order summary — shown for every stage except the final success screen */}
-          {stage !== 'success' && (
+          {/* Order summary — shown for every stage except the final success/verify screens */}
+          {stage !== 'success' && stage !== 'verify' && (
             <div className="space-y-2 max-h-40 overflow-y-auto">
               {items.map((item) => (
                 <div key={item.productId} className="flex items-center gap-3">
@@ -125,7 +153,10 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
               <div className="flex rounded-lg bg-white/10 p-1">
                 <button
                   type="button"
-                  onClick={() => setAuthMode('login')}
+                  onClick={() => {
+                    setAuthMode('login');
+                    setError(null);
+                  }}
                   className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium ${
                     authMode === 'login' ? 'bg-white text-black' : 'text-white/60'
                   }`}
@@ -134,7 +165,10 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAuthMode('register')}
+                  onClick={() => {
+                    setAuthMode('register');
+                    setError(null);
+                  }}
                   className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium ${
                     authMode === 'register' ? 'bg-white text-black' : 'text-white/60'
                   }`}
@@ -143,15 +177,35 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
                 </button>
               </div>
 
-              <p className="text-white/50 text-xs">Log in to the marketplace to complete checkout.</p>
+              <p className="text-white/50 text-xs">
+                {authMode === 'login'
+                  ? 'Log in to the marketplace to complete checkout.'
+                  : 'Create a marketplace account — you\u2019ll verify your email before you can log in.'}
+              </p>
 
               {authMode === 'register' && (
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Name (optional)"
-                  className="w-full bg-white/10 text-white text-sm rounded-lg px-3 py-2 outline-none placeholder:text-white/40"
-                />
+                <>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Name"
+                    className="w-full bg-white/10 text-white text-sm rounded-lg px-3 py-2 outline-none placeholder:text-white/40"
+                  />
+                  <select
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value as MarketplaceCountry)}
+                    className="w-full bg-white/10 text-white text-sm rounded-lg px-3 py-2 outline-none"
+                  >
+                    <option value="" disabled className="text-black">
+                      Country
+                    </option>
+                    {COUNTRIES.map((c) => (
+                      <option key={c.value} value={c.value} className="text-black">
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
               )}
               <input
                 value={email}
@@ -170,13 +224,28 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
 
               {error && <p className="text-red-400 text-sm">{error}</p>}
 
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white font-semibold text-sm rounded-lg py-2.5"
-              >
-                {authMode === 'login' ? 'Log in and checkout' : 'Register and checkout'}
+              <button type="submit" className="w-full bg-blue-600 text-white font-semibold text-sm rounded-lg py-2.5">
+                {authMode === 'login' ? 'Log in and checkout' : 'Create account'}
               </button>
             </form>
+          )}
+
+          {stage === 'verify' && (
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <MailCheck size={40} className="text-brand-cyan" />
+              <p className="text-white font-semibold text-sm">Check your email</p>
+              <p className="text-white/60 text-xs">{verifyMessage}</p>
+              <button
+                type="button"
+                onClick={backToLoginAfterVerifying}
+                className="w-full bg-blue-600 text-white font-semibold text-sm rounded-lg py-2.5 mt-2"
+              >
+                I've verified — log in
+              </button>
+              <button type="button" onClick={onCancel} className="text-white/50 text-xs underline">
+                Keep watching for now
+              </button>
+            </div>
           )}
 
           {stage === 'confirm' && (
@@ -211,11 +280,29 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
           {stage === 'success' && (
             <div className="flex flex-col items-center gap-3 py-4">
               <CheckCircle2 size={40} className="text-green-400" />
-              <p className="text-white font-semibold text-sm">Order placed</p>
-              {orderId && <p className="text-white/50 text-xs">Order #{orderId}</p>}
+              <p className="text-white font-semibold text-sm">
+                {orders.length > 1 ? `${orders.length} orders placed` : 'Order placed'}
+              </p>
+              <div className="w-full space-y-1">
+                {orders.map((o) => (
+                  <p key={o.orderId} className="text-white/50 text-xs text-center">
+                    Order #{o.orderNumber || o.orderId}
+                  </p>
+                ))}
+              </div>
+              {/* Items from different sellers are placed as separate orders (the
+                  marketplace requires every item in one order to share a seller) —
+                  if one seller's group failed, the rest still succeeded, so this
+                  is a partial-failure notice rather than a hard error. */}
+              {failedItems.length > 0 && (
+                <p className="text-yellow-400 text-xs text-center">
+                  {failedItems.length} item{failedItems.length === 1 ? '' : 's'} could not be ordered and{' '}
+                  {failedItems.length === 1 ? 'was' : 'were'} left in your cart.
+                </p>
+              )}
               <button
                 type="button"
-                onClick={onComplete}
+                onClick={() => onComplete(failedItems.map((i) => i.productId))}
                 className="w-full bg-blue-600 text-white font-semibold text-sm rounded-lg py-2.5 mt-2"
               >
                 Continue watching
