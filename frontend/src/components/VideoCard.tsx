@@ -4,8 +4,10 @@ import { api } from '../api';
 import { mediaUrl } from '../config';
 import CropOverlay from './CropOverlay';
 import SearchResultsPanel from './SearchResultsPanel';
+import CartBar from './CartBar';
+import CheckoutModal from './CheckoutModal';
 import CommentModal from './CommentModal';
-import type { VisualSearchResult } from '../types';
+import type { VisualSearchResult, CartItem } from '../types';
 import { Heart, MessageCircle, Bookmark, Search, Download, Volume2, VolumeX, Play } from 'lucide-react';
 
 interface Props {
@@ -31,9 +33,16 @@ export default function VideoCard({ video, active }: Props) {
   const [showCrop, setShowCrop] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [showComments, setShowComments] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<VisualSearchResult[] | null>(null);
+  const [identification, setIdentification] = useState<string | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  // Whether the video was actually playing right before the visual
+  // search flow paused it — so "resume watching" only auto-plays if
+  // the viewer hadn't already paused the video themselves.
+  const wasPlayingRef = useRef(false);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -121,8 +130,26 @@ export default function VideoCard({ video, active }: Props) {
 
   function openCrop(e: React.MouseEvent) {
     e.stopPropagation();
-    if (!videoRef.current) return;
+    const el = videoRef.current;
+    if (!el) return;
+    // Pause for the whole visual-search → cart → checkout flow. Only
+    // resumed again by resumeWatching(), on cancel or completion —
+    // never permanently, per the in-video shopping flow's design.
+    wasPlayingRef.current = !el.paused;
+    el.pause();
+    setPlaying(false);
     setShowCrop(true);
+  }
+
+  function resumeWatching() {
+    const el = videoRef.current;
+    setShowCrop(false);
+    setShowResults(false);
+    setShowCheckout(false);
+    if (el && wasPlayingRef.current) {
+      el.play().catch(() => setPlaying(false));
+      setPlaying(true);
+    }
   }
 
   async function handleCropped(blob: Blob) {
@@ -131,14 +158,28 @@ export default function VideoCard({ video, active }: Props) {
     setSearchLoading(true);
     setSearchError(null);
     setSearchResults(null);
+    setIdentification(null);
     try {
       const res = await api.visualSearch(blob);
       setSearchResults(res.results);
+      setIdentification(res.identification ?? null);
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
       setSearchLoading(false);
     }
+  }
+
+  function addToCart(result: VisualSearchResult) {
+    setCart((prev) => {
+      if (prev.some((i) => i.productId === result.id)) return prev;
+      return [...prev, { productId: result.id, name: result.name, price: result.price, image: result.image, quantity: 1 }];
+    });
+  }
+
+  function handleCheckoutComplete() {
+    setCart([]);
+    resumeWatching();
   }
 
   return (
@@ -242,15 +283,24 @@ export default function VideoCard({ video, active }: Props) {
       </div>
 
       {showCrop && videoRef.current && (
-        <CropOverlay videoEl={videoRef.current} onCancel={() => setShowCrop(false)} onCropped={handleCropped} />
+        <CropOverlay videoEl={videoRef.current} onCancel={resumeWatching} onCropped={handleCropped} />
       )}
       {showResults && (
-        <SearchResultsPanel
-          loading={searchLoading}
-          error={searchError}
-          results={searchResults}
-          onClose={() => setShowResults(false)}
-        />
+        <>
+          <SearchResultsPanel
+            loading={searchLoading}
+            error={searchError}
+            results={searchResults}
+            identification={identification}
+            cartProductIds={new Set(cart.map((c) => c.productId))}
+            onAddToCart={addToCart}
+            onClose={resumeWatching}
+          />
+          <CartBar items={cart} onCheckout={() => setShowCheckout(true)} />
+        </>
+      )}
+      {showCheckout && (
+        <CheckoutModal items={cart} onCancel={resumeWatching} onComplete={handleCheckoutComplete} />
       )}
       {showComments && (
         <CommentModal videoId={video.id} onClose={() => setShowComments(false)} onCommentPosted={setCommentCount} />

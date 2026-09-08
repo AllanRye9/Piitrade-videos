@@ -9,6 +9,7 @@ import videosRouter from './routes/videos';
 import visualSearchRouter from './routes/visualSearch';
 import authRouter from './routes/auth';
 import adminRouter from './routes/admin';
+import marketplaceRouter from './routes/marketplace';
 import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
 
@@ -40,6 +41,7 @@ app.use('/api/videos', videosRouter);
 app.use('/api/visual-search', visualSearchRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/marketplace', marketplaceRouter);
 
 // Centralized error handler. Thanks to `express-async-errors`, any
 // error thrown (or rejected promise) inside an async route handler

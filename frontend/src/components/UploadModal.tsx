@@ -19,6 +19,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   function isMp4(f: File): boolean {
     const nameIsMp4 = /\.mp4$/i.test(f.name);
@@ -97,9 +98,45 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
     }
   }
 
+  // Dropping a file works over the whole modal, not just the dropzone
+  // box, so the user doesn't have to aim precisely. onDragOver must
+  // call preventDefault() too — without it the browser's default drop
+  // behavior (opening the file in a new tab/navigating away) wins and
+  // the onDrop handler never fires at all.
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!checking) setIsDraggingOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only clear the highlight once the pointer actually leaves the
+    // modal (not just moving between two child elements inside it,
+    // which also fires dragleave/dragenter pairs).
+    if (e.currentTarget === e.target || !(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+      setIsDraggingOver(false);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    if (checking) return;
+    const dropped = e.dataTransfer.files?.[0] || null;
+    if (dropped) handleFile(dropped);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/70">
-      <div className="safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto">
+      <div
+        className="safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-white font-semibold text-sm">Upload video</span>
           <button type="button" onClick={onClose} aria-label="Close upload dialog" className="tap-target -mr-2 text-white/60">
@@ -113,10 +150,12 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={checking}
-              className="w-full aspect-video rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center text-white/60 text-sm gap-2 disabled:opacity-60"
+              className={`w-full aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center text-sm gap-2 disabled:opacity-60 transition-colors ${
+                isDraggingOver ? 'border-brand-pink bg-brand-pink/10 text-white' : 'border-white/20 text-white/60'
+              }`}
             >
               <Plus size={28} />
-              {checking ? 'Checking video…' : 'Choose a .mp4 file'}
+              {checking ? 'Checking video…' : isDraggingOver ? 'Drop to upload' : 'Choose or drop a .mp4 file'}
               <span className="text-white/40 text-xs">MP4 only · up to {MAX_DURATION_SECONDS}s</span>
             </button>
           ) : (

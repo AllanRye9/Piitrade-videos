@@ -29,6 +29,31 @@ export interface VisualSearchResult {
   category: string;
   image: string;
   match: number;
+  // Present when the result came from the AI-identify + marketplace
+  // pipeline (see backend AI_SEARCH/MARKETPLACE_API); absent for the
+  // local phash-catalog fallback.
+  description?: string;
+  productUrl?: string;
+  inStock?: boolean;
+}
+
+/** One item the viewer has added to the in-video shopping cart. */
+export interface CartItem {
+  productId: string;
+  name: string;
+  price: string;
+  image: string;
+  quantity: number;
+}
+
+export interface MarketplaceAccountStatus {
+  linked: boolean;
+}
+
+export interface MarketplaceCheckoutResult {
+  orderId: string;
+  status: string;
+  redirectUrl?: string;
 }
 
 export interface AdminUser {

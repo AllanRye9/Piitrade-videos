@@ -75,3 +75,18 @@ model AdminUser {
   passwordHash String
   createdAt    DateTime @default(now())
 }
+
+// Links an anonymous browser session (the same X-Session-Id used by
+// UserVideoState) to an account on the external marketplace (reached
+// via the MARKETPLACE_API env var). The marketplace's own auth token
+// is stored server-side only — it is never sent to the frontend — so
+// the in-video checkout flow can tell whether the current viewer is
+// already logged in to the marketplace without re-authenticating on
+// every checkout.
+model MarketplaceLink {
+  id                String   @id @default(cuid())
+  sessionId         String   @unique
+  marketplaceToken  String
+  marketplaceUserId String
+  linkedAt          DateTime @default(now())
+}

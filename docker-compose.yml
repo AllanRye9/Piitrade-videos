@@ -20,6 +20,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      worker:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://piitrade:piitrade@postgres:5432/piitrade
       PORT: 4000
@@ -27,6 +29,13 @@ services:
       # Set these to real secrets before deploying publicly.
       JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-secret-change-me}
       ADMIN_SETUP_CODE: ${ADMIN_SETUP_CODE:-}
+      # In-video visual search: AI identify + marketplace lookup. Both
+      # must be set for this pipeline to run — otherwise the local
+      # phash catalog match is used instead (see README).
+      AI_SEARCH: ${AI_SEARCH:-http://worker:8787/identify}
+      AI_SEARCH_API_KEY: ${AI_SEARCH_API_KEY:-}
+      MARKETPLACE_API: ${MARKETPLACE_API:-}
+      MARKETPLACE_API_KEY: ${MARKETPLACE_API_KEY:-}
     volumes:
       - uploads:/app/uploads
     ports:
@@ -37,6 +46,26 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+
+  # Hosts the identification AI used by the backend's visual search
+  # (reached via the AI_SEARCH env var above). Kept as its own service
+  # so its API key and scaling are independent of the main backend —
+  # see worker/worker.js.
+  worker:
+    build: ./worker
+    restart: unless-stopped
+    environment:
+      PORT: 8787
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      WORKER_AUTH_TOKEN: ${AI_SEARCH_API_KEY:-}
+    ports:
+      - "8787:8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8787/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   frontend:
     build: ./frontend

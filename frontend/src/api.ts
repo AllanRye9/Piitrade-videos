@@ -1,4 +1,14 @@
-import type { Video, Comment, VisualSearchResult, AdminUser, AdminVideo, AdminProduct, AdminStats } from './types';
+import type {
+  Video,
+  Comment,
+  VisualSearchResult,
+  AdminUser,
+  AdminVideo,
+  AdminProduct,
+  AdminStats,
+  MarketplaceAccountStatus,
+  MarketplaceCheckoutResult,
+} from './types';
 import { API_BASE } from './config';
 
 const SESSION_KEY = 'piitrade_session_id';
@@ -133,11 +143,34 @@ export const api = {
   visualSearch: (imageBlob: Blob) => {
     const form = new FormData();
     form.append('image', imageBlob, 'crop.jpg');
-    return request<{ results: VisualSearchResult[] }>('/api/visual-search', {
+    return request<{ results: VisualSearchResult[]; identification?: string }>('/api/visual-search', {
       method: 'POST',
       body: form,
     });
   },
+
+  marketplaceAccount: () => request<MarketplaceAccountStatus>('/api/marketplace/account'),
+
+  marketplaceLogin: (email: string, password: string) =>
+    request<MarketplaceAccountStatus>('/api/marketplace/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }),
+
+  marketplaceRegister: (email: string, password: string, name?: string) =>
+    request<MarketplaceAccountStatus>('/api/marketplace/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name }),
+    }),
+
+  marketplaceCheckout: (items: Array<{ productId: string; quantity: number }>) =>
+    request<MarketplaceCheckoutResult>('/api/marketplace/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    }),
 };
 
 export const adminApi = {

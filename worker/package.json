@@ -1,0 +1,15 @@
+{
+  "name": "piitrade-videos-identification-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "worker.js",
+  "scripts": {
+    "start": "node worker.js",
+    "dev": "node worker.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "multer": "^2.0.1"
+  }
+}

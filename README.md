@@ -99,22 +99,89 @@ Everything in this app talks to a real database and real files on disk
   search — see "Known limitations" below.
 - **Admin auth** is real JWT + bcrypt, not a hardcoded check.
 
-## Project layout
+## In-video shopping: AI identify → marketplace lookup → cart → checkout
+
+Tapping **Search** on a video now lets you mark the region to search
+as a **rectangle, square, circle, or freeform lasso** (not just a
+rectangle), then runs one of two search paths:
+
+- **AI + marketplace pipeline** (used when both `AI_SEARCH` and
+  `MARKETPLACE_API` are set): the cropped selection is sent to
+  `AI_SEARCH` (the bundled `worker/` service by default — see below)
+  for identification, and the resulting text is used to query
+  `MARKETPLACE_API` for matching products. See
+  `backend/src/lib/aiSearch.ts` and `backend/src/lib/marketplace.ts`
+  for the exact request/response contracts each service is expected
+  to implement — **the marketplace one is an assumption**, since the
+  real marketplace's API shape isn't known here; adjust
+  `marketplace.ts` to match it if different.
+- **Local phash fallback** (used otherwise, e.g. local dev): the
+  original perceptual-hash match against the seeded product catalog,
+  unchanged.
+
+Results are shown in the same results panel either way. Tapping a
+result adds it to an in-video cart; once the cart has an item, a blue
+**"Click to checkout"** bar appears. Checkout:
+
+1. Checks whether this browser session already has a linked
+   marketplace account (`GET /api/marketplace/account`).
+2. If not, prompts login/register, then checks out immediately after.
+3. If already linked, checks out immediately.
+4. On success (or on cancel at any point), the video **resumes
+   watching** — it's paused only for the duration of this flow, never
+   permanently.
+
+The marketplace's own auth token is stored server-side only (see the
+`MarketplaceLink` Prisma model), keyed by the same anonymous
+`X-Session-Id` used elsewhere in the app — it's never sent to the
+browser.
+
+### The `worker/` service
+
+`worker/worker.js` is a small, separate Express service that
+implements the `AI_SEARCH` contract by calling Anthropic's API
+(vision) to identify the marked region. It's intentionally its own
+service — its own API key, timeout profile, and scaling — not bundled
+into the backend, so swapping in a different vision model/provider
+only ever means changing where `AI_SEARCH` points. `docker-compose.yml`
+runs it alongside the backend and frontend automatically. It needs
+`ANTHROPIC_API_KEY` set; without it, it returns a clear 503 rather
+than a broken response.
+
+### Sizing fix
+
+The crop/selection overlay (`CropOverlay.tsx`) previously stretched
+the captured video frame to fill its whole canvas regardless of the
+video's aspect ratio. Since the video itself renders with
+`object-contain` (letterboxed on two sides unless the aspect ratios
+happen to match), a selection made near a letterbox edge could
+silently map onto video pixels that didn't correspond to what was
+visually selected. The overlay now computes the exact letterboxed
+"contain" rect and clamps all drawing/selection to it, and caps
+output crops to 1600px on the longest side so payload size stays
+reasonable regardless of selection size or source video resolution.
+
+
 
 ```
 backend/
-  prisma/schema.prisma        # Video, Comment, UserVideoState, Product, AdminUser
+  prisma/schema.prisma        # Video, Comment, UserVideoState, Product, AdminUser, MarketplaceLink
   prisma/seed.ts              # generates real sample videos (ffmpeg) + product images (sharp)
   src/routes/videos.ts        # public: list/search/upload/like/favorite/save/comments
-  src/routes/visualSearch.ts  # perceptual-hash similarity search
+  src/routes/visualSearch.ts  # AI-identify + marketplace lookup, or perceptual-hash fallback
+  src/routes/marketplace.ts   # marketplace account link (login/register), checkout
   src/routes/auth.ts          # admin register/login/me
   src/routes/admin.ts         # admin-only: video/comment moderation, product CRUD, stats
-  src/lib/phash.ts            # the dHash algorithm + Hamming distance
+  src/lib/phash.ts            # the dHash algorithm + Hamming distance (fallback search)
+  src/lib/aiSearch.ts         # client for the AI_SEARCH identification service
+  src/lib/marketplace.ts      # client for the MARKETPLACE_API service
   src/lib/thumbnail.ts        # ffmpeg poster-frame extraction
   src/lib/auth.ts             # bcrypt hashing + JWT signing/verification
   src/middleware/requireAdmin.ts
+worker/
+  worker.js                   # standalone service hosting the identification AI (AI_SEARCH target)
 frontend/
-  src/components/             # feed, video card, crop overlay, upload/comment modals
+  src/components/             # feed, video card, crop overlay, cart bar, checkout modal, upload/comment modals
   src/admin/                  # login, register, dashboard + tabs (stats/videos/comments/products)
   src/api.ts                  # typed fetch client (public + admin)
 docker-compose.yml
@@ -132,7 +199,11 @@ docker-compose.yml
 | POST | `/api/videos` | Upload a video (`multipart/form-data`: `video`, `title`, `description`) |
 | POST | `/api/videos/:id/like` \| `/favorite` \| `/save` | Toggle interaction state |
 | GET/POST | `/api/videos/:id/comments` | List / post comments |
-| POST | `/api/visual-search` | `multipart/form-data`: `image` — returns ranked similar products |
+| POST | `/api/visual-search` | `multipart/form-data`: `image` — AI-identify + marketplace lookup (if configured) or ranked similar products from the local catalog |
+| GET | `/api/marketplace/account` | Is this session's browser linked to a marketplace account? |
+| POST | `/api/marketplace/login` \| `/register` | Link this session to a marketplace account |
+| DELETE | `/api/marketplace/account` | Unlink |
+| POST | `/api/marketplace/checkout` | `{ items: [{ productId, quantity }] }` — requires an already-linked account |
 | POST | `/api/auth/register` | Create an admin account (gated by setup code after the first) |
 | POST | `/api/auth/login` | Get a JWT |
 
