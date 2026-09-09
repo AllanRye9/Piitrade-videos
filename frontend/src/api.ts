@@ -178,6 +178,16 @@ export const api = {
         items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, sellerId: i.sellerId })),
       }),
     }),
+
+  getProfile: () => request<{ avatar: string | null }>('/api/profile'),
+
+  uploadAvatar: (file: File) => {
+    const form = new FormData();
+    form.append('avatar', file);
+    return request<{ avatar: string }>('/api/profile/avatar', { method: 'POST', body: form });
+  },
+
+  deleteAvatar: () => request<void>('/api/profile/avatar', { method: 'DELETE' }),
 };
 
 export const adminApi = {

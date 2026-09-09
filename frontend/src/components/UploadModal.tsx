@@ -21,13 +21,11 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
 
-  function isMp4(f: File): boolean {
-    const nameIsMp4 = /\.mp4$/i.test(f.name);
-    // Some OS/browser combos report an empty mimetype for local files —
-    // in that case fall back to the extension alone. If a mimetype IS
-    // reported, it must actually say mp4.
-    const typeIsMp4 = f.type === '' ? true : f.type === 'video/mp4';
-    return nameIsMp4 && typeIsMp4;
+  const SUPPORTED_EXTENSIONS = ['.mp4', '.mov', '.webm', '.m4v', '.3gp', '.avi', '.mkv', '.wmv', '.flv'];
+
+  function hasSupportedExtension(f: File): boolean {
+    const lower = f.name.toLowerCase();
+    return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
   }
 
   function rejectFile(message: string, url: string | null) {
@@ -38,6 +36,13 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
+  function acceptFile(f: File, url: string | null) {
+    setChecking(false);
+    setFile(f);
+    setPreviewUrl(url);
+    if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ''));
+  }
+
   function handleFile(f: File | null) {
     setError(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -46,37 +51,41 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
       setPreviewUrl(null);
       return;
     }
-    if (!isMp4(f)) {
-      rejectFile('Only .mp4 files are supported.', null);
+    if (!hasSupportedExtension(f)) {
+      rejectFile('Unsupported format. Supported: MP4, MOV, WebM, M4V, 3GP, AVI, MKV, WMV, FLV.', null);
       return;
     }
 
-    // Check the clip's length before doing anything else with it. Using
-    // preload="metadata" on a throwaway <video> reads just the file's
-    // header/duration — for a local file this is effectively instant
-    // and never fetches or decodes the actual video frames, so an
-    // oversized or invalid clip is rejected without any wasted work
-    // (no preview render, no upload attempt).
+    // Check the clip's length before uploading, using preload="metadata"
+    // on a throwaway <video> — effectively instant for a local file
+    // since it only reads the header, not the actual frames.
+    //
+    // This only works for formats the BROWSER can decode (MP4/MOV/WebM
+    // in most browsers; M4V/3GP inconsistently; AVI/MKV/WMV/FLV
+    // essentially never, in any browser's <video> tag). The server
+    // accepts and validates all of the formats above regardless (via
+    // ffprobe, which isn't limited to browser-supported codecs — see
+    // backend/src/routes/videos.ts) — so when the browser can't read
+    // this file's metadata, that's not treated as a rejection here,
+    // just as "can't preview locally"; the real length check still
+    // happens server-side on upload.
     const url = URL.createObjectURL(f);
     const probe = document.createElement('video');
     probe.preload = 'metadata';
     probe.onloadedmetadata = () => {
       const duration = probe.duration;
-      if (!Number.isFinite(duration) || duration <= 0) {
-        rejectFile('Could not read this video — please choose a different .mp4 file.', url);
-        return;
-      }
-      if (duration > MAX_DURATION_SECONDS) {
+      if (Number.isFinite(duration) && duration > 0 && duration > MAX_DURATION_SECONDS) {
         rejectFile(`Videos must be ${MAX_DURATION_SECONDS} seconds or less (this one is ${Math.round(duration)}s).`, url);
         return;
       }
-      setChecking(false);
-      setFile(f);
-      setPreviewUrl(url);
-      if (!title) setTitle(f.name.replace(/\.[^/.]+$/, ''));
+      acceptFile(f, url);
     };
     probe.onerror = () => {
-      rejectFile('Could not read this video — please choose a different .mp4 file.', url);
+      // Couldn't read metadata locally — likely a format this browser
+      // doesn't decode (e.g. .mkv/.avi/.wmv). Accept without a local
+      // preview; the server will still enforce the length limit.
+      URL.revokeObjectURL(url);
+      acceptFile(f, null);
     };
     setChecking(true);
     probe.src = url;
@@ -145,7 +154,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
         </div>
 
         <div className="p-4 space-y-4">
-          {!previewUrl ? (
+          {!file ? (
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -155,16 +164,28 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
               }`}
             >
               <Plus size={28} />
-              {checking ? 'Checking video…' : isDraggingOver ? 'Drop to upload' : 'Choose or drop a .mp4 file'}
-              <span className="text-white/40 text-xs">MP4 only · up to {MAX_DURATION_SECONDS}s</span>
+              {checking ? 'Checking video…' : isDraggingOver ? 'Drop to upload' : 'Choose or drop a video file'}
+              <span className="text-white/40 text-xs">MP4, MOV, WebM &amp; more · up to {MAX_DURATION_SECONDS}s</span>
             </button>
-          ) : (
+          ) : previewUrl ? (
             <video src={previewUrl} controls className="w-full aspect-video rounded-xl bg-black" />
+          ) : (
+            // Chosen, but this browser can't decode it well enough to
+            // preview locally (see handleFile's probe.onerror) — the
+            // file is still valid and will be checked/converted
+            // server-side on upload.
+            <div className="w-full aspect-video rounded-xl bg-neutral-800 flex flex-col items-center justify-center text-white/60 text-sm gap-2 px-4 text-center">
+              <span className="font-medium text-white">{file.name}</span>
+              <span className="text-xs text-white/40">Preview isn't available for this format in-browser — it'll still upload fine.</span>
+              <button type="button" onClick={() => fileInputRef.current?.click()} className="text-brand-cyan underline text-xs mt-1">
+                Choose a different file
+              </button>
+            </div>
           )}
           <input
             ref={fileInputRef}
             type="file"
-            accept=".mp4,video/mp4"
+            accept=".mp4,.mov,.webm,.m4v,.3gp,.avi,.mkv,.wmv,.flv,video/*"
             className="hidden"
             onChange={(e) => handleFile(e.target.files?.[0] || null)}
           />

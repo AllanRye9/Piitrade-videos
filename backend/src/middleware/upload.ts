@@ -14,17 +14,29 @@ function makeStorage(subdir: string) {
   });
 }
 
+// Extensions accepted for upload — the formats phones/screen
+// recorders/desktop tools most commonly produce for short clips.
+const ACCEPTED_VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm', '.3gp', '.avi', '.mkv', '.wmv', '.flv']);
+
 export const uploadVideo = multer({
   storage: makeStorage('videos'),
   limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
   fileFilter: (_req, file, cb) => {
-    const extIsMp4 = path.extname(file.originalname).toLowerCase() === '.mp4';
-    // Some clients send a generic/empty mimetype for local files; treat
-    // the extension as authoritative but still reject anything that
-    // explicitly claims to be a different, non-mp4 type.
-    const mimeIsMp4OrUnknown = file.mimetype === 'video/mp4' || file.mimetype === 'application/octet-stream';
-    if (!extIsMp4 || !mimeIsMp4OrUnknown) {
-      cb(new HttpError(400, 'Only .mp4 video files are allowed'));
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ACCEPTED_VIDEO_EXTENSIONS.has(ext)) {
+      cb(new HttpError(400, 'Unsupported video format. Supported: MP4, MOV, WebM, M4V, 3GP, AVI, MKV, WMV, FLV.'));
+      return;
+    }
+    // Mimetype is a secondary check, deliberately loose: browsers are
+    // inconsistent about what they report for less common containers
+    // (.wmv sometimes arrives as video/x-ms-asf, .mkv sometimes as
+    // video/mkv, etc), and a browser that doesn't recognize the file's
+    // type at all sends 'application/octet-stream' rather than leaving
+    // it blank. Reject only mimetypes that positively claim to be a
+    // different, non-video kind of file — extension is authoritative
+    // for which video formats we accept.
+    if (file.mimetype && !file.mimetype.startsWith('video/') && file.mimetype !== 'application/octet-stream') {
+      cb(new HttpError(400, 'Unsupported video format. Supported: MP4, MOV, WebM, M4V, 3GP, AVI, MKV, WMV, FLV.'));
       return;
     }
     cb(null, true);

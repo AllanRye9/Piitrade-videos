@@ -24,7 +24,7 @@ RUN npm run build
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-RUN mkdir -p uploads/videos uploads/posters uploads/products
+RUN mkdir -p uploads/videos uploads/posters uploads/products uploads/avatars
 
 EXPOSE 4000
 

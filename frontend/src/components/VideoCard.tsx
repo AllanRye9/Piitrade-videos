@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Video } from '../types';
 import { api } from '../api';
 import { mediaUrl } from '../config';
@@ -8,6 +8,7 @@ import CartBar from './CartBar';
 import CheckoutModal from './CheckoutModal';
 import CommentModal from './CommentModal';
 import type { VisualSearchResult, CartItem } from '../types';
+import { getMuted, setMuted as setSharedMuted, subscribeMuted } from '../soundPreference';
 import { Heart, MessageCircle, Bookmark, Search, Download, Volume2, VolumeX, Play } from 'lucide-react';
 
 interface Props {
@@ -24,7 +25,10 @@ function formatCount(n: number): string {
 export default function VideoCard({ video, active }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(true);
-  const [muted, setMuted] = useState(true);
+  // Shared across every VideoCard (see soundPreference.ts) so unmuting
+  // one video keeps the rest of the feed unmuted too, instead of each
+  // card reverting to muted on its own.
+  const muted = useSyncExternalStore(subscribeMuted, getMuted);
   const [liked, setLiked] = useState(video.liked);
   const [favorited, setFavorited] = useState(video.favorited);
   const [saved, setSaved] = useState(video.saved);
@@ -42,6 +46,24 @@ export default function VideoCard({ video, active }: Props) {
   // Whether the video was actually playing right before the visual
   // search flow paused it — so "resume watching" only auto-plays if
   // the viewer hadn't already paused the video themselves.
+  // Shown once, on the active card, until the viewer unmutes for the
+  // first time ever — after that the preference is already known to
+  // work (see soundPreference.ts) and the hint would just be noise.
+  const [showSoundHint, setShowSoundHint] = useState(
+    () => muted && (typeof localStorage === 'undefined' || localStorage.getItem('piitrade_sound_hint_seen') !== 'true')
+  );
+
+  useEffect(() => {
+    if (!muted && showSoundHint) {
+      setShowSoundHint(false);
+      try {
+        localStorage.setItem('piitrade_sound_hint_seen', 'true');
+      } catch {
+        // ignore
+      }
+    }
+  }, [muted, showSoundHint]);
+
   const wasPlayingRef = useRef(false);
 
   useEffect(() => {
@@ -70,10 +92,7 @@ export default function VideoCard({ video, active }: Props) {
 
   function toggleMute(e: React.MouseEvent) {
     e.stopPropagation();
-    const el = videoRef.current;
-    if (!el) return;
-    el.muted = !el.muted;
-    setMuted(el.muted);
+    setSharedMuted(!muted);
   }
 
   async function handleLike(e: React.MouseEvent) {
@@ -215,6 +234,17 @@ export default function VideoCard({ video, active }: Props) {
       >
         {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
       </button>
+
+      {active && showSoundHint && (
+        <div
+          className="safe-right absolute top-4 right-16 sm:right-20 flex items-center pointer-events-none animate-pulse"
+          aria-hidden="true"
+        >
+          <span className="bg-black/60 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap">
+            Tap for sound 🔊
+          </span>
+        </div>
+      )}
 
       <div className="safe-left safe-bottom absolute left-3 right-16 sm:right-20 bottom-4 text-white">
         <p className="font-semibold text-sm drop-shadow break-words">{video.title}</p>

@@ -10,10 +10,11 @@ import visualSearchRouter from './routes/visualSearch';
 import authRouter from './routes/auth';
 import adminRouter from './routes/admin';
 import marketplaceRouter from './routes/marketplace';
-import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR } from './paths';
+import profileRouter from './routes/profile';
+import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
 
-for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR]) {
+for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -42,6 +43,7 @@ app.use('/api/visual-search', visualSearchRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/marketplace', marketplaceRouter);
+app.use('/api/profile', profileRouter);
 
 // Centralized error handler. Thanks to `express-async-errors`, any
 // error thrown (or rejected promise) inside an async route handler

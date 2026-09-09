@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
+import { v4 as uuid } from 'uuid';
 import { prisma } from '../db';
 import { uploadVideo } from '../middleware/upload';
 import { extractPoster, getVideoDuration } from '../lib/thumbnail';
-import { POSTERS_DIR } from '../paths';
+import { transcodeToMp4 } from '../lib/videoTranscode';
+import { uploadToStore } from '../lib/imagekit';
+import { VIDEOS_DIR, POSTERS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
 
 const router = Router();
@@ -35,13 +38,23 @@ function getSessionId(req: Request): string {
   return id && id.trim() ? id.trim() : 'anonymous';
 }
 
+// A stored filename is either a local disk filename (served from
+// /uploads/...) or, when VIDEO_STORE is configured, the full ImageKit
+// URL returned at upload time. Both are valid values of the same
+// `filename`/`posterFilename` DB columns — this just decides how to
+// turn whichever one is stored into a URL the frontend can use as-is.
+function resolveAssetUrl(value: string, localDir: 'videos' | 'posters'): string {
+  if (/^https?:\/\//i.test(value)) return value;
+  return `/uploads/${localDir}/${value}`;
+}
+
 function serialize(video: VideoRecord, state?: StateRecord) {
   return {
     id: video.id,
     title: video.title,
     description: video.description,
-    url: `/uploads/videos/${video.filename}`,
-    poster: video.posterFilename ? `/uploads/posters/${video.posterFilename}` : null,
+    url: resolveAssetUrl(video.filename, 'videos'),
+    poster: video.posterFilename ? resolveAssetUrl(video.posterFilename, 'posters') : null,
     duration: video.duration,
     likes: video.likes,
     views: video.views,
@@ -117,23 +130,44 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
   const description = String(req.body.description || '').slice(0, 1000);
 
   // Read the duration first, before doing any (comparatively expensive)
-  // poster-frame extraction — an over-length or unreadable clip is
-  // rejected immediately instead of wasting an ffmpeg screenshot pass
-  // on a file we're about to delete anyway.
+  // transcode/poster work — an over-length or unreadable clip is
+  // rejected immediately instead of wasting an ffmpeg pass on a file
+  // we're about to delete anyway. ffprobe reads this straight from the
+  // container regardless of format, so this works for every format
+  // middleware/upload.ts accepts, not just mp4.
   const duration = await getVideoDuration(file.path);
   if (duration === null) {
     fs.unlinkSync(file.path);
-    throw new HttpError(422, 'Could not read this video — please upload a valid .mp4 file');
+    throw new HttpError(422, 'Could not read this video — please upload a valid video file');
   }
   if (duration > MAX_DURATION_SECONDS) {
     fs.unlinkSync(file.path);
     throw new HttpError(400, `Videos must be ${MAX_DURATION_SECONDS} seconds or less (this one is ${Math.round(duration)}s)`);
   }
 
+  // Normalize every upload to H.264/AAC MP4, whatever format it
+  // arrived in. This guarantees the stored file is playable in every
+  // browser's <video> tag and that its audio track is explicitly
+  // preserved (never re-encoded with -an) — see lib/videoTranscode.ts.
+  const transcodedFilename = `${uuid()}.mp4`;
+  const transcodedPath = path.join(VIDEOS_DIR, transcodedFilename);
+  try {
+    await transcodeToMp4(file.path, transcodedPath);
+  } catch (err) {
+    fs.unlinkSync(file.path);
+    if (fs.existsSync(transcodedPath)) fs.unlinkSync(transcodedPath);
+    console.error('Video transcode failed:', (err as Error).message);
+    throw new HttpError(422, 'Could not process this video — please upload a valid video file');
+  } finally {
+    // The original upload (whatever format it was) is never served —
+    // only the normalized transcodedPath is, from here on.
+    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+  }
+
   let posterFilename: string | null = null;
   try {
-    const posterName = `${path.parse(file.filename).name}.jpg`;
-    await extractPoster(file.path, POSTERS_DIR, posterName);
+    const posterName = `${path.parse(transcodedFilename).name}.jpg`;
+    await extractPoster(transcodedPath, POSTERS_DIR, posterName);
     if (fs.existsSync(path.join(POSTERS_DIR, posterName))) {
       posterFilename = posterName;
     }
@@ -142,8 +176,53 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
     console.warn('Poster generation failed:', (err as Error).message);
   }
 
+  // The stored/served file is now the transcoded output, not the
+  // original upload — record its actual size, not file.size.
+  const transcodedSize = fs.statSync(transcodedPath).size;
+
+  // Both `filename` and `posterFilename` end up holding either a local
+  // disk filename or a full ImageKit URL — see serialize()'s
+  // resolveAssetUrl(), which handles either transparently. When
+  // VIDEO_STORE is configured, upload succeeds, and local copies are
+  // removed since ImageKit is now the source of truth; on any failure
+  // (not configured, or the upload call itself fails) the local files
+  // stay in place and are served locally instead, so a misconfigured
+  // or briefly-down ImageKit account never blocks a video posting.
+  let finalVideoFilename: string = transcodedFilename;
+  let finalPosterFilename: string | null = posterFilename;
+  try {
+    const videoBuffer = fs.readFileSync(transcodedPath);
+    const uploaded = await uploadToStore('VIDEO_STORE', videoBuffer, transcodedFilename, 'videos');
+    if (uploaded) {
+      finalVideoFilename = uploaded.url;
+      fs.unlinkSync(transcodedPath);
+
+      if (posterFilename) {
+        const posterBuffer = fs.readFileSync(path.join(POSTERS_DIR, posterFilename));
+        const uploadedPoster = await uploadToStore('VIDEO_STORE', posterBuffer, posterFilename, 'posters');
+        if (uploadedPoster) {
+          finalPosterFilename = uploadedPoster.url;
+          fs.unlinkSync(path.join(POSTERS_DIR, posterFilename));
+        }
+      }
+    }
+  } catch (err) {
+    // VIDEO_STORE is configured but the upload itself failed (network,
+    // auth, quota, etc). Fall back to the local copies already on disk
+    // rather than losing the upload the viewer just waited for.
+    console.warn('VIDEO_STORE upload failed, keeping local copy:', err instanceof Error ? err.message : err);
+  }
+
   const video = await prisma.video.create({
-    data: { title, description, filename: file.filename, posterFilename, mimeType: file.mimetype, size: file.size, duration },
+    data: {
+      title,
+      description,
+      filename: finalVideoFilename,
+      posterFilename: finalPosterFilename,
+      mimeType: 'video/mp4', // always true post-transcode, regardless of the original upload's format
+      size: transcodedSize,
+      duration,
+    },
   });
 
   res.status(201).json({ video: serialize(video) });

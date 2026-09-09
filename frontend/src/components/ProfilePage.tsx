@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Video } from '../types';
 import { api } from '../api';
@@ -15,6 +15,8 @@ import {
   X,
   Play,
   History,
+  Camera,
+  Loader2,
 } from 'lucide-react';
 
 type TabId = 'liked' | 'favorites' | 'downloads' | 'comments' | 'search';
@@ -83,6 +85,11 @@ export default function ProfilePage() {
   const [tab, setTab] = useState<TabId>('liked');
   const [previewVideo, setPreviewVideo] = useState<Video | null>(null);
 
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Video[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -95,7 +102,42 @@ export default function ProfilePage() {
       .then((res) => setVideos(res.videos))
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load your videos'))
       .finally(() => setLoading(false));
+
+    api
+      .getProfile()
+      .then((res) => setAvatar(res.avatar))
+      .catch(() => {
+        // Non-fatal — the rest of the profile page still works without
+        // an avatar loaded.
+      });
   }, []);
+
+  async function handleAvatarChange(f: File | null) {
+    if (!f) return;
+    setAvatarError(null);
+    setAvatarUploading(true);
+    try {
+      const res = await api.uploadAvatar(f);
+      setAvatar(res.avatar);
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Could not update avatar');
+    } finally {
+      setAvatarUploading(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
+  }
+
+  async function handleAvatarRemove() {
+    setAvatarError(null);
+    const previous = avatar;
+    setAvatar(null);
+    try {
+      await api.deleteAvatar();
+    } catch (err) {
+      setAvatar(previous);
+      setAvatarError(err instanceof Error ? err.message : 'Could not remove avatar');
+    }
+  }
 
   const likedVideos = useMemo(() => videos.filter((v) => v.liked), [videos]);
   const favoriteVideos = useMemo(() => videos.filter((v) => v.favorited), [videos]);
@@ -136,8 +178,39 @@ export default function ProfilePage() {
         <Link to="/" aria-label="Back to feed" className="tap-target -ml-2 text-white flex items-center justify-center">
           <ArrowLeft size={22} />
         </Link>
-        <h1 className="text-white font-semibold text-base">Profile</h1>
+
+        <button
+          type="button"
+          onClick={() => avatarInputRef.current?.click()}
+          disabled={avatarUploading}
+          aria-label={avatar ? 'Change profile photo' : 'Add profile photo'}
+          className="relative w-9 h-9 rounded-full overflow-hidden bg-white/10 flex items-center justify-center shrink-0 disabled:opacity-60"
+        >
+          {avatarUploading ? (
+            <Loader2 size={16} className="text-white/70 animate-spin" />
+          ) : avatar ? (
+            <img src={mediaUrl(avatar)} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <Camera size={16} className="text-white/50" />
+          )}
+        </button>
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => handleAvatarChange(e.target.files?.[0] || null)}
+        />
+
+        <h1 className="text-white font-semibold text-base flex-1">Profile</h1>
+
+        {avatar && !avatarUploading && (
+          <button type="button" onClick={handleAvatarRemove} className="text-white/40 text-xs underline shrink-0">
+            Remove photo
+          </button>
+        )}
       </div>
+      {avatarError && <p className="safe-left safe-right text-red-400 text-xs text-center py-1.5 border-b border-white/10">{avatarError}</p>}
 
       <div className="safe-left safe-right flex items-center gap-1 px-2 py-2 border-b border-white/10 overflow-x-auto no-scrollbar shrink-0">
         {TABS.map(({ id, label, icon: Icon }) => (

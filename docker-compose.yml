@@ -35,6 +35,12 @@ services:
       AI_SEARCH: ${AI_SEARCH:-http://worker:8787}
       AI_SEARCH_API_KEY: ${AI_SEARCH_API_KEY:-}
       MARKETPLACE_API: ${MARKETPLACE_API:-}
+      # Optional ImageKit-backed storage — see .env.example. Local disk
+      # is used for whichever of these is left unset.
+      VIDEO_STORE: ${VIDEO_STORE:-}
+      IMAGES_POINT: ${IMAGES_POINT:-}
+      IMAGEKIT_PUBLIC_KEY: ${IMAGEKIT_PUBLIC_KEY:-}
+      IMAGEKIT_PRIVATE_KEY: ${IMAGEKIT_PRIVATE_KEY:-}
     volumes:
       - uploads:/app/uploads
     ports:
