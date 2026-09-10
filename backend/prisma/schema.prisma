@@ -80,13 +80,17 @@ model AdminUser {
 // themselves — currently just an avatar. Same X-Session-Id used by
 // UserVideoState/MarketplaceLink; no login required.
 model SessionProfile {
-  id        String   @id @default(cuid())
-  sessionId String   @unique
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
   // Local disk filename OR a full IMAGES_POINT (ImageKit) URL — see
   // routes/profile.ts, which resolves either the same way
   // routes/videos.ts resolves Video.filename/posterFilename.
-  avatar    String?
-  updatedAt DateTime @updatedAt
+  avatar      String?
+  // Freeform display name the viewer can set for themselves — shown
+  // next to their avatar wherever it appears (comments composer,
+  // checkout). Purely cosmetic; never used for auth or as a lookup key.
+  displayName String?
+  updatedAt   DateTime @updatedAt
 }
 
 // Links an anonymous browser session (the same X-Session-Id used by

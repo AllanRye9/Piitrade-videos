@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { CartItem, MarketplaceCheckoutResult, MarketplaceCountry } from '../types';
 import { api } from '../api';
 import { mediaUrl } from '../config';
+import Avatar from './Avatar';
+import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
 import { X, LogIn, UserPlus, CheckCircle2, MailCheck } from 'lucide-react';
 
 interface Props {
@@ -35,6 +37,11 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
   const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
   const [orders, setOrders] = useState<MarketplaceCheckoutResult[]>([]);
   const [failedItems, setFailedItems] = useState<Array<{ productId: string; quantity: number }>>([]);
+  const profile = useSyncExternalStore(subscribeProfile, getProfileState);
+
+  useEffect(() => {
+    ensureProfileLoaded();
+  }, []);
 
   // On open, find out whether this browser session already has a
   // linked marketplace account — if so, skip straight to confirming
@@ -117,7 +124,12 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center sm:justify-center bg-black/70">
       <div className="safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <span className="text-white font-semibold text-sm">Checkout</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <Avatar src={profile.avatar} size={26} alt="You" />
+            <span className="text-white font-semibold text-sm truncate">
+              {profile.displayName ? `${profile.displayName}'s checkout` : 'Checkout'}
+            </span>
+          </div>
           <button
             type="button"
             onClick={onCancel}

@@ -78,6 +78,14 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
   const dragStart = useRef<Point | null>(null);
   const freeformPoints = useRef<Point[]>([]);
   const isDragging = useRef(false);
+  // 'draw' starts a brand new shape from the pointer-down point (the
+  // original behavior); 'move' translates the existing box shape
+  // instead, when the pointer-down lands inside it — see
+  // handlePointerDown. Only applies to rect/square/circle; freeform
+  // always draws fresh.
+  const dragMode = useRef<'draw' | 'move'>('draw');
+  const moveOffset = useRef<Point | null>(null);
+  const [cursorStyle, setCursorStyle] = useState<'crosshair' | 'move'>('crosshair');
   const dispSize = useRef({ w: 0, h: 0 });
   const containRect = useRef<Rect>({ x: 0, y: 0, w: 0, h: 0 });
 
@@ -207,11 +215,30 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
     return { ...box, x, y, w, h };
   }
 
+  // Keeps the box's size fixed and slides its position back inside the
+  // frame if a move-drag pushes it past an edge — unlike clampBox
+  // (used while drawing), which shrinks the box instead. A drag should
+  // never resize the selection the viewer already sized.
+  function clampPosition(box: BoxShape, cr: Rect): BoxShape {
+    const maxX = Math.max(cr.x, cr.x + cr.w - box.w);
+    const maxY = Math.max(cr.y, cr.y + cr.h - box.h);
+    const x = Math.min(Math.max(box.x, cr.x), maxX);
+    const y = Math.min(Math.max(box.y, cr.y), maxY);
+    return { ...box, x, y };
+  }
+
+  function isInsideBox(p: Point, box: BoxShape): boolean {
+    return p.x >= box.x && p.x <= box.x + box.w && p.y >= box.y && p.y <= box.y + box.h;
+  }
+
   function selectTool(t: Tool) {
     setTool(t);
     setShape(null);
     dragStart.current = null;
     freeformPoints.current = [];
+    dragMode.current = 'draw';
+    moveOffset.current = null;
+    setCursorStyle('crosshair');
     redraw(null);
   }
 
@@ -220,18 +247,43 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
     (e.target as Element).setPointerCapture(e.pointerId);
     const pos = pointerPos(e);
     isDragging.current = true;
+
     if (tool === 'freeform') {
+      dragMode.current = 'draw';
       freeformPoints.current = [pos];
       setShape({ kind: 'freeform', points: [pos] });
-    } else {
-      dragStart.current = pos;
-      setShape(null);
+      return;
     }
+
+    // If a same-kind box shape is already drawn and the pointer landed
+    // inside it, drag to reposition it instead of discarding it and
+    // starting over — lets the viewer nudge a selection into place
+    // (e.g. to better frame the item) without having to redraw the
+    // whole thing from scratch after every slightly-off attempt.
+    if (shape && shape.kind === tool && isInsideBox(pos, shape as BoxShape)) {
+      dragMode.current = 'move';
+      const box = shape as BoxShape;
+      moveOffset.current = { x: pos.x - box.x, y: pos.y - box.y };
+      return;
+    }
+
+    dragMode.current = 'draw';
+    dragStart.current = pos;
+    setShape(null);
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!isDragging.current || error) return;
     const pos = pointerPos(e);
+
+    if (!isDragging.current) {
+      // Not currently dragging — just hint via the cursor whether
+      // clicking here would move the existing selection or start a
+      // fresh one, so the drag-to-reposition affordance is discoverable.
+      const canMove = !error && tool !== 'freeform' && shape && shape.kind === tool && isInsideBox(pos, shape as BoxShape);
+      setCursorStyle(canMove ? 'move' : 'crosshair');
+      return;
+    }
+    if (error) return;
 
     if (tool === 'freeform') {
       const points = [...freeformPoints.current, pos];
@@ -239,6 +291,16 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
       const next: ShapeSel = { kind: 'freeform', points };
       setShape(next);
       redraw(next);
+      return;
+    }
+
+    if (dragMode.current === 'move' && shape && shape.kind !== 'freeform') {
+      const offset = moveOffset.current;
+      if (!offset) return;
+      const box = shape as BoxShape;
+      const moved = clampPosition({ ...box, x: pos.x - offset.x, y: pos.y - offset.y }, containRect.current);
+      setShape(moved);
+      redraw(moved);
       return;
     }
 
@@ -268,6 +330,8 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
   function handlePointerUp() {
     isDragging.current = false;
     dragStart.current = null;
+    moveOffset.current = null;
+    dragMode.current = 'draw';
   }
 
   function boundingBox(s: ShapeSel): Rect {
@@ -371,6 +435,10 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
     // Rectangular selections have no transparency to preserve, so JPEG
     // (smaller payload) is used; non-rectangular shapes need PNG to
     // keep the masked-out area transparent.
+    console.log(
+      `[VisualSearch] crop confirmed: ${shape.kind} selection, ${outputCanvas.width}x${outputCanvas.height}px output` +
+        (outputCanvas !== nativeCrop ? ` (downscaled from ${nativeCrop.width}x${nativeCrop.height}px)` : '')
+    );
     outputCanvas.toBlob(
       (blob) => {
         if (blob) onCropped(blob);
@@ -382,6 +450,7 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
   }
 
   const canSearch = hasValidSelection(shape) && !error;
+  const canDragHint = !error && tool !== 'freeform' && shape && shape.kind === tool && hasValidSelection(shape);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex flex-col">
@@ -389,7 +458,9 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
         <button type="button" onClick={onCancel} className="tap-target px-2 text-sm font-medium">
           Cancel
         </button>
-        <span className="text-xs sm:text-sm text-white/70 text-center px-2">Mark the item to search</span>
+        <span className="text-xs sm:text-sm text-white/70 text-center px-2">
+          {canDragHint ? 'Drag inside the shape to reposition it' : 'Mark the item to search'}
+        </span>
         <button
           type="button"
           onClick={confirmSelection}
@@ -421,7 +492,8 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
       <div className="safe-bottom safe-left safe-right relative flex-1 mx-3 sm:mx-4 mb-4 sm:mb-6 rounded-xl overflow-hidden bg-black">
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full touch-none cursor-crosshair"
+          className="absolute inset-0 w-full h-full touch-none"
+          style={{ cursor: cursorStyle }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

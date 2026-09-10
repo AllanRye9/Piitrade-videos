@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { Comment } from '../types';
 import { api } from '../api';
 import { markVideoCommented } from '../profileActivity';
+import Avatar from './Avatar';
+import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
 import { X, Send } from 'lucide-react';
 
 interface Props {
@@ -15,6 +17,11 @@ export default function CommentModal({ videoId, onClose, onCommentPosted }: Prop
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [posting, setPosting] = useState(false);
+  const profile = useSyncExternalStore(subscribeProfile, getProfileState);
+
+  useEffect(() => {
+    ensureProfileLoaded();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +75,7 @@ export default function CommentModal({ videoId, onClose, onCommentPosted }: Prop
           ))}
         </div>
         <div className="flex items-center gap-2 p-3 border-t border-white/10">
+          <Avatar src={profile.avatar} size={28} alt="You" />
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}

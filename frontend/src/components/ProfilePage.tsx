@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import type { Video } from '../types';
 import { api } from '../api';
 import { mediaUrl } from '../config';
 import VideoCard from './VideoCard';
+import Avatar from './Avatar';
+import ProfileSettings from './ProfileSettings';
+import { ensureProfileLoaded, getProfileState, subscribeProfile, setProfileAvatar } from '../profileStore';
 import { getCommentedVideoIds, getRecentSearches, addRecentSearch, clearRecentSearches } from '../profileActivity';
 import {
   ArrowLeft,
@@ -17,6 +20,7 @@ import {
   History,
   Camera,
   Loader2,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 
 type TabId = 'liked' | 'favorites' | 'downloads' | 'comments' | 'search';
@@ -85,10 +89,11 @@ export default function ProfilePage() {
   const [tab, setTab] = useState<TabId>('liked');
   const [previewVideo, setPreviewVideo] = useState<Video | null>(null);
 
-  const [avatar, setAvatar] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const profile = useSyncExternalStore(subscribeProfile, getProfileState);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Video[] | null>(null);
@@ -103,13 +108,7 @@ export default function ProfilePage() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load your videos'))
       .finally(() => setLoading(false));
 
-    api
-      .getProfile()
-      .then((res) => setAvatar(res.avatar))
-      .catch(() => {
-        // Non-fatal — the rest of the profile page still works without
-        // an avatar loaded.
-      });
+    ensureProfileLoaded();
   }, []);
 
   async function handleAvatarChange(f: File | null) {
@@ -118,7 +117,7 @@ export default function ProfilePage() {
     setAvatarUploading(true);
     try {
       const res = await api.uploadAvatar(f);
-      setAvatar(res.avatar);
+      setProfileAvatar(res.avatar);
     } catch (err) {
       setAvatarError(err instanceof Error ? err.message : 'Could not update avatar');
     } finally {
@@ -129,12 +128,12 @@ export default function ProfilePage() {
 
   async function handleAvatarRemove() {
     setAvatarError(null);
-    const previous = avatar;
-    setAvatar(null);
+    const previous = profile.avatar;
+    setProfileAvatar(null);
     try {
       await api.deleteAvatar();
     } catch (err) {
-      setAvatar(previous);
+      setProfileAvatar(previous);
       setAvatarError(err instanceof Error ? err.message : 'Could not remove avatar');
     }
   }
@@ -183,15 +182,18 @@ export default function ProfilePage() {
           type="button"
           onClick={() => avatarInputRef.current?.click()}
           disabled={avatarUploading}
-          aria-label={avatar ? 'Change profile photo' : 'Add profile photo'}
-          className="relative w-9 h-9 rounded-full overflow-hidden bg-white/10 flex items-center justify-center shrink-0 disabled:opacity-60"
+          aria-label={profile.avatar ? 'Change profile photo' : 'Add profile photo'}
+          className="relative w-12 h-12 rounded-full overflow-hidden bg-white/10 flex items-center justify-center shrink-0 disabled:opacity-60 ring-2 ring-white/10"
         >
           {avatarUploading ? (
-            <Loader2 size={16} className="text-white/70 animate-spin" />
-          ) : avatar ? (
-            <img src={mediaUrl(avatar)} alt="" className="w-full h-full object-cover" />
+            <Loader2 size={18} className="text-white/70 animate-spin" />
           ) : (
-            <Camera size={16} className="text-white/50" />
+            <Avatar src={profile.avatar} size={48} alt="" />
+          )}
+          {!avatarUploading && (
+            <span className="absolute bottom-0 inset-x-0 bg-black/60 flex items-center justify-center py-0.5">
+              <Camera size={10} className="text-white/80" />
+            </span>
           )}
         </button>
         <input
@@ -202,13 +204,23 @@ export default function ProfilePage() {
           onChange={(e) => handleAvatarChange(e.target.files?.[0] || null)}
         />
 
-        <h1 className="text-white font-semibold text-base flex-1">Profile</h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-white font-semibold text-base truncate">{profile.displayName || 'Profile'}</h1>
+          {profile.avatar && !avatarUploading && (
+            <button type="button" onClick={handleAvatarRemove} className="text-white/40 text-xs underline">
+              Remove photo
+            </button>
+          )}
+        </div>
 
-        {avatar && !avatarUploading && (
-          <button type="button" onClick={handleAvatarRemove} className="text-white/40 text-xs underline shrink-0">
-            Remove photo
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setShowSettings(true)}
+          aria-label="Profile settings"
+          className="tap-target shrink-0 -mr-2 text-white/70"
+        >
+          <SettingsIcon size={22} />
+        </button>
       </div>
       {avatarError && <p className="safe-left safe-right text-red-400 text-xs text-center py-1.5 border-b border-white/10">{avatarError}</p>}
 
@@ -338,6 +350,8 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      {showSettings && <ProfileSettings displayName={profile.displayName} onClose={() => setShowSettings(false)} />}
 
       {previewVideo && (
         <div className="fixed inset-0 z-50 bg-black sm:bg-black/90 flex items-center justify-center">

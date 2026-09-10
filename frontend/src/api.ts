@@ -146,13 +146,28 @@ export const api = {
   visualSearch: (imageBlob: Blob) => {
     const form = new FormData();
     form.append('image', imageBlob, 'crop.jpg');
+    console.log(`[VisualSearch] POST /api/visual-search — sending ${imageBlob.size} byte ${imageBlob.type || 'image/jpeg'} selection`);
+    const startedAt = Date.now();
     return request<{ results: VisualSearchResult[]; identification?: string }>('/api/visual-search', {
       method: 'POST',
       body: form,
-    });
+    })
+      .then((res) => {
+        console.log(
+          `[VisualSearch] got ${res.results.length} result(s) in ${Date.now() - startedAt}ms` +
+            (res.identification ? ` — identified as "${res.identification}"` : ' — local catalog match (no AI identification)')
+        );
+        return res;
+      })
+      .catch((err) => {
+        console.error(`[VisualSearch] failed after ${Date.now() - startedAt}ms:`, err instanceof Error ? err.message : err);
+        throw err;
+      });
   },
 
   marketplaceAccount: () => request<MarketplaceAccountStatus>('/api/marketplace/account'),
+
+  marketplaceUnlink: () => request<void>('/api/marketplace/account', { method: 'DELETE' }),
 
   marketplaceLogin: (email: string, password: string) =>
     request<MarketplaceAccountStatus>('/api/marketplace/login', {
@@ -179,7 +194,14 @@ export const api = {
       }),
     }),
 
-  getProfile: () => request<{ avatar: string | null }>('/api/profile'),
+  getProfile: () => request<{ avatar: string | null; displayName: string | null }>('/api/profile'),
+
+  updateProfile: (displayName: string | null) =>
+    request<{ displayName: string | null }>('/api/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName }),
+    }),
 
   uploadAvatar: (file: File) => {
     const form = new FormData();

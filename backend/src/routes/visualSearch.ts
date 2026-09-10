@@ -26,7 +26,10 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
     return;
   }
 
+  console.log(`[VisualSearch] received ${file.size} byte ${file.mimetype} selection`);
+
   if (marketplacePipelineEnabled()) {
+    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> MARKETPLACE_API search (both configured)');
     // 1. Ask the configured AI service what the cropped selection shows.
     const identification = await identifyImage(file.buffer, file.mimetype);
     // 2. Ask the marketplace whether it carries anything matching that
@@ -45,6 +48,7 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
       sellerId: p.sellerId,
       match: 100,
     }));
+    console.log(`[VisualSearch] returning ${results.length} result(s) to the client for "${identification.text}"`);
     res.json({ results, identification: identification.text });
     return;
   }
@@ -52,16 +56,21 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
   // Fallback: local perceptual-hash match against the seeded product
   // catalog (see backend/src/lib/phash.ts). This is what runs when
   // AI_SEARCH / MARKETPLACE_API are not configured, e.g. local dev.
+  console.log(
+    '[VisualSearch] pipeline: local phash catalog (AI_SEARCH and/or MARKETPLACE_API not both configured — set both to use the real marketplace)'
+  );
   let queryHash: string;
   try {
     queryHash = await computeImageHash(file.buffer);
   } catch (err) {
+    console.error('[VisualSearch] phash: could not process image:', err instanceof Error ? err.message : err);
     res.status(422).json({ error: 'Could not process the selected image' });
     return;
   }
 
   const products: Array<{ id: string; name: string; price: string; category: string; imageFilename: string; phash: string }> =
     await prisma.product.findMany();
+  console.log(`[VisualSearch] phash: comparing against ${products.length} catalog product(s)`);
   const ranked = products
     .map((p) => {
       const distance = hammingDistance(queryHash, p.phash);
@@ -79,6 +88,9 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
     .slice(0, 6)
     .map(({ distance, ...rest }: { distance: number; [key: string]: unknown }) => rest);
 
+  console.log(
+    `[VisualSearch] phash: top match ${ranked[0] ? `"${ranked[0].name}" (${ranked[0].match}% similar)` : 'none'}, returning ${ranked.length} result(s)`
+  );
   res.json({ results: ranked });
 });
 

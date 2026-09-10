@@ -149,12 +149,20 @@ async function readError(res: Response): Promise<string | undefined> {
 }
 
 export async function searchProducts(query: string): Promise<MarketplaceProduct[]> {
-  const res = await request(`/api/listings?q=${encodeURIComponent(query)}&limit=12&sort=relevance`, {
+  const path = `/api/listings?q=${encodeURIComponent(query)}&limit=12&sort=relevance`;
+  console.log(`[MARKETPLACE_API] GET ${path} (query="${query}")`);
+  const startedAt = Date.now();
+
+  const res = await request(path, {
     method: 'GET',
     headers: jsonHeaders(),
   });
+  console.log(`[MARKETPLACE_API] responded ${res.status} in ${Date.now() - startedAt}ms`);
+
   if (!res.ok) {
-    throw new HttpError(res.status === 401 || res.status === 403 ? res.status : 502, (await readError(res)) || `Marketplace search returned ${res.status}`);
+    const message = (await readError(res)) || `Marketplace search returned ${res.status}`;
+    console.error(`[MARKETPLACE_API] search failed: ${message}`);
+    throw new HttpError(res.status === 401 || res.status === 403 ? res.status : 502, message);
   }
   interface RawListing {
     id: string;
@@ -170,7 +178,12 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
   }
   const data = (await res.json()) as { listings?: RawListing[] };
   const listings = Array.isArray(data.listings) ? data.listings : [];
-  return listings
+  const withoutSeller = listings.filter((l) => !l.user?.id).length;
+  if (withoutSeller > 0) {
+    console.warn(`[MARKETPLACE_API] skipping ${withoutSeller} of ${listings.length} listing(s) with no resolvable seller`);
+  }
+
+  const results = listings
     .filter((l) => l.user?.id) // a listing without a resolvable seller can't be checked out — skip rather than crash
     .map((l) => ({
       id: l.id,
@@ -182,6 +195,12 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
       inStock: l.status ? l.status === 'ACTIVE' && (l.stock ?? 1) > 0 : (l.stock ?? 1) > 0,
       sellerId: l.user!.id,
     }));
+
+  console.log(
+    `[MARKETPLACE_API] ${results.length} usable listing(s) for "${query}"` +
+      (results.length > 0 ? `: ${results.slice(0, 5).map((r) => `"${r.name}" (${r.id})`).join(', ')}${results.length > 5 ? ', …' : ''}` : '')
+  );
+  return results;
 }
 
 export async function registerAccount(

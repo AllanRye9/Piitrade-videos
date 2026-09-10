@@ -42,6 +42,9 @@ export async function identifyImage(imageBuffer: Buffer, mimeType: string): Prom
     throw new HttpError(503, 'Visual identification is not configured (set AI_SEARCH)');
   }
 
+  const url = `${endpoint.replace(/\/+$/, '')}/identify`;
+  console.log(`[AI_SEARCH] POST ${url} — sending ${imageBuffer.length} byte ${mimeType || 'image/jpeg'} selection`);
+
   const form = new FormData();
   form.append('image', new Blob([imageBuffer], { type: mimeType || 'image/jpeg' }), 'selection.jpg');
 
@@ -49,8 +52,9 @@ export async function identifyImage(imageBuffer: Buffer, mimeType: string): Prom
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   let res: Response;
+  const startedAt = Date.now();
   try {
-    res = await fetch(`${endpoint.replace(/\/+$/, '')}/identify`, {
+    res = await fetch(url, {
       method: 'POST',
       headers: process.env.AI_SEARCH_API_KEY ? { Authorization: `Bearer ${process.env.AI_SEARCH_API_KEY}` } : undefined,
       body: form,
@@ -58,12 +62,15 @@ export async function identifyImage(imageBuffer: Buffer, mimeType: string): Prom
     });
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
+      console.error(`[AI_SEARCH] timed out after ${REQUEST_TIMEOUT_MS}ms — ${url}`);
       throw new HttpError(504, 'Image identification service timed out');
     }
+    console.error(`[AI_SEARCH] request failed — ${url}:`, err instanceof Error ? err.message : err);
     throw new HttpError(502, 'Could not reach the image identification service');
   } finally {
     clearTimeout(timeout);
   }
+  console.log(`[AI_SEARCH] responded ${res.status} in ${Date.now() - startedAt}ms`);
 
   // The worker returns { success: false, error } with an appropriate
   // status (400/413/500/etc) on failure — surface that message rather
@@ -75,6 +82,7 @@ export async function identifyImage(imageBuffer: Buffer, mimeType: string): Prom
 
   if (!res.ok || !data || data.success === false) {
     const message = typeof data?.error === 'string' && data.error.trim() ? data.error.trim() : undefined;
+    console.error(`[AI_SEARCH] identification failed: ${message || `HTTP ${res.status}`}`);
     throw new HttpError(
       res.status === 413 ? 413 : res.status === 400 ? 400 : 502,
       message || `Image identification service returned ${res.status}`
@@ -90,8 +98,12 @@ export async function identifyImage(imageBuffer: Buffer, mimeType: string): Prom
   const text = suggestedTitle || description;
 
   if (!text) {
+    console.warn('[AI_SEARCH] worker returned success but no usable text (empty suggestedTitle and description)');
     throw new HttpError(502, 'Image identification service returned no result');
   }
 
+  console.log(
+    `[AI_SEARCH] identified as "${text}"${suggestedTitle ? ' (from suggestedTitle)' : ' (from description, no suggestedTitle)'}`
+  );
   return { text };
 }

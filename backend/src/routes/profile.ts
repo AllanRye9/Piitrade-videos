@@ -24,11 +24,35 @@ function resolveAvatarUrl(value: string): string {
   return `/uploads/avatars/${value}`;
 }
 
-// GET /api/profile — this session's profile (currently just the avatar)
+const MAX_DISPLAY_NAME_LENGTH = 40;
+
+// GET /api/profile — this session's profile (avatar + display name)
 router.get('/', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const profile = await prisma.sessionProfile.findUnique({ where: { sessionId } });
-  res.json({ avatar: profile?.avatar ? resolveAvatarUrl(profile.avatar) : null });
+  res.json({
+    avatar: profile?.avatar ? resolveAvatarUrl(profile.avatar) : null,
+    displayName: profile?.displayName || null,
+  });
+});
+
+// PUT /api/profile  { displayName: string | null }
+// Setting displayName to an empty string (or null) clears it.
+router.put('/', async (req: Request, res: Response) => {
+  const sessionId = getSessionId(req);
+  const { displayName } = req.body || {};
+  if (displayName !== null && displayName !== undefined && typeof displayName !== 'string') {
+    throw new HttpError(400, 'displayName must be a string or null');
+  }
+  const trimmed = typeof displayName === 'string' ? displayName.trim().slice(0, MAX_DISPLAY_NAME_LENGTH) : null;
+
+  await prisma.sessionProfile.upsert({
+    where: { sessionId },
+    update: { displayName: trimmed || null },
+    create: { sessionId, displayName: trimmed || null },
+  });
+
+  res.json({ displayName: trimmed || null });
 });
 
 // POST /api/profile/avatar  (multipart: avatar)

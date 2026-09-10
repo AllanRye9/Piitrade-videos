@@ -197,6 +197,7 @@ backend/
   src/routes/videos.ts        # public: list/search/upload/like/favorite/save/comments
   src/routes/visualSearch.ts  # AI-identify + marketplace lookup, or perceptual-hash fallback
   src/routes/marketplace.ts   # marketplace account link (login/register), checkout
+  src/routes/profile.ts       # avatar + display name (per anonymous session)
   src/routes/auth.ts          # admin register/login/me
   src/routes/admin.ts         # admin-only: video/comment moderation, product CRUD, stats
   src/lib/phash.ts            # the dHash algorithm + Hamming distance (fallback search)
@@ -208,13 +209,74 @@ backend/
 worker/
   worker.js                   # standalone service hosting the identification AI (AI_SEARCH target)
 frontend/
-  src/components/             # feed, video card, crop overlay, cart bar, checkout modal, upload/comment modals
+  src/components/             # feed, video card, crop overlay, cart bar, checkout modal, upload/comment modals, Avatar, ProfileSettings
+  src/profileStore.ts         # shared avatar/display-name state (external-store pattern)
+  src/soundPreference.ts      # shared feed-wide mute/unmute state (external-store pattern)
   src/admin/                  # login, register, dashboard + tabs (stats/videos/comments/products)
   src/api.ts                  # typed fetch client (public + admin)
 docker-compose.yml
 ```
 
-## API summary
+## Profile: avatar, display name, and settings
+
+Every viewer (anonymous, session-scoped — same `X-Session-Id` pattern
+as likes/favorites/marketplace linking) can set an avatar and a
+display name via `GET/PUT /api/profile` and `POST/DELETE
+/api/profile/avatar`. Both are stored in the `SessionProfile` model —
+the avatar as either a local disk filename or, when `IMAGES_POINT` is
+configured, a full ImageKit URL (same resolution pattern as
+`Video.filename`).
+
+**The picture appears everywhere it should**, not just on the profile
+page: the frontend keeps it in one shared store
+(`frontend/src/profileStore.ts`, same external-store pattern as
+`soundPreference.ts`) so every consumer — the top nav bar, the comment
+composer, and the checkout modal — reads the same state and updates
+the instant it changes anywhere. A single `<Avatar>` component
+(`frontend/src/components/Avatar.tsx`) renders it consistently
+(picture if set, a fallback icon otherwise) so no two spots draw it
+differently.
+
+**Settings** (gear icon on the profile page) is a dedicated panel
+(`ProfileSettings.tsx`) covering display name, the shared sound
+on/off preference (see `soundPreference.ts`), and marketplace account
+status with an unlink action — rather than settings being scattered
+across the profile page's header.
+
+## Video uploads: accepted formats, transcoding, and audio
+
+Uploads accept MP4, MOV, WebM, M4V, 3GP, AVI, MKV, WMV, and FLV (both
+client-side and server-side — see `middleware/upload.ts`). Every
+upload is transcoded server-side to normalized H.264/AAC MP4 before
+being stored (`lib/videoTranscode.ts`), which guarantees:
+
+- The stored file plays in every browser's `<video>` tag regardless of
+  the source format/codec the uploader's device produced.
+- **Audio is always preserved** — the transcode never strips an
+  existing audio track (`-an` is never used); if the source has none,
+  the output simply has none too.
+- Playback can start before the whole file downloads (`+faststart`).
+
+Mute/unmute itself is a single shared preference across the whole
+feed (`frontend/src/soundPreference.ts`), not per-video-card local
+state — unmuting one video keeps the rest of the feed unmuted too,
+including after a reload (persisted to `localStorage`), matching how
+TikTok/Reels/Shorts behave. All videos still start muted, since every
+browser requires that for autoplay.
+
+## Optional CDN storage (ImageKit)
+
+Videos, poster frames, and avatars can optionally be stored on
+ImageKit instead of local disk — set `VIDEO_STORE` (videos/posters)
+and/or `IMAGES_POINT` (avatars) to an ImageKit URL endpoint, plus
+`IMAGEKIT_PUBLIC_KEY`/`IMAGEKIT_PRIVATE_KEY` (see `.env.example` for
+per-store key overrides if they're different ImageKit accounts).
+Either is entirely optional and independent — whichever is unset
+keeps using local disk, and a configured store that fails at upload
+time (network/auth/quota) falls back to local disk for that one
+upload rather than failing it (see `lib/imagekit.ts`).
+
+
 
 **Public:**
 
@@ -231,6 +293,10 @@ docker-compose.yml
 | POST | `/api/marketplace/login` \| `/register` | Link this session to a marketplace account |
 | DELETE | `/api/marketplace/account` | Unlink |
 | POST | `/api/marketplace/checkout` | `{ items: [{ productId, quantity }] }` — requires an already-linked account |
+| GET | `/api/profile` | This session's avatar + display name |
+| PUT | `/api/profile` | `{ displayName: string \| null }` |
+| POST | `/api/profile/avatar` | `multipart/form-data`: `avatar` |
+| DELETE | `/api/profile/avatar` | Remove this session's avatar |
 | POST | `/api/auth/register` | Create an admin account (gated by setup code after the first) |
 | POST | `/api/auth/login` | Get a JWT |
 

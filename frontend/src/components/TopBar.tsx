@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, X, CircleUserRound } from 'lucide-react';
+import { Search, X } from 'lucide-react';
+import Avatar from './Avatar';
+import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
 
 interface Props {
   onSearch: (query: string) => void;
@@ -10,6 +12,11 @@ interface Props {
 export default function TopBar({ onSearch, onUploadClick }: Props) {
   const [query, setQuery] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profile = useSyncExternalStore(subscribeProfile, getProfileState);
+
+  useEffect(() => {
+    ensureProfileLoaded();
+  }, []);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -59,9 +66,9 @@ export default function TopBar({ onSearch, onUploadClick }: Props) {
       <Link
         to="/profile"
         aria-label="Open your profile"
-        className="tap-target shrink-0 h-11 w-11 rounded-full bg-white/10 text-white flex items-center justify-center border border-white/10"
+        className="tap-target shrink-0 h-11 w-11 rounded-full bg-white/10 flex items-center justify-center border border-white/10"
       >
-        <CircleUserRound size={24} />
+        <Avatar src={profile.avatar} size={30} alt="Your profile" />
       </Link>
     </div>
   );
