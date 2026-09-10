@@ -231,13 +231,42 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
  * something or every chunk has been tried. Every returned candidate is
  * then scored/sorted by how many chunks actually matched its text.
  */
-const MIN_CHUNK_LEN = 3;
-const MAX_CHUNK_LEN = 7;
 /** Upper bound on how many chunk-search round-trips a single fuzzy
  *  search is allowed to make against MARKETPLACE_API, so an unusually
  *  long identified phrase can't turn one visual search into dozens of
  *  sequential network calls. */
 const MAX_CHUNK_ATTEMPTS = 15;
+
+/** Sliding-window substrings (for words longer than MAX_CHUNK_LEN) are
+ *  only generated down to this length — unchanged from before. Whole
+ *  short words use a lower floor, MIN_WORD_LEN, handled separately
+ *  below; the two are intentionally different (see generateMatchChunks). */
+const MIN_CHUNK_LEN = 3;
+const MAX_CHUNK_LEN = 7;
+/** Shortest WHOLE word eligible as a chunk on its own — lower than
+ *  MIN_CHUNK_LEN so short-but-meaningful product terms ("TV", "PC",
+ *  "AC", "EV", "PS5" minus the digit, etc.) aren't silently dropped
+ *  just because they're under 3 characters. Two safeguards keep this
+ *  from reintroducing noise: STOPWORDS excludes common function words
+ *  that happen to be this short, and fuzzyMatchExists matches any
+ *  chunk this short only as a whole word (`\bchunk\b`), never as a
+ *  substring — unlike 3-7 char chunks, which intentionally do match
+ *  as substrings (see that function's own comment). Without the
+ *  word-boundary rule, a 2-letter chunk like "tv" would also match
+ *  inside "active", "festival", "native", etc., which would make
+ *  short chunks far noisier than the 3-7 char ones they sit alongside.
+ */
+const MIN_WORD_LEN = 2;
+/** Common short function words that would match almost every listing
+ *  if allowed through as chunks, despite clearing MIN_WORD_LEN — they
+ *  carry no product-identifying signal (e.g. AI_SEARCH's "TV Stand
+ *  for Living Room" shouldn't match on "for"). Only words this short
+ *  need filtering; MIN_CHUNK_LEN (3+) chunks are specific enough on
+ *  their own that a stopword list isn't worth maintaining for them. */
+const STOPWORDS = new Set([
+  'a', 'an', 'the', 'of', 'in', 'on', 'at', 'to', 'is', 'it', 'or', 'by', 'be', 'as', 'if',
+  'so', 'no', 'up', 'my', 'we', 'us', 'and', 'for', 'with', 'this', 'that',
+]);
 
 function normalizeForMatch(text: string): string {
   return text
@@ -252,12 +281,16 @@ function escapeRegex(text: string): string {
 }
 
 /**
- * Every distinct 3-7 char chunk worth trying as a fuzzy regex, derived
- * from `text`. Whole words already in the 3-7 range are used directly
- * (most meaningful); words longer than 7 chars are additionally slid
- * through every 3-7 char window so a match on a prefix/substring
- * ("head" inside "headphones") still counts. Returned longest-first,
- * since a longer, more specific chunk is less likely to produce a
+ * Every distinct chunk worth trying as a fuzzy match, derived from
+ * `text`. Whole words from MIN_WORD_LEN (2) up to MAX_CHUNK_LEN (7)
+ * chars are used directly (most meaningful, and the only way a short
+ * but specific term like "TV" or "PC" ever gets a chunk at all — see
+ * MIN_WORD_LEN above); words longer than MAX_CHUNK_LEN are
+ * additionally slid through every MIN_CHUNK_LEN(3)-MAX_CHUNK_LEN(7)
+ * char window so a match on a prefix/substring ("head" inside
+ * "headphones") still counts. Common short stopwords are dropped
+ * entirely regardless of length. Returned longest-first, since a
+ * longer, more specific chunk is less likely to produce a
  * false-positive match than a short generic one.
  */
 export function generateMatchChunks(text: string): string[] {
@@ -266,7 +299,8 @@ export function generateMatchChunks(text: string): string[] {
   const chunks = new Set<string>();
 
   for (const word of words) {
-    if (word.length >= MIN_CHUNK_LEN && word.length <= MAX_CHUNK_LEN) {
+    if (STOPWORDS.has(word)) continue;
+    if (word.length >= MIN_WORD_LEN && word.length <= MAX_CHUNK_LEN) {
       chunks.add(word);
     } else if (word.length > MAX_CHUNK_LEN) {
       for (let len = MAX_CHUNK_LEN; len >= MIN_CHUNK_LEN; len--) {
@@ -295,7 +329,15 @@ export function fuzzyMatchExists(query: string, candidateText: string): FuzzyMat
   if (chunks.length === 0) return { exists: false, matchedChunks: [], score: 0 };
 
   const normalizedCandidate = normalizeForMatch(candidateText);
-  const matchedChunks = chunks.filter((chunk) => new RegExp(escapeRegex(chunk), 'i').test(normalizedCandidate));
+  const matchedChunks = chunks.filter((chunk) => {
+    // Short (2-char) chunks match only as a whole word — a plain
+    // substring test would also hit "tv" inside "active", "festival",
+    // etc. 3-7 char chunks keep the existing, already-verified
+    // substring behavior (e.g. "phone" correctly matching inside
+    // "headphones").
+    const pattern = chunk.length <= MIN_WORD_LEN ? `\\b${escapeRegex(chunk)}\\b` : escapeRegex(chunk);
+    return new RegExp(pattern, 'i').test(normalizedCandidate);
+  });
   const score = Math.round((matchedChunks.length / chunks.length) * 100);
   return { exists: matchedChunks.length > 0, matchedChunks, score };
 }
