@@ -42,6 +42,18 @@ export interface VisualSearchResult {
   sellerId?: string;
 }
 
+/** Response shape of POST /api/visual-search. `exists` reflects the
+ *  backend's regex/chunk fuzzy-match verdict (see
+ *  backend/src/lib/marketplace.ts fuzzySearchProducts): true once at
+ *  least one 3-7 letter chunk of the identified text matched a
+ *  marketplace listing, false if every avenue was exhausted with no
+ *  match — i.e. the item genuinely isn't carried in the marketplace. */
+export interface VisualSearchResponse {
+  results: VisualSearchResult[];
+  identification?: string;
+  exists: boolean;
+}
+
 /** One item the viewer has added to the in-video shopping cart. */
 export interface CartItem {
   productId: string;

@@ -203,6 +203,162 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
   return results;
 }
 
+/**
+ * Regex/chunk-based fuzzy existence matching between the AI's
+ * identified phrase and marketplace listing text.
+ *
+ * The phrase identifyImage() returns almost never matches a listing's
+ * title verbatim (e.g. AI_SEARCH says "Wireless Over-Ear Headphones"
+ * but the actual listing is titled "Sony WH-1000XM5 Headphones -
+ * Black"), so exact/substring equality against the marketplace's own
+ * `q=` relevance search is too strict on its own. Instead:
+ *
+ *   1. The identified phrase is normalized and broken into every
+ *      overlapping chunk of 3-7 characters (whole short words as-is;
+ *      longer words are slid through a 3-7 char window) — see
+ *      generateMatchChunks().
+ *   2. Each chunk is escaped and used as a case-insensitive regex
+ *      tested against a listing's name/description — see
+ *      fuzzyMatchExists().
+ *   3. A listing "exists" (counts as a real match, not noise) the
+ *      moment ANY chunk matches. If NO chunk (3-7 letters) matches
+ *      anything, the product is treated as not existing.
+ *
+ * fuzzySearchProducts() drives the whole flow end-to-end: it first
+ * tries the marketplace's own relevance search on the full identified
+ * phrase; if that comes back empty, it retries — one chunk at a time,
+ * longest (most specific) first — until a chunk search returns
+ * something or every chunk has been tried. Every returned candidate is
+ * then scored/sorted by how many chunks actually matched its text.
+ */
+const MIN_CHUNK_LEN = 3;
+const MAX_CHUNK_LEN = 7;
+/** Upper bound on how many chunk-search round-trips a single fuzzy
+ *  search is allowed to make against MARKETPLACE_API, so an unusually
+ *  long identified phrase can't turn one visual search into dozens of
+ *  sequential network calls. */
+const MAX_CHUNK_ATTEMPTS = 15;
+
+function normalizeForMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Every distinct 3-7 char chunk worth trying as a fuzzy regex, derived
+ * from `text`. Whole words already in the 3-7 range are used directly
+ * (most meaningful); words longer than 7 chars are additionally slid
+ * through every 3-7 char window so a match on a prefix/substring
+ * ("head" inside "headphones") still counts. Returned longest-first,
+ * since a longer, more specific chunk is less likely to produce a
+ * false-positive match than a short generic one.
+ */
+export function generateMatchChunks(text: string): string[] {
+  const normalized = normalizeForMatch(text);
+  const words = normalized.split(' ').filter(Boolean);
+  const chunks = new Set<string>();
+
+  for (const word of words) {
+    if (word.length >= MIN_CHUNK_LEN && word.length <= MAX_CHUNK_LEN) {
+      chunks.add(word);
+    } else if (word.length > MAX_CHUNK_LEN) {
+      for (let len = MAX_CHUNK_LEN; len >= MIN_CHUNK_LEN; len--) {
+        for (let i = 0; i + len <= word.length; i++) {
+          chunks.add(word.slice(i, i + len));
+        }
+      }
+    }
+  }
+
+  return Array.from(chunks).sort((a, b) => b.length - a.length);
+}
+
+export interface FuzzyMatch {
+  exists: boolean;
+  matchedChunks: string[];
+  /** 0-100, the share of generated chunks that matched — used as the
+   *  displayed "match %" for a result, in place of a hardcoded 100. */
+  score: number;
+}
+
+/** Tests every chunk of `query` as a case-insensitive regex against
+ *  `candidateText`; "exists" the moment one hits. */
+export function fuzzyMatchExists(query: string, candidateText: string): FuzzyMatch {
+  const chunks = generateMatchChunks(query);
+  if (chunks.length === 0) return { exists: false, matchedChunks: [], score: 0 };
+
+  const normalizedCandidate = normalizeForMatch(candidateText);
+  const matchedChunks = chunks.filter((chunk) => new RegExp(escapeRegex(chunk), 'i').test(normalizedCandidate));
+  const score = Math.round((matchedChunks.length / chunks.length) * 100);
+  return { exists: matchedChunks.length > 0, matchedChunks, score };
+}
+
+export interface FuzzyProductMatch extends MarketplaceProduct {
+  matchScore: number;
+  matchedChunks: string[];
+}
+
+/**
+ * Full pipeline: identified phrase -> marketplace search (full phrase,
+ * then chunk-by-chunk fallback) -> regex-scored, sorted matches.
+ * Returns [] only once every avenue (full phrase + every chunk, up to
+ * MAX_CHUNK_ATTEMPTS) has been exhausted with no results — i.e. the
+ * item genuinely does not exist in the marketplace.
+ */
+export async function fuzzySearchProducts(query: string): Promise<FuzzyProductMatch[]> {
+  console.log(`[Marketplace:FuzzyMatch] starting fuzzy search for "${query}"`);
+
+  let candidates = await searchProducts(query);
+  let matchedVia = 'full phrase';
+
+  if (candidates.length === 0) {
+    const chunks = generateMatchChunks(query).slice(0, MAX_CHUNK_ATTEMPTS);
+    console.log(
+      `[Marketplace:FuzzyMatch] full phrase returned 0 listings — falling back to ${chunks.length} chunk(s) (3-7 letters, longest first): ${chunks.join(', ') || '(none generated)'}`
+    );
+    for (const chunk of chunks) {
+      console.log(`[Marketplace:FuzzyMatch] trying chunk "${chunk}"`);
+      const chunkResults = await searchProducts(chunk);
+      if (chunkResults.length > 0) {
+        console.log(`[Marketplace:FuzzyMatch] chunk "${chunk}" returned ${chunkResults.length} listing(s) — using these as candidates`);
+        candidates = chunkResults;
+        matchedVia = `chunk "${chunk}"`;
+        break;
+      }
+      console.log(`[Marketplace:FuzzyMatch] chunk "${chunk}" returned 0 listings`);
+    }
+  }
+
+  if (candidates.length === 0) {
+    console.log(`[Marketplace:FuzzyMatch] no chunk (3-7 letters) matched anything — "${query}" does not exist in the marketplace`);
+    return [];
+  }
+
+  const scored: FuzzyProductMatch[] = candidates
+    .map((p) => {
+      const match = fuzzyMatchExists(query, `${p.name} ${p.description}`);
+      console.log(
+        `[Marketplace:FuzzyMatch] "${p.name}" (${p.id}) -> ${match.exists ? `MATCH ${match.score}% (chunks: ${match.matchedChunks.slice(0, 5).join(', ')})` : 'no chunk match, keeping anyway (marketplace already returned it)'}`
+      );
+      // A candidate returned by the marketplace's own search is kept
+      // even if our local regex found no chunk overlap (its relevance
+      // ranking may key off fields we don't have, like tags) — but it
+      // scores lowest, so real chunk matches always sort first.
+      return { ...p, matchScore: match.exists ? match.score : 1, matchedChunks: match.matchedChunks };
+    })
+    .sort((a, b) => b.matchScore - a.matchScore);
+
+  console.log(`[Marketplace:FuzzyMatch] resolved via ${matchedVia} — ${scored.length} product(s) exist for "${query}"`);
+  return scored;
+}
+
 export async function registerAccount(
   email: string,
   password: string,

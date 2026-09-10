@@ -1,7 +1,7 @@
 import type {
   Video,
   Comment,
-  VisualSearchResult,
+  VisualSearchResponse,
   AdminUser,
   AdminVideo,
   AdminProduct,
@@ -61,7 +61,17 @@ export function setAdminToken(token: string | null) {
   else localStorage.removeItem(ADMIN_TOKEN_KEY);
 }
 
+/**
+ * Every request/response that crosses the network goes through one of
+ * these two helpers, so logging here (method + path in, status + ms
+ * out, on both success and failure) covers every API call the app
+ * makes without having to duplicate a log line in each of the ~30
+ * endpoint wrappers below.
+ */
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = options.method || 'GET';
+  const startedAt = Date.now();
+  console.log(`[API] -> ${method} ${path}`);
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
@@ -69,15 +79,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       'X-Session-Id': getSessionId(),
     },
   });
+  const elapsed = Date.now() - startedAt;
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
+    console.error(`[API] <- ${method} ${path} failed: ${res.status} in ${elapsed}ms — ${body.error || res.statusText}`);
     throw new Error(body.error || `Request failed: ${res.status}`);
   }
+  console.log(`[API] <- ${method} ${path} ${res.status} in ${elapsed}ms`);
   if (res.status === 204) return undefined as T;
   return res.json();
 }
 
 async function adminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = options.method || 'GET';
+  const startedAt = Date.now();
+  console.log(`[API:admin] -> ${method} ${path}`);
   const token = getAdminToken();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -86,11 +102,14 @@ async function adminRequest<T>(path: string, options: RequestInit = {}): Promise
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+  const elapsed = Date.now() - startedAt;
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     if (res.status === 401) setAdminToken(null);
+    console.error(`[API:admin] <- ${method} ${path} failed: ${res.status} in ${elapsed}ms — ${body.error || res.statusText}`);
     throw new Error(body.error || `Request failed: ${res.status}`);
   }
+  console.log(`[API:admin] <- ${method} ${path} ${res.status} in ${elapsed}ms`);
   if (res.status === 204) return undefined as T;
   return res.json();
 }
@@ -103,7 +122,9 @@ export const api = {
   getVideo: (id: string) => request<{ video: Video }>(`/api/videos/${id}`),
 
   uploadVideo: (file: File, title: string, description: string, onProgress?: (pct: number) => void) => {
-    return new Promise<{ video: Video }>((resolve, reject) => {
+    console.log(`[API] -> POST /api/videos — uploading "${file.name}" (${(file.size / 1024 / 1024).toFixed(1)}MB, ${file.type || 'unknown type'})`);
+    const startedAt = Date.now();
+    return new Promise<{ video: Video; hasAudio?: boolean }>((resolve, reject) => {
       const form = new FormData();
       form.append('video', file);
       form.append('title', title);
@@ -116,17 +137,29 @@ export const api = {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
       };
       xhr.onload = () => {
+        const elapsed = Date.now() - startedAt;
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText));
+          const body = JSON.parse(xhr.responseText);
+          console.log(
+            `[API] <- POST /api/videos ${xhr.status} in ${elapsed}ms — video ${body.video?.id}` +
+              (body.hasAudio === false ? ' (WARNING: uploaded file has no audio track)' : '')
+          );
+          resolve(body);
         } else {
+          let message = 'Upload failed';
           try {
-            reject(new Error(JSON.parse(xhr.responseText).error || 'Upload failed'));
+            message = JSON.parse(xhr.responseText).error || message;
           } catch {
-            reject(new Error('Upload failed'));
+            // ignore — keep default message
           }
+          console.error(`[API] <- POST /api/videos failed: ${xhr.status} in ${elapsed}ms — ${message}`);
+          reject(new Error(message));
         }
       };
-      xhr.onerror = () => reject(new Error('Upload failed — network error'));
+      xhr.onerror = () => {
+        console.error(`[API] <- POST /api/videos network error after ${Date.now() - startedAt}ms`);
+        reject(new Error('Upload failed — network error'));
+      };
       xhr.send(form);
     });
   },
@@ -148,13 +181,13 @@ export const api = {
     form.append('image', imageBlob, 'crop.jpg');
     console.log(`[VisualSearch] POST /api/visual-search — sending ${imageBlob.size} byte ${imageBlob.type || 'image/jpeg'} selection`);
     const startedAt = Date.now();
-    return request<{ results: VisualSearchResult[]; identification?: string }>('/api/visual-search', {
+    return request<VisualSearchResponse>('/api/visual-search', {
       method: 'POST',
       body: form,
     })
       .then((res) => {
         console.log(
-          `[VisualSearch] got ${res.results.length} result(s) in ${Date.now() - startedAt}ms` +
+          `[VisualSearch] got ${res.results.length} result(s) in ${Date.now() - startedAt}ms, exists=${res.exists}` +
             (res.identification ? ` — identified as "${res.identification}"` : ' — local catalog match (no AI identification)')
         );
         return res;

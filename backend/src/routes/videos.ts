@@ -5,7 +5,7 @@ import { v4 as uuid } from 'uuid';
 import { prisma } from '../db';
 import { uploadVideo } from '../middleware/upload';
 import { extractPoster, getVideoDuration } from '../lib/thumbnail';
-import { transcodeToMp4 } from '../lib/videoTranscode';
+import { transcodeToMp4, probeHasAudio } from '../lib/videoTranscode';
 import { uploadToStore } from '../lib/imagekit';
 import { VIDEOS_DIR, POSTERS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
@@ -164,6 +164,16 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
   }
 
+  // Diagnostic, not enforcement — never blocks the upload. The
+  // transcode step above never strips audio itself (see
+  // videoTranscode.ts), so a "no audio" result here means the
+  // uploader's own source file had none, and that's worth telling them
+  // now rather than leaving them to wonder why a video plays silently.
+  const hasAudio = await probeHasAudio(transcodedPath);
+  if (!hasAudio) {
+    console.warn(`[Video Upload] "${title}" was uploaded with no audio track — the source file itself appears to be silent`);
+  }
+
   let posterFilename: string | null = null;
   try {
     const posterName = `${path.parse(transcodedFilename).name}.jpg`;
@@ -225,7 +235,7 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
     },
   });
 
-  res.status(201).json({ video: serialize(video) });
+  res.status(201).json({ video: serialize(video), hasAudio });
 });
 
 function makeToggleHandler(field: 'liked' | 'favorited' | 'saved') {

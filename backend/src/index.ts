@@ -33,6 +33,21 @@ app.use(
 );
 app.use(express.json());
 
+// Logs every request/response that hits the API — method, path,
+// status, and duration — so the server console has a trace of every
+// process the backend handles, not just the ones individual route
+// handlers happen to log themselves. Runs before the routers below so
+// it wraps every request, including ones that error out.
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  const sessionId = req.header('x-session-id');
+  console.log(`[HTTP] -> ${req.method} ${req.originalUrl}${sessionId ? ` (session ${sessionId.slice(0, 8)})` : ''}`);
+  res.on('finish', () => {
+    console.log(`[HTTP] <- ${req.method} ${req.originalUrl} ${res.statusCode} in ${Date.now() - startedAt}ms`);
+  });
+  next();
+});
+
 // Uploaded files are named with random UUIDs and never overwritten in
 // place, so it's safe to let browsers/CDNs cache them aggressively.
 app.use('/uploads', express.static(UPLOAD_ROOT, { maxAge: '7d', immutable: true }));

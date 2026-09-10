@@ -51,6 +51,76 @@ const TOOLS: Array<{ id: Tool; label: string; Icon: typeof Square }> = [
 const MAX_OUTPUT_DIMENSION = 1600;
 const MIN_SELECTION_DISPLAY_PX = 6;
 
+// --- Resize handles (rect/square/circle) ---------------------------
+// Lets a drawn shape be resized in place — from any corner (all box
+// kinds) or any edge midpoint (rect/circle only; a square's edge
+// handles are omitted since resizing just one edge would break the
+// equal-sides invariant, which is exactly what tool==='square' when
+// drawing enforces).
+type Handle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+const ALL_HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+const CORNER_HANDLES: Handle[] = ['nw', 'ne', 'se', 'sw'];
+const HANDLE_HIT_RADIUS = 14; // generous touch target, in display px
+const HANDLE_DRAW_RADIUS = 6;
+
+function handlesForKind(kind: BoxShape['kind']): Handle[] {
+  return kind === 'square' ? CORNER_HANDLES : ALL_HANDLES;
+}
+
+function handlePoint(box: BoxShape, h: Handle): Point {
+  const { x, y, w, h: height } = box;
+  switch (h) {
+    case 'nw':
+      return { x, y };
+    case 'n':
+      return { x: x + w / 2, y };
+    case 'ne':
+      return { x: x + w, y };
+    case 'e':
+      return { x: x + w, y: y + height / 2 };
+    case 'se':
+      return { x: x + w, y: y + height };
+    case 's':
+      return { x: x + w / 2, y: y + height };
+    case 'sw':
+      return { x, y: y + height };
+    case 'w':
+      return { x, y: y + height / 2 };
+  }
+}
+
+/** The box corner directly opposite a given corner handle — used as
+ *  the fixed anchor point while dragging that handle. */
+function oppositeCorner(box: BoxShape, h: Handle): Point {
+  switch (h) {
+    case 'nw':
+      return { x: box.x + box.w, y: box.y + box.h };
+    case 'ne':
+      return { x: box.x, y: box.y + box.h };
+    case 'se':
+      return { x: box.x, y: box.y };
+    case 'sw':
+      return { x: box.x + box.w, y: box.y };
+    default:
+      return { x: box.x, y: box.y };
+  }
+}
+
+function handleCursor(h: Handle): 'nwse-resize' | 'nesw-resize' | 'ns-resize' | 'ew-resize' {
+  if (h === 'nw' || h === 'se') return 'nwse-resize';
+  if (h === 'ne' || h === 'sw') return 'nesw-resize';
+  if (h === 'n' || h === 's') return 'ns-resize';
+  return 'ew-resize';
+}
+
+function hitHandle(pos: Point, box: BoxShape): Handle | null {
+  for (const h of handlesForKind(box.kind)) {
+    const p = handlePoint(box, h);
+    if (Math.abs(pos.x - p.x) <= HANDLE_HIT_RADIUS && Math.abs(pos.y - p.y) <= HANDLE_HIT_RADIUS) return h;
+  }
+  return null;
+}
+
 /**
  * Lets the user mark a region of the current (paused) video frame —
  * as a rectangle, square, circle, or freeform lasso — and returns a
@@ -79,13 +149,17 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
   const freeformPoints = useRef<Point[]>([]);
   const isDragging = useRef(false);
   // 'draw' starts a brand new shape from the pointer-down point (the
-  // original behavior); 'move' translates the existing box shape
-  // instead, when the pointer-down lands inside it — see
-  // handlePointerDown. Only applies to rect/square/circle; freeform
-  // always draws fresh.
-  const dragMode = useRef<'draw' | 'move'>('draw');
+  // original behavior, also reused for corner-handle resizing — see
+  // handlePointerDown); 'move' translates the existing box shape
+  // instead, when the pointer-down lands inside it; 'edge-resize'
+  // drags a single edge midpoint handle (rect/circle only). Only
+  // applies to rect/square/circle; freeform always draws fresh.
+  const dragMode = useRef<'draw' | 'move' | 'edge-resize'>('draw');
   const moveOffset = useRef<Point | null>(null);
-  const [cursorStyle, setCursorStyle] = useState<'crosshair' | 'move'>('crosshair');
+  const edgeResize = useRef<{ edge: Handle; fixed: BoxShape } | null>(null);
+  const [cursorStyle, setCursorStyle] = useState<
+    'crosshair' | 'move' | 'nwse-resize' | 'nesw-resize' | 'ns-resize' | 'ew-resize'
+  >('crosshair');
   const dispSize = useRef({ w: 0, h: 0 });
   const containRect = useRef<Rect>({ x: 0, y: 0, w: 0, h: 0 });
 
@@ -164,7 +238,24 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
     }
   }
 
-  function drawFrame(ctx: CanvasRenderingContext2D, frame: HTMLCanvasElement, cr: Rect, sel: ShapeSel | null) {
+  function drawHandles(ctx: CanvasRenderingContext2D, box: BoxShape) {
+    for (const h of handlesForKind(box.kind)) {
+      const p = handlePoint(box, h);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HANDLE_DRAW_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#25f4ee';
+      ctx.stroke();
+    }
+  }
+
+  // `activeTool` gates whether resize handles are drawn: they only
+  // make sense for the shape matching the currently-selected tool
+  // (same rule the existing move-to-reposition affordance follows) —
+  // a shape left over from a different tool is inert until reselected.
+  function drawFrame(ctx: CanvasRenderingContext2D, frame: HTMLCanvasElement, cr: Rect, sel: ShapeSel | null, activeTool: Tool) {
     const { w: dispW, h: dispH } = dispSize.current;
     ctx.clearRect(0, 0, dispW, dispH);
     ctx.drawImage(frame, cr.x, cr.y, cr.w, cr.h);
@@ -183,13 +274,17 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.restore();
+
+      if (sel.kind !== 'freeform' && sel.kind === activeTool) {
+        drawHandles(ctx, sel);
+      }
     }
   }
 
   function redraw(sel: ShapeSel | null) {
     const ctx = canvasRef.current?.getContext('2d');
     const frame = frameCanvasRef.current;
-    if (ctx && frame) drawFrame(ctx, frame, containRect.current, sel);
+    if (ctx && frame) drawFrame(ctx, frame, containRect.current, sel, tool);
   }
 
   function pointerPos(e: React.PointerEvent<HTMLCanvasElement>): Point {
@@ -255,6 +350,30 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
       return;
     }
 
+    // If a same-kind box shape is already drawn, check its resize
+    // handles first (they sit on/near the border, so this must run
+    // before the "inside the box = move" check below or a handle near
+    // the edge would never be reachable).
+    if (shape && shape.kind === tool) {
+      const box = shape as BoxShape;
+      const hit = hitHandle(pos, box);
+      if (hit) {
+        if (CORNER_HANDLES.includes(hit)) {
+          // Reuse the same anchor-to-pointer geometry as drawing a
+          // fresh shape (including the square-aspect constraint in
+          // handlePointerMove's 'draw' branch) — resizing from a
+          // corner is mathematically identical to drawing from the
+          // opposite corner.
+          dragMode.current = 'draw';
+          dragStart.current = oppositeCorner(box, hit);
+        } else {
+          dragMode.current = 'edge-resize';
+          edgeResize.current = { edge: hit, fixed: box };
+        }
+        return;
+      }
+    }
+
     // If a same-kind box shape is already drawn and the pointer landed
     // inside it, drag to reposition it instead of discarding it and
     // starting over — lets the viewer nudge a selection into place
@@ -277,13 +396,54 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
 
     if (!isDragging.current) {
       // Not currently dragging — just hint via the cursor whether
-      // clicking here would move the existing selection or start a
-      // fresh one, so the drag-to-reposition affordance is discoverable.
-      const canMove = !error && tool !== 'freeform' && shape && shape.kind === tool && isInsideBox(pos, shape as BoxShape);
-      setCursorStyle(canMove ? 'move' : 'crosshair');
+      // clicking here would resize (over a handle), move (inside the
+      // shape), or start a fresh selection, so both affordances are
+      // discoverable before the viewer commits to a drag.
+      if (!error && tool !== 'freeform' && shape && shape.kind === tool) {
+        const box = shape as BoxShape;
+        const hit = hitHandle(pos, box);
+        if (hit) {
+          setCursorStyle(handleCursor(hit));
+          return;
+        }
+        if (isInsideBox(pos, box)) {
+          setCursorStyle('move');
+          return;
+        }
+      }
+      setCursorStyle('crosshair');
       return;
     }
     if (error) return;
+
+    if (dragMode.current === 'edge-resize' && edgeResize.current) {
+      const { edge, fixed } = edgeResize.current;
+      let box: BoxShape = { ...fixed };
+      if (edge === 'n') {
+        box.h = box.y + box.h - pos.y;
+        box.y = pos.y;
+      } else if (edge === 's') {
+        box.h = pos.y - box.y;
+      } else if (edge === 'w') {
+        box.w = box.x + box.w - pos.x;
+        box.x = pos.x;
+      } else if (edge === 'e') {
+        box.w = pos.x - box.x;
+      }
+      // Normalize in case the drag crossed past the opposite edge.
+      if (box.w < 0) {
+        box.x += box.w;
+        box.w = -box.w;
+      }
+      if (box.h < 0) {
+        box.y += box.h;
+        box.h = -box.h;
+      }
+      const next = clampBox(box, containRect.current);
+      setShape(next);
+      redraw(next);
+      return;
+    }
 
     if (tool === 'freeform') {
       const points = [...freeformPoints.current, pos];
@@ -331,6 +491,7 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
     isDragging.current = false;
     dragStart.current = null;
     moveOffset.current = null;
+    edgeResize.current = null;
     dragMode.current = 'draw';
   }
 

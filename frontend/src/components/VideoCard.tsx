@@ -42,6 +42,7 @@ export default function VideoCard({ video, active }: Props) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<VisualSearchResult[] | null>(null);
   const [identification, setIdentification] = useState<string | null>(null);
+  const [searchExists, setSearchExists] = useState<boolean | undefined>(undefined);
   const [cart, setCart] = useState<CartItem[]>([]);
   // Whether the video was actually playing right before the visual
   // search flow paused it — so "resume watching" only auto-plays if
@@ -178,10 +179,12 @@ export default function VideoCard({ video, active }: Props) {
     setSearchError(null);
     setSearchResults(null);
     setIdentification(null);
+    setSearchExists(undefined);
     try {
       const res = await api.visualSearch(blob);
       setSearchResults(res.results);
       setIdentification(res.identification ?? null);
+      setSearchExists(res.exists);
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -325,6 +328,7 @@ export default function VideoCard({ video, active }: Props) {
             error={searchError}
             results={searchResults}
             identification={identification}
+            exists={searchExists}
             cartProductIds={new Set(cart.map((c) => c.productId))}
             onAddToCart={addToCart}
             onClose={resumeWatching}
