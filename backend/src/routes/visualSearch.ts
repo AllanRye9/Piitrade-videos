@@ -3,7 +3,7 @@ import { prisma } from '../db';
 import { uploadImage } from '../middleware/upload';
 import { computeImageHash, hammingDistance, similarityScore } from '../lib/phash';
 import { identifyImage } from '../lib/aiSearch';
-import { fuzzySearchProducts } from '../lib/marketplace';
+import { searchProducts } from '../lib/marketplace';
 
 const router = Router();
 
@@ -29,23 +29,13 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
   console.log(`[VisualSearch] received ${file.size} byte ${file.mimetype} selection`);
 
   if (marketplacePipelineEnabled()) {
-    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> MARKETPLACE_API fuzzy search (both configured)');
+    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> MARKETPLACE_API search');
     // 1. Ask the configured AI service what the cropped selection shows.
     const identification = await identifyImage(file.buffer, file.mimetype);
     // 2. Ask the marketplace whether it carries anything matching that
-    //    identification. The identified phrase rarely matches a
-    //    listing's title verbatim, so this doesn't stop at one exact
-    //    query — it regex/chunk-matches (3-7 letter substrings) and
-    //    falls back to chunk-by-chunk marketplace searches until
-    //    something is found or every chunk has been exhausted (see
-    //    fuzzySearchProducts in lib/marketplace.ts for the full
-    //    algorithm and its own step-by-step console logging).
-    const products = await fuzzySearchProducts(identification.text);
-    const exists = products.length > 0;
-    console.log(
-      `[VisualSearch] "${identification.text}" ${exists ? `EXISTS — ${products.length} matching listing(s)` : 'DOES NOT EXIST in the marketplace'}`
-    );
-
+    //    identification, and shape the response into the same display
+    //    shape the frontend already renders (SearchResultsPanel).
+    const products = await searchProducts(identification.text);
     const results = products.slice(0, 12).map((p) => ({
       id: p.id,
       name: p.name,
@@ -56,10 +46,10 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
       productUrl: p.url,
       inStock: p.inStock ?? true,
       sellerId: p.sellerId,
-      match: p.matchScore,
+      match: 100,
     }));
-    console.log(`[VisualSearch] returning ${results.length} result(s) to the client for "${identification.text}"`);
-    res.json({ results, identification: identification.text, exists });
+    console.log(`[VisualSearch] returning ${results.length} result(s) for "${identification.text}"`);
+    res.json({ results, identification: identification.text });
     return;
   }
 
@@ -67,7 +57,7 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
   // catalog (see backend/src/lib/phash.ts). This is what runs when
   // AI_SEARCH / MARKETPLACE_API are not configured, e.g. local dev.
   console.log(
-    '[VisualSearch] pipeline: local phash catalog (AI_SEARCH and/or MARKETPLACE_API not both configured — set both to use the real marketplace)'
+    `[VisualSearch] pipeline: local phash catalog (${!process.env.AI_SEARCH ? 'AI_SEARCH' : 'MARKETPLACE_API'} not configured)`
   );
   let queryHash: string;
   try {
@@ -101,7 +91,7 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
   console.log(
     `[VisualSearch] phash: top match ${ranked[0] ? `"${ranked[0].name}" (${ranked[0].match}% similar)` : 'none'}, returning ${ranked.length} result(s)`
   );
-  res.json({ results: ranked, exists: ranked.length > 0 });
+  res.json({ results: ranked });
 });
 
 export default router;

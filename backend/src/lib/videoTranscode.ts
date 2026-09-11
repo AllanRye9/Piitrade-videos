@@ -23,8 +23,6 @@ import ffmpeg from 'fluent-ffmpeg';
  * serving a corrupt file.
  */
 export function transcodeToMp4(inputPath: string, outputPath: string): Promise<void> {
-  console.log(`[VideoTranscode] starting: ${inputPath} -> ${outputPath}`);
-  const startedAt = Date.now();
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .videoCodec('libx264')
@@ -32,50 +30,8 @@ export function transcodeToMp4(inputPath: string, outputPath: string): Promise<v
       .audioBitrate('128k')
       .outputOptions(['-movflags +faststart', '-pix_fmt yuv420p', '-preset veryfast', '-crf 23'])
       .format('mp4')
-      .on('end', () => {
-        console.log(`[VideoTranscode] finished in ${Date.now() - startedAt}ms: ${outputPath}`);
-        resolve();
-      })
-      .on('error', (err) => {
-        console.error(`[VideoTranscode] failed after ${Date.now() - startedAt}ms:`, err instanceof Error ? err.message : err);
-        reject(err);
-      })
+      .on('end', () => resolve())
+      .on('error', (err) => reject(err))
       .save(outputPath);
-  });
-}
-
-/**
- * Probes a media file's streams (via ffprobe) and reports whether it
- * carries at least one audio stream.
- *
- * transcodeToMp4() above never strips an audio track that exists (no
- * `-an`, ever) — so if a video ends up silent in the app, the real
- * cause is virtually always that the SOURCE file the uploader recorded
- * had no audio track to begin with (muted screen recording, camera app
- * with mic permission denied, etc), not something this pipeline did.
- * This is run right after every transcode so that case is caught and
- * logged clearly, rather than silently producing a video nobody
- * realizes is soundless until a viewer reports it — see
- * routes/videos.ts, which surfaces this back to the uploader too.
- */
-export function probeHasAudio(filePath: string): Promise<boolean> {
-  console.log(`[VideoTranscode] probing for an audio stream: ${filePath}`);
-  return new Promise((resolve) => {
-    ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err) {
-        console.warn(`[VideoTranscode] ffprobe failed while checking for audio, assuming audio present: ${filePath}:`, err instanceof Error ? err.message : err);
-        // Fail open: an unreadable probe shouldn't itself cause a
-        // false "no audio" warning to reach the uploader.
-        resolve(true);
-        return;
-      }
-      const hasAudio = (metadata.streams || []).some((s) => s.codec_type === 'audio');
-      if (hasAudio) {
-        console.log(`[VideoTranscode] audio stream present: ${filePath}`);
-      } else {
-        console.warn(`[VideoTranscode] NO audio stream found — this video will play silently: ${filePath}`);
-      }
-      resolve(hasAudio);
-    });
   });
 }

@@ -101,15 +101,15 @@ model SessionProfile {
 // already logged in to the marketplace without re-authenticating on
 // every checkout.
 model MarketplaceLink {
-  id                       String   @id @default(cuid())
-  sessionId                String   @unique
-  marketplaceToken         String
+  id                      String   @id @default(cuid())
+  sessionId               String   @unique
+  marketplaceToken        String
   // The marketplace's refresh token (extracted from its httpOnly
   // Set-Cookie on login — see backend/src/lib/marketplace.ts). Needed
   // because marketplaceToken (the access token) expires in ~1h; this
   // lets checkout silently refresh it instead of asking the viewer to
   // log in again every time they come back to shop.
   marketplaceRefreshToken String
-  marketplaceUserId        String
-  linkedAt                 DateTime @default(now())
+  marketplaceUserId       String
+  linkedAt                DateTime @default(now())
 }

@@ -83,10 +83,10 @@ router.delete('/account', async (req: Request, res: Response) => {
 });
 
 /**
- * Runs marketplace calls with the session's access token, transparently
- * refreshing it once on a 401 (the access token expires in ~1h — see
- * lib/marketplace.ts) rather than making the viewer log in again just
- * because time passed since their last visit.
+ * Runs a marketplace call with the session's stored access token,
+ * transparently refreshing it once on a 401 (the access token expires
+ * in ~1h — see lib/marketplace.ts) rather than making the viewer log
+ * in again just because time passed since their last visit.
  *
  * Returned as a closure (rather than a one-shot function) because
  * checkout below calls this once per seller group: the marketplace

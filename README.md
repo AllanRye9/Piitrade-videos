@@ -101,27 +101,65 @@ Everything in this app talks to a real database and real files on disk
 
 ## In-video shopping: AI identify → marketplace lookup → cart → checkout
 
+**The exact `.env` values to use right now** (also in `.env.example`) —
+**verified by actually fetching the live site**, not just assumed:
+
+```
+AI_SEARCH=https://apkit.allan-rye-999.workers.dev
+AI_SEARCH_API_KEY=
+MARKETPLACE_API=https://backend-production-a662.up.railway.app
+MARKETPLACE_COUNTRY=UGANDA
+```
+
+**Important — `MARKETPLACE_API` is the backend host, not `piitrade.com`.**
+An earlier version of this pointed it at `https://piitrade.com`
+directly, on the assumption that `https://piitrade.com/listings?q=...`
+was a JSON search endpoint. It isn't — fetching that exact URL live
+returned piitrade.com's full rendered HTML browse page (nav, filters,
+footer, "0 listings" as page text), not JSON, which would have made
+every search fail with a JSON-parse error. Fetching piitrade.com's own
+homepage showed it loads its listing images from a separate backend
+host — `https://backend-production-a662.up.railway.app/api/images/...`
+— confirming the real JSON API lives there, at `/api/listings`,
+`/api/auth/*`, `/api/orders` (matching the backend source reviewed
+directly for this integration). **Railway hostnames can change on
+redeploy** — if this stops working, get the current one the same way:
+open piitrade.com, view an image URL, and use that host.
+
+`AI_SEARCH_API_KEY` is left blank on purpose — the live worker doesn't
+check for one today. `MARKETPLACE_COUNTRY` is optional (sent as
+`&country=` on every search, confirmed as a real supported parameter
+on `/api/listings`); leave it blank to search without a country filter.
+
 Tapping **Search** on a video now lets you mark the region to search
 as a **rectangle, square, circle, or freeform lasso** (not just a
 rectangle), then runs one of two search paths:
 
 - **AI + marketplace pipeline** (used when both `AI_SEARCH` and
-  `MARKETPLACE_API` are set): the cropped selection is sent to
-  `AI_SEARCH` — in production this should be the real Piitrade
-  image-identification Cloudflare Worker (the same one used elsewhere
-  for AI-powered listing generation); the bundled `worker/` service
-  (see below) is only a local-dev stand-in with the same response
-  shape — for identification, and the resulting text is used to query
-  the **real Piitrade marketplace's** `GET /api/listings` search. This
-  is wired against that marketplace's actual API (its repo was
-  reviewed directly), not an assumed contract — see
-  `backend/src/lib/marketplace.ts` for the exact endpoints/fields, and
-  `backend/src/lib/aiSearch.ts` for the exact `AI_SEARCH` response
-  shape it expects (`{ success, description, suggestedTitle }`), and
-  the marketplace-specific behavior below.
-- **Local phash fallback** (used otherwise, e.g. local dev): the
-  original perceptual-hash match against the seeded product catalog,
-  unchanged.
+  `MARKETPLACE_API` are set — see the exact values above): the cropped
+  selection is sent to `AI_SEARCH` — the real, live Piitrade
+  image-identification Cloudflare Worker
+  (`https://apkit.allan-rye-999.workers.dev`, Workers AI: Llama 4
+  Scout) — for identification, and its `suggestedTitle` (falling back
+  to `description`) is used to query the real Piitrade marketplace
+  backend's search: `GET {MARKETPLACE_API}/api/listings?q=<text>&sort=relevance&limit=12&country=<country>`
+  (verified directly against that route's source — `q`, `sort`,
+  `limit`, and `country` are all real supported query params there).
+  See `backend/src/lib/marketplace.ts` and `backend/src/lib/aiSearch.ts`
+  for the exact request/response shapes, and the marketplace-specific
+  behavior below. The bundled `worker/` service (see below) is only a
+  local-dev stand-in with the same response shape as the real worker —
+  not used by default.
+- **Local phash fallback** (used otherwise, e.g. local dev with no
+  `.env`): the original perceptual-hash match against the seeded
+  product catalog, unchanged.
+
+Every step of this pipeline — the AI request/response, the marketplace
+query/response, timing, and result counts — is logged to the backend
+console, so a search that returns nothing (or unexpected results) can
+be diagnosed from the logs rather than guessed at. A search with no
+matches shows a decorated empty state (icon + explanation) in the
+results panel rather than a bare line of text.
 
 Results are shown in the same results panel either way. Tapping a
 result adds it to an in-video cart; once the cart has an item, a blue

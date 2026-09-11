@@ -20,8 +20,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      worker:
-        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://piitrade:piitrade@postgres:5432/piitrade
       PORT: 4000
@@ -31,10 +29,12 @@ services:
       ADMIN_SETUP_CODE: ${ADMIN_SETUP_CODE:-}
       # In-video visual search: AI identify + marketplace lookup. Both
       # must be set for this pipeline to run — otherwise the local
-      # phash catalog match is used instead (see README).
-      AI_SEARCH: ${AI_SEARCH:-http://worker:8787}
+      # phash catalog match is used instead (see README). Defaults to
+      # the real, live Piitrade identification worker and marketplace.
+      AI_SEARCH: ${AI_SEARCH:-https://apkit.allan-rye-999.workers.dev}
       AI_SEARCH_API_KEY: ${AI_SEARCH_API_KEY:-}
-      MARKETPLACE_API: ${MARKETPLACE_API:-}
+      MARKETPLACE_API: ${MARKETPLACE_API:-https://backend-production-a662.up.railway.app}
+      MARKETPLACE_COUNTRY: ${MARKETPLACE_COUNTRY:-UGANDA}
       # Optional ImageKit-backed storage — see .env.example. Local disk
       # is used for whichever of these is left unset.
       VIDEO_STORE: ${VIDEO_STORE:-}
@@ -52,13 +52,16 @@ services:
       retries: 10
       start_period: 20s
 
-  # Hosts the identification AI used by the backend's visual search
-  # (reached via the AI_SEARCH env var above). Kept as its own service
-  # so its API key and scaling are independent of the main backend —
-  # see worker/worker.js.
+  # OPTIONAL local-dev stand-in for the identification AI — NOT used by
+  # default (AI_SEARCH above points at the real, live Cloudflare Worker
+  # instead) and not started unless you explicitly run
+  # `docker compose --profile local-ai up`. Only useful if you want to
+  # test against a local worker instead of the real one, e.g. while
+  # offline — see worker/worker.js.
   worker:
     build: ./worker
     restart: unless-stopped
+    profiles: ["local-ai"]
     environment:
       PORT: 8787
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

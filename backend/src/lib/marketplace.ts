@@ -1,17 +1,28 @@
 import { HttpError } from './httpError';
 
 /**
- * Client for the real Piitrade marketplace backend (the actual
- * marketplace codebase, not a hypothetical one), reached via the
- * MARKETPLACE_API env var (its base URL, no trailing slash — e.g.
- * https://api.piitrade.com, no /api suffix, that's added per-call
- * below to match the marketplace's own route mounting).
+ * Client for the real Piitrade marketplace's backend API. Set
+ * MARKETPLACE_API to that backend's own base URL — NOT the
+ * piitrade.com frontend's URL. Confirmed directly by inspecting what
+ * piitrade.com's Next.js frontend itself calls: its listing images
+ * are served from a separate Railway-hosted backend
+ * (https://backend-production-a662.up.railway.app/api/images/...),
+ * and https://piitrade.com/listings itself returns the full rendered
+ * HTML marketing/browse page, NOT JSON — pointing MARKETPLACE_API at
+ * piitrade.com directly will fail every search with a JSON-parse
+ * error. Point it at the backend host instead, e.g.
+ * https://backend-production-a662.up.railway.app (confirm the exact
+ * current backend URL, since Railway hostnames can change on
+ * redeploy — see .env.example).
  *
- * Endpoints used (see the marketplace repo's backend/src/routes/):
+ * Endpoints used:
  *
- *   GET  /api/listings?q=<text>&limit=12&sort=relevance
+ *   GET  /api/listings?q=<text>&sort=relevance&limit=12&country=<COUNTRY>
  *     -> 200 { listings: Listing[], pagination: {...} }
- *     (routes/listings.ts — public, no auth)
+ *     Confirmed directly against this route's source
+ *     (backend/src/routes/listings.ts): q, sort, limit, and country
+ *     are all real supported query params on this exact path.
+ *     `country` is sent only when MARKETPLACE_COUNTRY is set.
  *
  *   POST /api/auth/register   { email, password, name, country }
  *     -> 201 { message, user }   -- NOTE: no tokens. The marketplace
@@ -149,19 +160,21 @@ async function readError(res: Response): Promise<string | undefined> {
 }
 
 export async function searchProducts(query: string): Promise<MarketplaceProduct[]> {
-  const path = `/api/listings?q=${encodeURIComponent(query)}&limit=12&sort=relevance`;
-  console.log(`[MARKETPLACE_API] GET ${path} (query="${query}")`);
+  const params = new URLSearchParams({ q: query, sort: 'relevance', limit: '12' });
+  if (process.env.MARKETPLACE_COUNTRY) params.set('country', process.env.MARKETPLACE_COUNTRY);
+  const path = `/api/listings?${params.toString()}`;
+  console.log(`[Marketplace] GET ${path}`);
   const startedAt = Date.now();
 
   const res = await request(path, {
     method: 'GET',
     headers: jsonHeaders(),
   });
-  console.log(`[MARKETPLACE_API] responded ${res.status} in ${Date.now() - startedAt}ms`);
+  console.log(`[Marketplace] responded ${res.status} in ${Date.now() - startedAt}ms`);
 
   if (!res.ok) {
     const message = (await readError(res)) || `Marketplace search returned ${res.status}`;
-    console.error(`[MARKETPLACE_API] search failed: ${message}`);
+    console.error(`[Marketplace] search failed: ${message}`);
     throw new HttpError(res.status === 401 || res.status === 403 ? res.status : 502, message);
   }
   interface RawListing {
@@ -180,7 +193,7 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
   const listings = Array.isArray(data.listings) ? data.listings : [];
   const withoutSeller = listings.filter((l) => !l.user?.id).length;
   if (withoutSeller > 0) {
-    console.warn(`[MARKETPLACE_API] skipping ${withoutSeller} of ${listings.length} listing(s) with no resolvable seller`);
+    console.warn(`[Marketplace] skipping ${withoutSeller} of ${listings.length} listing(s) with no resolvable seller`);
   }
 
   const results = listings
@@ -197,208 +210,10 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
     }));
 
   console.log(
-    `[MARKETPLACE_API] ${results.length} usable listing(s) for "${query}"` +
+    `[Marketplace] ${results.length} usable listing(s) for "${query}"` +
       (results.length > 0 ? `: ${results.slice(0, 5).map((r) => `"${r.name}" (${r.id})`).join(', ')}${results.length > 5 ? ', …' : ''}` : '')
   );
   return results;
-}
-
-/**
- * Regex/chunk-based fuzzy existence matching between the AI's
- * identified phrase and marketplace listing text.
- *
- * The phrase identifyImage() returns almost never matches a listing's
- * title verbatim (e.g. AI_SEARCH says "Wireless Over-Ear Headphones"
- * but the actual listing is titled "Sony WH-1000XM5 Headphones -
- * Black"), so exact/substring equality against the marketplace's own
- * `q=` relevance search is too strict on its own. Instead:
- *
- *   1. The identified phrase is normalized and broken into every
- *      overlapping chunk of 3-7 characters (whole short words as-is;
- *      longer words are slid through a 3-7 char window) — see
- *      generateMatchChunks().
- *   2. Each chunk is escaped and used as a case-insensitive regex
- *      tested against a listing's name/description — see
- *      fuzzyMatchExists().
- *   3. A listing "exists" (counts as a real match, not noise) the
- *      moment ANY chunk matches. If NO chunk (3-7 letters) matches
- *      anything, the product is treated as not existing.
- *
- * fuzzySearchProducts() drives the whole flow end-to-end: it first
- * tries the marketplace's own relevance search on the full identified
- * phrase; if that comes back empty, it retries — one chunk at a time,
- * longest (most specific) first — until a chunk search returns
- * something or every chunk has been tried. Every returned candidate is
- * then scored/sorted by how many chunks actually matched its text.
- */
-/** Upper bound on how many chunk-search round-trips a single fuzzy
- *  search is allowed to make against MARKETPLACE_API, so an unusually
- *  long identified phrase can't turn one visual search into dozens of
- *  sequential network calls. */
-const MAX_CHUNK_ATTEMPTS = 15;
-
-/** Sliding-window substrings (for words longer than MAX_CHUNK_LEN) are
- *  only generated down to this length — unchanged from before. Whole
- *  short words use a lower floor, MIN_WORD_LEN, handled separately
- *  below; the two are intentionally different (see generateMatchChunks). */
-const MIN_CHUNK_LEN = 3;
-const MAX_CHUNK_LEN = 7;
-/** Shortest WHOLE word eligible as a chunk on its own — lower than
- *  MIN_CHUNK_LEN so short-but-meaningful product terms ("TV", "PC",
- *  "AC", "EV", "PS5" minus the digit, etc.) aren't silently dropped
- *  just because they're under 3 characters. Two safeguards keep this
- *  from reintroducing noise: STOPWORDS excludes common function words
- *  that happen to be this short, and fuzzyMatchExists matches any
- *  chunk this short only as a whole word (`\bchunk\b`), never as a
- *  substring — unlike 3-7 char chunks, which intentionally do match
- *  as substrings (see that function's own comment). Without the
- *  word-boundary rule, a 2-letter chunk like "tv" would also match
- *  inside "active", "festival", "native", etc., which would make
- *  short chunks far noisier than the 3-7 char ones they sit alongside.
- */
-const MIN_WORD_LEN = 2;
-/** Common short function words that would match almost every listing
- *  if allowed through as chunks, despite clearing MIN_WORD_LEN — they
- *  carry no product-identifying signal (e.g. AI_SEARCH's "TV Stand
- *  for Living Room" shouldn't match on "for"). Only words this short
- *  need filtering; MIN_CHUNK_LEN (3+) chunks are specific enough on
- *  their own that a stopword list isn't worth maintaining for them. */
-const STOPWORDS = new Set([
-  'a', 'an', 'the', 'of', 'in', 'on', 'at', 'to', 'is', 'it', 'or', 'by', 'be', 'as', 'if',
-  'so', 'no', 'up', 'my', 'we', 'us', 'and', 'for', 'with', 'this', 'that',
-]);
-
-function normalizeForMatch(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function escapeRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Every distinct chunk worth trying as a fuzzy match, derived from
- * `text`. Whole words from MIN_WORD_LEN (2) up to MAX_CHUNK_LEN (7)
- * chars are used directly (most meaningful, and the only way a short
- * but specific term like "TV" or "PC" ever gets a chunk at all — see
- * MIN_WORD_LEN above); words longer than MAX_CHUNK_LEN are
- * additionally slid through every MIN_CHUNK_LEN(3)-MAX_CHUNK_LEN(7)
- * char window so a match on a prefix/substring ("head" inside
- * "headphones") still counts. Common short stopwords are dropped
- * entirely regardless of length. Returned longest-first, since a
- * longer, more specific chunk is less likely to produce a
- * false-positive match than a short generic one.
- */
-export function generateMatchChunks(text: string): string[] {
-  const normalized = normalizeForMatch(text);
-  const words = normalized.split(' ').filter(Boolean);
-  const chunks = new Set<string>();
-
-  for (const word of words) {
-    if (STOPWORDS.has(word)) continue;
-    if (word.length >= MIN_WORD_LEN && word.length <= MAX_CHUNK_LEN) {
-      chunks.add(word);
-    } else if (word.length > MAX_CHUNK_LEN) {
-      for (let len = MAX_CHUNK_LEN; len >= MIN_CHUNK_LEN; len--) {
-        for (let i = 0; i + len <= word.length; i++) {
-          chunks.add(word.slice(i, i + len));
-        }
-      }
-    }
-  }
-
-  return Array.from(chunks).sort((a, b) => b.length - a.length);
-}
-
-export interface FuzzyMatch {
-  exists: boolean;
-  matchedChunks: string[];
-  /** 0-100, the share of generated chunks that matched — used as the
-   *  displayed "match %" for a result, in place of a hardcoded 100. */
-  score: number;
-}
-
-/** Tests every chunk of `query` as a case-insensitive regex against
- *  `candidateText`; "exists" the moment one hits. */
-export function fuzzyMatchExists(query: string, candidateText: string): FuzzyMatch {
-  const chunks = generateMatchChunks(query);
-  if (chunks.length === 0) return { exists: false, matchedChunks: [], score: 0 };
-
-  const normalizedCandidate = normalizeForMatch(candidateText);
-  const matchedChunks = chunks.filter((chunk) => {
-    // Short (2-char) chunks match only as a whole word — a plain
-    // substring test would also hit "tv" inside "active", "festival",
-    // etc. 3-7 char chunks keep the existing, already-verified
-    // substring behavior (e.g. "phone" correctly matching inside
-    // "headphones").
-    const pattern = chunk.length <= MIN_WORD_LEN ? `\\b${escapeRegex(chunk)}\\b` : escapeRegex(chunk);
-    return new RegExp(pattern, 'i').test(normalizedCandidate);
-  });
-  const score = Math.round((matchedChunks.length / chunks.length) * 100);
-  return { exists: matchedChunks.length > 0, matchedChunks, score };
-}
-
-export interface FuzzyProductMatch extends MarketplaceProduct {
-  matchScore: number;
-  matchedChunks: string[];
-}
-
-/**
- * Full pipeline: identified phrase -> marketplace search (full phrase,
- * then chunk-by-chunk fallback) -> regex-scored, sorted matches.
- * Returns [] only once every avenue (full phrase + every chunk, up to
- * MAX_CHUNK_ATTEMPTS) has been exhausted with no results — i.e. the
- * item genuinely does not exist in the marketplace.
- */
-export async function fuzzySearchProducts(query: string): Promise<FuzzyProductMatch[]> {
-  console.log(`[Marketplace:FuzzyMatch] starting fuzzy search for "${query}"`);
-
-  let candidates = await searchProducts(query);
-  let matchedVia = 'full phrase';
-
-  if (candidates.length === 0) {
-    const chunks = generateMatchChunks(query).slice(0, MAX_CHUNK_ATTEMPTS);
-    console.log(
-      `[Marketplace:FuzzyMatch] full phrase returned 0 listings — falling back to ${chunks.length} chunk(s) (3-7 letters, longest first): ${chunks.join(', ') || '(none generated)'}`
-    );
-    for (const chunk of chunks) {
-      console.log(`[Marketplace:FuzzyMatch] trying chunk "${chunk}"`);
-      const chunkResults = await searchProducts(chunk);
-      if (chunkResults.length > 0) {
-        console.log(`[Marketplace:FuzzyMatch] chunk "${chunk}" returned ${chunkResults.length} listing(s) — using these as candidates`);
-        candidates = chunkResults;
-        matchedVia = `chunk "${chunk}"`;
-        break;
-      }
-      console.log(`[Marketplace:FuzzyMatch] chunk "${chunk}" returned 0 listings`);
-    }
-  }
-
-  if (candidates.length === 0) {
-    console.log(`[Marketplace:FuzzyMatch] no chunk (3-7 letters) matched anything — "${query}" does not exist in the marketplace`);
-    return [];
-  }
-
-  const scored: FuzzyProductMatch[] = candidates
-    .map((p) => {
-      const match = fuzzyMatchExists(query, `${p.name} ${p.description}`);
-      console.log(
-        `[Marketplace:FuzzyMatch] "${p.name}" (${p.id}) -> ${match.exists ? `MATCH ${match.score}% (chunks: ${match.matchedChunks.slice(0, 5).join(', ')})` : 'no chunk match, keeping anyway (marketplace already returned it)'}`
-      );
-      // A candidate returned by the marketplace's own search is kept
-      // even if our local regex found no chunk overlap (its relevance
-      // ranking may key off fields we don't have, like tags) — but it
-      // scores lowest, so real chunk matches always sort first.
-      return { ...p, matchScore: match.exists ? match.score : 1, matchedChunks: match.matchedChunks };
-    })
-    .sort((a, b) => b.matchScore - a.matchScore);
-
-  console.log(`[Marketplace:FuzzyMatch] resolved via ${matchedVia} — ${scored.length} product(s) exist for "${query}"`);
-  return scored;
 }
 
 export async function registerAccount(
