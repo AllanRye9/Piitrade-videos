@@ -8,6 +8,7 @@ import { computeImageHash } from '../lib/phash';
 import { HttpError } from '../lib/httpError';
 import { PRODUCTS_DIR, VIDEOS_DIR, POSTERS_DIR } from '../paths';
 import { v4 as uuid } from 'uuid';
+import { resolveAssetUrl } from './videos';
 
 const router = Router();
 router.use(requireAdmin);
@@ -37,8 +38,8 @@ router.get('/videos', async (_req: Request, res: Response) => {
       id: v.id,
       title: v.title,
       description: v.description,
-      url: `/uploads/videos/${v.filename}`,
-      poster: v.posterFilename ? `/uploads/posters/${v.posterFilename}` : null,
+      url: resolveAssetUrl(v.filename, 'videos'),
+      poster: v.posterFilename ? resolveAssetUrl(v.posterFilename, 'posters') : null,
       likes: v.likes,
       views: v.views,
       comments: v.comments,
@@ -67,11 +68,32 @@ router.delete('/videos/:id', async (req: Request, res: Response) => {
   if (!video) throw new HttpError(404, 'Video not found');
 
   await prisma.video.delete({ where: { id: video.id } });
-  const videoFile = path.join(VIDEOS_DIR, video.filename);
-  if (fs.existsSync(videoFile)) fs.unlinkSync(videoFile);
+
+  // filename/posterFilename are either local disk filenames or full
+  // VIDEO_STORE (ImageKit) URLs — see resolveAssetUrl in routes/videos.ts.
+  // Only the local case can be cleaned up here: joining a remote URL
+  // onto VIDEOS_DIR/POSTERS_DIR doesn't produce a real path, so that
+  // branch is skipped rather than attempted and silently doing
+  // nothing. Deleting the remote copy would need its ImageKit fileId,
+  // which isn't stored (same documented tradeoff as avatar cleanup in
+  // routes/profile.ts) — so it's logged as orphaned instead of
+  // pretending it was cleaned up.
+  const isRemote = (value: string) => /^https?:\/\//i.test(value);
+
+  if (isRemote(video.filename)) {
+    console.warn(`[Admin] deleted video ${video.id}, but its VIDEO_STORE file was not — no fileId stored: ${video.filename}`);
+  } else {
+    const videoFile = path.join(VIDEOS_DIR, video.filename);
+    if (fs.existsSync(videoFile)) fs.unlinkSync(videoFile);
+  }
+
   if (video.posterFilename) {
-    const posterFile = path.join(POSTERS_DIR, video.posterFilename);
-    if (fs.existsSync(posterFile)) fs.unlinkSync(posterFile);
+    if (isRemote(video.posterFilename)) {
+      console.warn(`[Admin] deleted video ${video.id}, but its poster on VIDEO_STORE was not — no fileId stored: ${video.posterFilename}`);
+    } else {
+      const posterFile = path.join(POSTERS_DIR, video.posterFilename);
+      if (fs.existsSync(posterFile)) fs.unlinkSync(posterFile);
+    }
   }
   res.status(204).send();
 });

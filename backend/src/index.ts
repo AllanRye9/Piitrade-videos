@@ -13,9 +13,33 @@ import marketplaceRouter from './routes/marketplace';
 import profileRouter from './routes/profile';
 import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
+import { prisma } from './db';
 
 for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
+}
+
+// Local disk is only a valid place to store uploads on a host with a
+// PERSISTENT filesystem across restarts/redeploys. Most PaaS platforms
+// (Render, Heroku, and serverless-style containers generally) give
+// each deploy — and in some cases each restart, e.g. Render's free
+// tier spinning back up after idling — a completely fresh filesystem,
+// silently discarding anything written to disk since the image was
+// built. Videos/posters/avatars uploaded that way will 404 the moment
+// the process restarts, with no error at upload time to hint why. This
+// is loud and unconditional (not just in dev) because it's exactly the
+// kind of thing that works fine locally and fails silently in
+// production — see VIDEO_STORE/IMAGES_POINT in lib/imagekit.ts.
+if (!process.env.VIDEO_STORE || !process.env.IMAGES_POINT) {
+  console.warn(
+    '[Startup] WARNING: ' +
+      [!process.env.VIDEO_STORE && 'VIDEO_STORE', !process.env.IMAGES_POINT && 'IMAGES_POINT'].filter(Boolean).join(' and ') +
+      ' not set — falling back to local disk (uploads/). This is fine for local dev, but on any host without a ' +
+      'PERSISTENT disk mounted at UPLOAD_DIR (most PaaS platforms, e.g. Render/Heroku, do NOT persist local ' +
+      'disk across restarts or redeploys by default), uploaded videos/posters/avatars WILL be lost — often not ' +
+      'immediately, but the next time the process restarts, which is easy to mistake for a random bug. Either ' +
+      'set VIDEO_STORE/IMAGES_POINT (see .env.example) or attach a persistent disk mounted at UPLOAD_DIR.'
+  );
 }
 
 const app = express();
@@ -79,4 +103,48 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 app.listen(PORT, () => {
   console.log(`Piitrade backend listening on port ${PORT}`);
+  checkDatabaseSchema();
 });
+
+// Every model the app actually queries at runtime, checked with a
+// trivial `count()` against each. This exists because a missing
+// migration doesn't fail at startup or even at `prisma generate` time
+// (generate only needs schema.prisma, not the live database) — it
+// only shows up the first time a route touches that specific table,
+// as a bare "Internal server error" with no indication of which table
+// or why. Running this once at boot turns that into a specific,
+// immediate, unmissable log line instead of a support ticket. Never
+// blocks startup — the server should still come up and serve whatever
+// routes DO work even if one table is missing.
+async function checkDatabaseSchema() {
+  const checks: Array<[string, () => Promise<unknown>]> = [
+    ['Video', () => prisma.video.count()],
+    ['Comment', () => prisma.comment.count()],
+    ['UserVideoState', () => prisma.userVideoState.count()],
+    ['AdminUser', () => prisma.adminUser.count()],
+    ['Product', () => prisma.product.count()],
+    ['MarketplaceLink', () => prisma.marketplaceLink.count()],
+    ['SessionProfile', () => prisma.sessionProfile.count()],
+  ];
+
+  const missing: string[] = [];
+  for (const [name, check] of checks) {
+    try {
+      await check();
+    } catch (err) {
+      missing.push(name);
+      console.error(`[Startup] DB check failed for "${name}":`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  if (missing.length > 0) {
+    console.error(
+      `[Startup] ERROR: ${missing.length} table(s) are missing or unreachable — ${missing.join(', ')}. ` +
+        `Every route that touches ${missing.length === 1 ? 'this table' : 'these tables'} will fail with a generic ` +
+        `500 until this is fixed. This almost always means pending migrations haven't been applied to this ` +
+        `database — run "npx prisma migrate deploy" against DATABASE_URL, then restart this service.`
+    );
+  } else {
+    console.log(`[Startup] DB check passed — all ${checks.length} expected tables are reachable.`);
+  }
+}

@@ -43,7 +43,7 @@ function getSessionId(req: Request): string {
 // URL returned at upload time. Both are valid values of the same
 // `filename`/`posterFilename` DB columns — this just decides how to
 // turn whichever one is stored into a URL the frontend can use as-is.
-function resolveAssetUrl(value: string, localDir: 'videos' | 'posters'): string {
+export function resolveAssetUrl(value: string, localDir: 'videos' | 'posters'): string {
   if (/^https?:\/\//i.test(value)) return value;
   return `/uploads/${localDir}/${value}`;
 }
