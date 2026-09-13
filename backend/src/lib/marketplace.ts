@@ -159,6 +159,37 @@ async function readError(res: Response): Promise<string | undefined> {
   return undefined;
 }
 
+export interface MarketplaceSearchResultDto {
+  id: string;
+  name: string;
+  price: string;
+  category: string;
+  image: string;
+  description?: string;
+  productUrl?: string;
+  inStock?: boolean;
+  sellerId?: string;
+  match: number;
+}
+
+/** Shared shape mapper used by every route that turns a MarketplaceProduct
+ *  into what SearchResultsPanel renders — factored out so visual search and
+ *  manual text search can't drift into two different response shapes. */
+export function toSearchResultDto(p: MarketplaceProduct, category: string): MarketplaceSearchResultDto {
+  return {
+    id: p.id,
+    name: p.name,
+    price: p.price,
+    category,
+    image: p.image,
+    description: p.description,
+    productUrl: p.url,
+    inStock: p.inStock ?? true,
+    sellerId: p.sellerId,
+    match: 100,
+  };
+}
+
 export async function searchProducts(query: string): Promise<MarketplaceProduct[]> {
   const params = new URLSearchParams({ q: query, sort: 'relevance', limit: '12' });
   if (process.env.MARKETPLACE_COUNTRY) params.set('country', process.env.MARKETPLACE_COUNTRY);
@@ -214,6 +245,99 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
       (results.length > 0 ? `: ${results.slice(0, 5).map((r) => `"${r.name}" (${r.id})`).join(', ')}${results.length > 5 ? ', …' : ''}` : '')
   );
   return results;
+}
+
+/**
+ * The marketplace's own search does a verbatim, case-insensitive
+ * SUBSTRING match of the ENTIRE query string against title/description
+ * (confirmed directly against its route source — Prisma
+ * `contains: q, mode: 'insensitive'`, not word-tokenized or fuzzy). A
+ * multi-word AI-generated identification like "Vintage Wooden Dining
+ * Chair with Carved Legs" will almost never appear verbatim inside a
+ * real listing's title (e.g. "Wooden Dining Chair") — so searching
+ * with the raw identification text alone returns 0 results even when
+ * a genuinely matching item exists.
+ *
+ * The fix tries progressively narrower slices of the text until one
+ * of them is short/precise enough to actually be a substring of the
+ * real title. A prefix-only ladder (first 7 words, first 5, ...) is
+ * NOT enough on its own: it was tested against a simulated backend
+ * and failed exactly the case above, because "Vintage" leads every
+ * prefix candidate, and the real title has no "Vintage" in it at all
+ * — every prefix still contains that leading word and never becomes a
+ * pure substring match. So this tries three kinds of candidates, in
+ * order from most to least specific:
+ *
+ *   1. The full text.
+ *   2. Prefixes (first 7/5/3/2 words) AND suffixes (last 7/5/3/2
+ *      words) — covers the core noun phrase sitting at either end of
+ *      the AI's description (leading adjectives vs. trailing
+ *      qualifiers).
+ *   3. Each individual meaningful word in the text, in order (common
+ *      stopwords filtered out — a single hit on "with" or "and" would
+ *      match nearly everything and isn't a meaningful result).
+ *
+ * It stops at the first candidate that returns ANY result. Trade-off:
+ * a query with genuinely no match makes several sequential marketplace
+ * requests (capped — see MAX_LADDER_ATTEMPTS) before giving up; that
+ * cost only applies to the true-miss case, and a real match is usually
+ * found in the first 1-3 attempts.
+ */
+const FALLBACK_WORD_COUNTS = [7, 5, 3, 2];
+const MAX_LADDER_ATTEMPTS = 10;
+const STOPWORDS = new Set(['a', 'an', 'the', 'with', 'and', 'or', 'for', 'of', 'in', 'on', 'at', 'to', 'is', 'this', 'that']);
+
+export interface MarketplaceSearchOutcome {
+  results: MarketplaceProduct[];
+  /** Which query in the ladder actually produced results — null if none did. */
+  matchedQuery: string | null;
+  /** Every query tried, in order, with how many results each returned — for logging/debugging. */
+  attempts: Array<{ query: string; count: number }>;
+}
+
+function buildQueryLadder(rawQuery: string): string[] {
+  const trimmed = rawQuery.trim();
+  if (!trimmed) return [];
+  const words = trimmed.split(/\s+/);
+  const candidates = [trimmed];
+
+  for (const n of FALLBACK_WORD_COUNTS) {
+    if (words.length > n) {
+      candidates.push(words.slice(0, n).join(' ')); // prefix
+      candidates.push(words.slice(-n).join(' ')); // suffix
+    }
+  }
+  for (const word of words) {
+    const cleaned = word.replace(/[.,!?;:()]/g, '');
+    if (cleaned.length > 1 && !STOPWORDS.has(cleaned.toLowerCase())) candidates.push(cleaned);
+  }
+
+  // Dedupe while preserving priority order (most-specific first), and
+  // cap the total so a true miss can't make an unbounded number of
+  // sequential requests.
+  return Array.from(new Set(candidates)).slice(0, MAX_LADDER_ATTEMPTS);
+}
+
+export async function searchProductsWithFallback(rawQuery: string): Promise<MarketplaceSearchOutcome> {
+  const ladder = buildQueryLadder(rawQuery);
+  const attempts: Array<{ query: string; count: number }> = [];
+
+  for (const candidate of ladder) {
+    const results = await searchProducts(candidate);
+    attempts.push({ query: candidate, count: results.length });
+    if (results.length > 0) {
+      if (candidate !== ladder[0]) {
+        console.log(`[Marketplace] fallback: no match on full text "${ladder[0]}", matched on shortened query "${candidate}"`);
+      }
+      return { results, matchedQuery: candidate, attempts };
+    }
+  }
+
+  console.log(
+    `[Marketplace] no results for "${rawQuery}" after trying ${attempts.length} quer${attempts.length === 1 ? 'y' : 'ies'}: ` +
+      attempts.map((a) => `"${a.query}"`).join(', ')
+  );
+  return { results: [], matchedQuery: null, attempts };
 }
 
 export async function registerAccount(

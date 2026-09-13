@@ -1,14 +1,23 @@
+import { useState } from 'react';
 import type { VisualSearchResult } from '../types';
 import { mediaUrl } from '../config';
-import { X, ShoppingCart, Check, SearchX } from 'lucide-react';
+import { X, ShoppingCart, Check, SearchX, Search } from 'lucide-react';
 
 interface Props {
   loading: boolean;
   error: string | null;
   results: VisualSearchResult[] | null;
   identification?: string | null;
+  /** Which query actually produced results, when it differs from what was
+   *  originally identified/typed (the marketplace's search shortens a
+   *  multi-word phrase until something matches — see backend/src/lib/marketplace.ts). */
+  matchedQuery?: string | null;
   cartProductIds: Set<string>;
   onAddToCart: (result: VisualSearchResult) => void;
+  /** Manual, user-typed search — independent of the AI crop-to-identify flow.
+   *  Doubles as a way to directly verify whether an item exists on the
+   *  marketplace at all. */
+  onManualSearch: (query: string) => void;
   onClose: () => void;
 }
 
@@ -17,10 +26,22 @@ export default function SearchResultsPanel({
   error,
   results,
   identification,
+  matchedQuery,
   cartProductIds,
   onAddToCart,
+  onManualSearch,
   onClose,
 }: Props) {
+  const [manualQuery, setManualQuery] = useState('');
+
+  function submitManualSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = manualQuery.trim();
+    if (trimmed) onManualSearch(trimmed);
+  }
+
+  const showShortenedNotice = matchedQuery && identification && matchedQuery !== identification;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col">
       <div className="safe-top flex items-center justify-between px-4 py-3 text-white">
@@ -32,9 +53,35 @@ export default function SearchResultsPanel({
           <X size={20} />
         </button>
       </div>
+
+      {/* Manual text search — usable at any time, whether or not an AI
+          crop-search has run yet. Lets a viewer type their own words and
+          verify directly whether the marketplace carries something. */}
+      <form onSubmit={submitManualSearch} className="px-4 pb-3 flex items-center gap-2">
+        <div className="flex-1 flex items-center gap-2 bg-white/10 rounded-full px-3 py-2">
+          <Search size={16} className="text-white/40 shrink-0" />
+          <input
+            value={manualQuery}
+            onChange={(e) => setManualQuery(e.target.value)}
+            placeholder="Or type to search the marketplace…"
+            className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-white/40 min-w-0"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={!manualQuery.trim()}
+          className="tap-target shrink-0 px-3 py-2 rounded-full bg-brand-cyan text-black text-xs font-semibold disabled:opacity-30"
+        >
+          Search
+        </button>
+      </form>
+
       <div className="safe-bottom safe-left safe-right flex-1 overflow-y-auto px-4 pb-6">
         {loading && <p className="text-white/60 text-sm mt-8 text-center">Searching…</p>}
         {error && <p className="text-red-400 text-sm mt-8 text-center">{error}</p>}
+        {!loading && !error && showShortenedNotice && (
+          <p className="text-white/40 text-[11px] text-center mb-2">Matched using the shorter term "{matchedQuery}"</p>
+        )}
         {!loading && !error && results && results.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center mt-16 gap-3">
             <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
@@ -44,10 +91,11 @@ export default function SearchResultsPanel({
               <p className="text-white/80 text-sm font-medium">No matches found</p>
               {identification ? (
                 <p className="text-white/40 text-xs mt-1">
-                  Nothing matching "{identification}" turned up on the marketplace.
+                  Nothing matching "{identification}" turned up on the marketplace, even after trying shorter and
+                  partial versions of it.
                 </p>
               ) : (
-                <p className="text-white/40 text-xs mt-1">Try marking a clearer or closer view of the item.</p>
+                <p className="text-white/40 text-xs mt-1">Try a different word, or mark a clearer view of the item.</p>
               )}
             </div>
           </div>

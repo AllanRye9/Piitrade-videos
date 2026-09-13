@@ -148,14 +148,15 @@ export const api = {
     form.append('image', imageBlob, 'crop.jpg');
     console.log(`[VisualSearch] POST /api/visual-search — sending ${imageBlob.size} byte ${imageBlob.type || 'image/jpeg'} selection`);
     const startedAt = Date.now();
-    return request<{ results: VisualSearchResult[]; identification?: string }>('/api/visual-search', {
+    return request<{ results: VisualSearchResult[]; identification?: string; matchedQuery?: string | null }>('/api/visual-search', {
       method: 'POST',
       body: form,
     })
       .then((res) => {
         console.log(
           `[VisualSearch] got ${res.results.length} result(s) in ${Date.now() - startedAt}ms` +
-            (res.identification ? ` — identified as "${res.identification}"` : ' — local catalog match (no AI identification)')
+            (res.identification ? ` — identified as "${res.identification}"` : ' — local catalog match (no AI identification)') +
+            (res.matchedQuery && res.matchedQuery !== res.identification ? ` — matched via shortened query "${res.matchedQuery}"` : '')
         );
         return res;
       })
@@ -166,6 +167,28 @@ export const api = {
   },
 
   marketplaceAccount: () => request<MarketplaceAccountStatus>('/api/marketplace/account'),
+
+  // Manual, user-typed search — independent of the AI-identify pipeline.
+  // Lets a viewer type their own words and verify directly whether the
+  // marketplace carries something (or refine a poor AI identification).
+  marketplaceSearch: (query: string) => {
+    console.log(`[MarketplaceSearch] GET /api/marketplace/search?q=${query}`);
+    const startedAt = Date.now();
+    return request<{ results: VisualSearchResult[]; matchedQuery: string | null }>(
+      `/api/marketplace/search?q=${encodeURIComponent(query)}`
+    )
+      .then((res) => {
+        console.log(
+          `[MarketplaceSearch] got ${res.results.length} result(s) in ${Date.now() - startedAt}ms` +
+            (res.matchedQuery && res.matchedQuery !== query ? ` — matched via shortened query "${res.matchedQuery}"` : '')
+        );
+        return res;
+      })
+      .catch((err) => {
+        console.error(`[MarketplaceSearch] failed after ${Date.now() - startedAt}ms:`, err instanceof Error ? err.message : err);
+        throw err;
+      });
+  },
 
   marketplaceUnlink: () => request<void>('/api/marketplace/account', { method: 'DELETE' }),
 

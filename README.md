@@ -61,6 +61,16 @@ docker compose down -v
 docker compose up --build
 ```
 
+To run the backend's regression test suite (see "Why a search can
+return 0 results..." below for what it covers):
+
+```bash
+cd backend
+npm install
+npm run build
+npm test
+```
+
 ## Admin dashboard
 
 Visit `/admin/register` to create the first admin account — this is
@@ -161,6 +171,49 @@ be diagnosed from the logs rather than guessed at. A search with no
 matches shows a decorated empty state (icon + explanation) in the
 results panel rather than a bare line of text.
 
+### Why a search can return 0 results even when the item exists — and the fix
+
+The marketplace's own search (`/api/listings?q=`) does a **verbatim,
+case-insensitive substring match of the entire query string** against
+title/description — confirmed directly against its route source
+(Prisma `contains: q, mode: 'insensitive'`, not word-tokenized or
+fuzzy). Our AI worker deliberately writes 5-8 word descriptions
+("Vintage Wooden Dining Chair with Carved Legs"). A real listing
+titled just "Wooden Dining Chair" **never contains that exact phrase**
+verbatim, so it gets filtered out — even though it's the right item.
+
+`searchProductsWithFallback` (`backend/src/lib/marketplace.ts`) exists
+specifically to compensate: it retries with progressively narrower
+slices of the text — prefixes, suffixes, then individual meaningful
+words (stopwords excluded) — capped at 10 attempts, stopping at the
+first one that returns anything. This was arrived at by testing
+against a simulated version of the real backend's exact matching
+behavior (see `backend/test/marketplace.test.js`): a first, simpler
+version (prefixes only) still failed the "Vintage Wooden Dining
+Chair..." case, because "Vintage" led every prefix candidate and the
+real title had no "Vintage" in it — every candidate still contained
+that leading word. Both `visualSearch.ts` (AI pipeline) and the manual
+search route below use this same fallback, and the response includes
+`matchedQuery` so the UI can show "Matched using the shorter term
+'...'" when the fallback had to kick in.
+
+Run `npm test` in `backend/` to run this regression suite — it uses
+Node's built-in test runner (`node:test`), no new dependency, and
+specifically pins down that fix (deliberately breaking the fallback
+ladder makes a real test fail, not just a hypothetical).
+
+### Manual search — type to search directly
+
+Independent of the AI crop-to-identify flow, `GET
+/api/marketplace/search?q=<text>` lets a viewer type their own words
+and search the marketplace directly — useful both as an alternative
+when a crop-based AI identification isn't specific enough, and as a
+direct way to verify whether an item genuinely exists there. It's
+exposed in the UI two ways: a search box inside the results panel
+(usable at any time, before or after an AI search has run), and a
+"type to search instead" link in the crop overlay that skips marking
+a region entirely.
+
 Results are shown in the same results panel either way. Tapping a
 result adds it to an in-video cart; once the cart has an item, a blue
 **"Click to checkout"** bar appears. Checkout:
@@ -234,7 +287,8 @@ backend/
   prisma/seed.ts              # generates real sample videos (ffmpeg) + product images (sharp)
   src/routes/videos.ts        # public: list/search/upload/like/favorite/save/comments
   src/routes/visualSearch.ts  # AI-identify + marketplace lookup, or perceptual-hash fallback
-  src/routes/marketplace.ts   # marketplace account link (login/register), checkout
+  src/routes/marketplace.ts   # marketplace account link (login/register), checkout, manual search
+  test/marketplace.test.js    # regression tests for the search fallback ladder (npm test)
   src/routes/profile.ts       # avatar + display name (per anonymous session)
   src/routes/auth.ts          # admin register/login/me
   src/routes/admin.ts         # admin-only: video/comment moderation, product CRUD, stats
@@ -327,6 +381,7 @@ upload rather than failing it (see `lib/imagekit.ts`).
 | POST | `/api/videos/:id/like` \| `/favorite` \| `/save` | Toggle interaction state |
 | GET/POST | `/api/videos/:id/comments` | List / post comments |
 | POST | `/api/visual-search` | `multipart/form-data`: `image` — AI-identify + marketplace lookup (if configured) or ranked similar products from the local catalog |
+| GET | `/api/marketplace/search` | `?q=<text>` — manual, user-typed marketplace search (same fallback ladder as visual search) |
 | GET | `/api/marketplace/account` | Is this session's browser linked to a marketplace account? |
 | POST | `/api/marketplace/login` \| `/register` | Link this session to a marketplace account |
 | DELETE | `/api/marketplace/account` | Unlink |

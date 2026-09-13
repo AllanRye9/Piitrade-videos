@@ -3,7 +3,7 @@ import { prisma } from '../db';
 import { uploadImage } from '../middleware/upload';
 import { computeImageHash, hammingDistance, similarityScore } from '../lib/phash';
 import { identifyImage } from '../lib/aiSearch';
-import { searchProducts } from '../lib/marketplace';
+import { searchProductsWithFallback, toSearchResultDto } from '../lib/marketplace';
 
 const router = Router();
 
@@ -29,27 +29,21 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
   console.log(`[VisualSearch] received ${file.size} byte ${file.mimetype} selection`);
 
   if (marketplacePipelineEnabled()) {
-    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> MARKETPLACE_API search');
+    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> MARKETPLACE_API search (with query-shortening fallback)');
     // 1. Ask the configured AI service what the cropped selection shows.
     const identification = await identifyImage(file.buffer, file.mimetype);
     // 2. Ask the marketplace whether it carries anything matching that
-    //    identification, and shape the response into the same display
-    //    shape the frontend already renders (SearchResultsPanel).
-    const products = await searchProducts(identification.text);
-    const results = products.slice(0, 12).map((p) => ({
-      id: p.id,
-      name: p.name,
-      price: p.price,
-      category: identification.text,
-      image: p.image,
-      description: p.description,
-      productUrl: p.url,
-      inStock: p.inStock ?? true,
-      sellerId: p.sellerId,
-      match: 100,
-    }));
-    console.log(`[VisualSearch] returning ${results.length} result(s) for "${identification.text}"`);
-    res.json({ results, identification: identification.text });
+    //    identification. The marketplace does verbatim substring
+    //    matching, so a multi-word AI description is retried against
+    //    progressively shorter prefixes until something actually
+    //    matches — see searchProductsWithFallback for why.
+    const outcome = await searchProductsWithFallback(identification.text);
+    const results = outcome.results.slice(0, 12).map((p) => toSearchResultDto(p, identification.text));
+    console.log(
+      `[VisualSearch] returning ${results.length} result(s) for "${identification.text}"` +
+        (outcome.matchedQuery && outcome.matchedQuery !== identification.text ? ` (matched on shortened query "${outcome.matchedQuery}")` : '')
+    );
+    res.json({ results, identification: identification.text, matchedQuery: outcome.matchedQuery });
     return;
   }
 

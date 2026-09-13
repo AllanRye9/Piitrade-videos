@@ -5,6 +5,10 @@ interface Props {
   videoEl: HTMLVideoElement;
   onCancel: () => void;
   onCropped: (blob: Blob) => void;
+  /** Skips cropping entirely and opens the results panel in manual
+   *  text-search mode instead — for when marking a region isn't the
+   *  point (e.g. just checking whether an item exists by name). */
+  onManualSearch: () => void;
 }
 
 type Tool = 'rect' | 'square' | 'circle' | 'freeform';
@@ -69,7 +73,7 @@ const MIN_SELECTION_DISPLAY_PX = 6;
  * also capped to MAX_OUTPUT_DIMENSION so payload size never balloons
  * for a large selection or a high-resolution source video.
  */
-export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
+export default function CropOverlay({ videoEl, onCancel, onCropped, onManualSearch }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -471,7 +475,7 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
         </button>
       </div>
 
-      <div className="flex items-center justify-center gap-2 pb-2">
+      <div className="flex items-center justify-center gap-2 pb-1">
         {TOOLS.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -488,6 +492,10 @@ export default function CropOverlay({ videoEl, onCancel, onCropped }: Props) {
           </button>
         ))}
       </div>
+
+      <button type="button" onClick={onManualSearch} className="tap-target self-center pb-2 text-white/50 text-xs underline">
+        Or type to search instead
+      </button>
 
       <div className="safe-bottom safe-left safe-right relative flex-1 mx-3 sm:mx-4 mb-4 sm:mb-6 rounded-xl overflow-hidden bg-black">
         <canvas

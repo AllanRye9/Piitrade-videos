@@ -42,6 +42,7 @@ export default function VideoCard({ video, active }: Props) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<VisualSearchResult[] | null>(null);
   const [identification, setIdentification] = useState<string | null>(null);
+  const [matchedQuery, setMatchedQuery] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   // Whether the video was actually playing right before the visual
   // search flow paused it — so "resume watching" only auto-plays if
@@ -178,15 +179,52 @@ export default function VideoCard({ video, active }: Props) {
     setSearchError(null);
     setSearchResults(null);
     setIdentification(null);
+    setMatchedQuery(null);
     try {
       const res = await api.visualSearch(blob);
       setSearchResults(res.results);
       setIdentification(res.identification ?? null);
+      setMatchedQuery(res.matchedQuery ?? null);
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
       setSearchLoading(false);
     }
+  }
+
+  // Manual, user-typed search — reachable either by typing in the results
+  // panel (whether or not an AI search has already run) or via "Type to
+  // search instead" in the crop overlay, which skips cropping entirely.
+  async function handleManualSearch(query: string) {
+    setShowCrop(false);
+    setShowResults(true);
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchResults(null);
+    setIdentification(query);
+    setMatchedQuery(null);
+    try {
+      const res = await api.marketplaceSearch(query);
+      setSearchResults(res.results);
+      setMatchedQuery(res.matchedQuery);
+    } catch (err) {
+      setSearchError(err instanceof Error ? err.message : 'Search failed');
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  // Opens the results panel directly in manual-search mode, skipping the
+  // crop step — used by "Type to search instead" in the crop overlay. The
+  // video is already paused from openCrop(), so no extra pause is needed.
+  function openManualSearch() {
+    setShowCrop(false);
+    setShowResults(true);
+    setSearchLoading(false);
+    setSearchError(null);
+    setSearchResults(null);
+    setIdentification(null);
+    setMatchedQuery(null);
   }
 
   function addToCart(result: VisualSearchResult) {
@@ -316,7 +354,12 @@ export default function VideoCard({ video, active }: Props) {
       </div>
 
       {showCrop && videoRef.current && (
-        <CropOverlay videoEl={videoRef.current} onCancel={resumeWatching} onCropped={handleCropped} />
+        <CropOverlay
+          videoEl={videoRef.current}
+          onCancel={resumeWatching}
+          onCropped={handleCropped}
+          onManualSearch={openManualSearch}
+        />
       )}
       {showResults && (
         <>
@@ -325,8 +368,10 @@ export default function VideoCard({ video, active }: Props) {
             error={searchError}
             results={searchResults}
             identification={identification}
+            matchedQuery={matchedQuery}
             cartProductIds={new Set(cart.map((c) => c.productId))}
             onAddToCart={addToCart}
+            onManualSearch={handleManualSearch}
             onClose={resumeWatching}
           />
           <CartBar items={cart} onCheckout={() => setShowCheckout(true)} />
