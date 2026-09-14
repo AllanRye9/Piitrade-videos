@@ -351,7 +351,7 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {showSettings && <ProfileSettings displayName={profile.displayName} onClose={() => setShowSettings(false)} />}
+      {showSettings && <ProfileSettings displayName={profile.displayName} handle={profile.handle} onClose={() => setShowSettings(false)} />}
 
       {previewVideo && (
         <div className="fixed inset-0 z-50 bg-black sm:bg-black/90 flex items-center justify-center">

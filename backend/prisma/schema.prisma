@@ -21,10 +21,16 @@ model Video {
   comments       Int      @default(0)
   createdAt      DateTime @default(now())
 
+  // The X-Session-Id that uploaded this video (see routes/videos.ts).
+  // Nullable so pre-existing rows (uploaded before this column existed)
+  // still read fine — they just have no discoverable uploader.
+  uploaderSessionId String?
+
   commentList    Comment[]
   states         UserVideoState[]
 
   @@index([createdAt])
+  @@index([uploaderSessionId])
 }
 
 model Comment {
@@ -90,6 +96,16 @@ model SessionProfile {
   // next to their avatar wherever it appears (comments composer,
   // checkout). Purely cosmetic; never used for auth or as a lookup key.
   displayName String?
+  // Public, unique, URL-safe slug (e.g. "rye-uploads") that makes this
+  // otherwise-anonymous session discoverable at /u/:handle. Auto-
+  // generated the first time a session needs one (first video upload,
+  // or first visit to the account-discovery routes) — see
+  // routes/profile.ts's ensureHandle() — and editable afterwards from
+  // Settings. Nullable because most sessions never upload and so never
+  // need one.
+  handle      String?  @unique
+  // Short freeform bio shown on the public /u/:handle profile page.
+  bio         String?
   updatedAt   DateTime @updatedAt
 }
 

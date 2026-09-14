@@ -11,6 +11,7 @@ import type {
   MarketplaceCheckoutResponse,
   MarketplaceCountry,
   CartItem,
+  AccountSummary,
 } from './types';
 import { API_BASE } from './config';
 
@@ -217,13 +218,21 @@ export const api = {
       }),
     }),
 
-  getProfile: () => request<{ avatar: string | null; displayName: string | null }>('/api/profile'),
+  getProfile: () =>
+    request<{ avatar: string | null; displayName: string | null; handle: string | null; bio: string | null }>('/api/profile'),
 
-  updateProfile: (displayName: string | null) =>
-    request<{ displayName: string | null }>('/api/profile', {
+  updateProfile: (fields: { displayName?: string | null; bio?: string | null }) =>
+    request<{ displayName: string | null; bio: string | null }>('/api/profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ displayName }),
+      body: JSON.stringify(fields),
+    }),
+
+  updateHandle: (handle: string) =>
+    request<{ handle: string }>('/api/profile/handle', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle }),
     }),
 
   uploadAvatar: (file: File) => {
@@ -233,6 +242,12 @@ export const api = {
   },
 
   deleteAvatar: () => request<void>('/api/profile/avatar', { method: 'DELETE' }),
+
+  // Public account discovery — see backend/src/routes/accounts.ts.
+  discoverAccounts: (q?: string) =>
+    request<{ accounts: AccountSummary[] }>(`/api/accounts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+
+  getAccount: (handle: string) => request<{ account: AccountSummary; videos: Video[] }>(`/api/accounts/${encodeURIComponent(handle)}`),
 };
 
 export const adminApi = {

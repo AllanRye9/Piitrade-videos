@@ -1,3 +1,11 @@
+/** Public info about who uploaded a video — absent for videos with no
+ *  (or no longer discoverable) uploader. See /u/:handle (AccountPage). */
+export interface VideoUploader {
+  handle: string;
+  displayName: string | null;
+  avatar: string | null;
+}
+
 export interface Video {
   id: string;
   title: string;
@@ -12,6 +20,18 @@ export interface Video {
   liked: boolean;
   favorited: boolean;
   saved: boolean;
+  uploader?: VideoUploader | null;
+}
+
+/** Summary shown on the discover list and at the top of a public
+ *  /u/:handle profile page. */
+export interface AccountSummary {
+  handle: string;
+  displayName: string | null;
+  avatar: string | null;
+  bio: string | null;
+  videoCount: number;
+  totalLikes: number;
 }
 
 export interface Comment {

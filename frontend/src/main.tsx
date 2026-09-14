@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import App from './App';
 import ProfilePage from './components/ProfilePage';
+import AccountPage from './components/AccountPage';
+import DiscoverPage from './components/DiscoverPage';
 import { AdminAuthProvider } from './admin/AdminAuthContext';
 import RequireAdmin from './admin/RequireAdmin';
 import AdminLogin from './admin/AdminLogin';
@@ -26,6 +28,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             }
           />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/u/:handle" element={<AccountPage />} />
           <Route path="/*" element={<App />} />
         </Routes>
       </AdminAuthProvider>

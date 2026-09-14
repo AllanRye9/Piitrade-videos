@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, X } from 'lucide-react';
+import { Search, X, Compass } from 'lucide-react';
 import Avatar from './Avatar';
 import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
 
@@ -63,6 +63,13 @@ export default function TopBar({ onSearch, onUploadClick }: Props) {
       >
         Upload
       </button>
+      <Link
+        to="/discover"
+        aria-label="Discover creators"
+        className="tap-target shrink-0 h-11 w-11 rounded-full bg-white/10 flex items-center justify-center border border-white/10 text-white"
+      >
+        <Compass size={20} />
+      </Link>
       <Link
         to="/profile"
         aria-label="Open your profile"
