@@ -11,6 +11,17 @@ ffmpeg (video thumbnails), JWT + bcrypt (admin auth), Docker Compose.
 
 ## Running it
 
+> **If you have deployed this before and are seeing "Internal server
+> error" on cart/checkout:** during development, some migration files'
+> SQL content was revised under the same filename instead of as new
+> migrations. If `prisma migrate deploy` ever ran against an older
+> version, your database is silently stuck on an older column shape
+> than the current code expects — see the `20250106000000_...` and
+> especially `20250105000000_reconcile_marketplace_schema` migration
+> for the (idempotent, safe-to-rerun) fix. Just run
+> `npx prisma migrate deploy` — from this point on, schema changes only
+> ever get new migration files, never edits to old ones.
+
 ```bash
 docker compose up --build
 ```
@@ -119,6 +130,7 @@ AI_SEARCH=https://apkit.allan-rye-999.workers.dev
 AI_SEARCH_API_KEY=
 MARKETPLACE_API=https://backend-production-a662.up.railway.app
 MARKETPLACE_COUNTRY=UGANDA
+MARKETPLACE_SITE_URL=https://piitrade.com
 ```
 
 **Important — `MARKETPLACE_API` is the backend host, not `piitrade.com`.**
@@ -214,9 +226,17 @@ exposed in the UI two ways: a search box inside the results panel
 "type to search instead" link in the crop overlay that skips marking
 a region entirely.
 
-Results are shown in the same results panel either way. Tapping a
-result adds it to an in-video cart; once the cart has an item, a blue
-**"Click to checkout"** bar appears. Checkout:
+Results are shown in the same results panel either way, each with
+every photo the listing has, not just one — tap a thumbnail to open a
+full-screen viewer with zoom and left/right paging through all of
+them (`ImageLightbox.tsx`). Tapping a result adds it to a cart that's
+**shared and persistent across the whole app** (`frontend/src/cartStore.ts`,
+backed by localStorage) — previously the cart lived in a single video
+card's local React state, which reset the moment that card scrolled
+out of view in the feed; now items stay until you remove them
+(tap "Added" again on a result, or the trash icon in checkout) or
+clear the cart entirely. Once the cart has an item, a blue **"Click to
+checkout"** bar appears. Checkout:
 
 1. Checks whether this browser session already has a linked
    marketplace account (`GET /api/marketplace/account`).
@@ -231,6 +251,17 @@ result adds it to an in-video cart; once the cart has an item, a blue
 4. On success (or on cancel at any point), the video **resumes
    watching** — it's paused only for the duration of this flow, never
    permanently.
+
+**Completing the transaction happens on the real marketplace, not
+this app.** `piitrade.com`'s own homepage says "Meet in public,
+inspect before paying", and its order-creation source defaults every
+order to `CASH_ON_DELIVERY` — there's no online payment gateway to
+integrate with. So on success, this app opens the marketplace's own
+cart (`{MARKETPLACE_SITE_URL}/cart`, e.g. `https://piitrade.com/cart`
+— not the homepage or any other page) **in a new tab**, so this app is
+never left/unloaded; the success screen also always shows the same
+link as a button, since a `window.open` right after an async request
+can get silently blocked by some browsers' popup blockers.
 
 **Same-seller order grouping.** The marketplace's `POST /api/orders`
 requires every item in one order to belong to the same seller. Since
@@ -249,7 +280,11 @@ only (see the `MarketplaceLink` Prisma model), keyed by the same
 anonymous `X-Session-Id` used elsewhere in the app — neither is ever
 sent to the browser. The refresh token itself is extracted by hand
 from the marketplace's httpOnly `Set-Cookie` on login, since this is
-a server-to-server call rather than a browser session.
+a server-to-server call rather than a browser session. All of this —
+seller grouping, the token-refresh retry, and the redirect URL — has
+real test coverage in `backend/test/checkout.test.js`, including a
+test that specifically verifies the redirect always lands on `/cart`
+and nothing else.
 
 ### The `worker/` service
 
@@ -283,25 +318,33 @@ reasonable regardless of selection size or source video resolution.
 
 ```
 backend/
-  prisma/schema.prisma        # Video, Comment, UserVideoState, Product, AdminUser, MarketplaceLink
+  prisma/schema.prisma        # Video, Comment, UserVideoState, Product, AdminUser, MarketplaceLink, SessionProfile
   prisma/seed.ts              # generates real sample videos (ffmpeg) + product images (sharp)
-  src/routes/videos.ts        # public: list/search/upload/like/favorite/save/comments
+  src/routes/videos.ts        # public: list/search/upload/like/favorite/save/comments/download
   src/routes/visualSearch.ts  # AI-identify + marketplace lookup, or perceptual-hash fallback
   src/routes/marketplace.ts   # marketplace account link (login/register), checkout, manual search
-  test/marketplace.test.js    # regression tests for the search fallback ladder (npm test)
+  src/routes/creators.ts      # discoverable uploader accounts (list + per-creator profile)
   src/routes/profile.ts       # avatar + display name (per anonymous session)
   src/routes/auth.ts          # admin register/login/me
   src/routes/admin.ts         # admin-only: video/comment moderation, product CRUD, stats
   src/lib/phash.ts            # the dHash algorithm + Hamming distance (fallback search)
   src/lib/aiSearch.ts         # client for the AI_SEARCH identification service
-  src/lib/marketplace.ts      # client for the MARKETPLACE_API service
+  src/lib/marketplace.ts      # client for the MARKETPLACE_API service (search fallback ladder, checkout)
+  src/lib/watermark.ts        # burns the piitrade.com watermark into downloads (ffmpeg)
   src/lib/thumbnail.ts        # ffmpeg poster-frame extraction
+  src/lib/videoTranscode.ts   # normalizes every upload to H.264/AAC MP4
   src/lib/auth.ts             # bcrypt hashing + JWT signing/verification
   src/middleware/requireAdmin.ts
+  test/marketplace.test.js    # search fallback ladder + manual search route (npm test)
+  test/checkout.test.js       # seller grouping, token refresh, redirect URL, account link/unlink
+  test/download.test.js       # watermarked download route — runs real ffmpeg, no mocking
+  test/creators.test.js       # discoverable creator accounts
 worker/
   worker.js                   # standalone service hosting the identification AI (AI_SEARCH target)
 frontend/
-  src/components/             # feed, video card, crop overlay, cart bar, checkout modal, upload/comment modals, Avatar, ProfileSettings
+  src/components/             # feed, video card, crop overlay, image lightbox, cart bar, checkout modal,
+                               # upload/comment modals, Avatar, ProfileSettings, CreatorPage, CreatorsDiscoveryPage
+  src/cartStore.ts            # shared, localStorage-persisted cart (external-store pattern)
   src/profileStore.ts         # shared avatar/display-name state (external-store pattern)
   src/soundPreference.ts      # shared feed-wide mute/unmute state (external-store pattern)
   src/admin/                  # login, register, dashboard + tabs (stats/videos/comments/products)
@@ -356,6 +399,62 @@ including after a reload (persisted to `localStorage`), matching how
 TikTok/Reels/Shorts behave. All videos still start muted, since every
 browser requires that for autoplay.
 
+**Hold a video for 3+ seconds** to open a playback-speed control
+(0.5x/1x/1.25x/1.5x/2x) without interrupting playback — a normal tap
+still just plays/pauses (`VideoCard.tsx`'s pointer-down/up handlers
+distinguish a long-press from a tap and swallow the click that follows
+a triggered long-press). The current speed shows as a small badge
+while it's not 1x, and resets to 1x whenever the card becomes inactive
+(scrolled away).
+
+## Downloads: piitrade.com watermark
+
+Tapping Download doesn't hand back the raw stored file — it hits
+`GET /api/videos/:id/download`, which burns a piitrade.com watermark
+into a copy of the video before serving it (`backend/src/lib/watermark.ts`):
+a small persistent "piitrade.com" mark in the bottom-right corner for
+the whole video, plus a larger centered version that fades in, holds,
+and fades out over the first ~2.6 seconds. This was verified by
+actually running the ffmpeg command and inspecting the output frames
+(not just reading the filter string), and has real test coverage
+(`backend/test/download.test.js`) that runs the genuine ffmpeg binary
+against a generated test video and checks the actual output — no
+mocking, since the whole point of this feature is the real video
+processing. Watermarking happens once per video and is cached in
+`uploads/downloads/` (a fresh Docker image needs the
+`fonts-dejavu-core` package installed for this — already in the
+Dockerfile — since drawtext has no font to render text with
+otherwise); a video whose source is remote (ImageKit) is watermarked
+directly from that URL, and if watermarking ever fails for any reason,
+the route falls back to serving the plain original file rather than
+failing the download outright.
+
+## Discoverable creator accounts
+
+Every video tracks which anonymous session uploaded it
+(`Video.uploaderSessionId`, set from the same `X-Session-Id` used
+everywhere else in the app — there's no separate login/registration
+for uploading, consistent with how the rest of this app treats
+viewers). That makes two things possible:
+
+- **`GET /api/creators`** — a discovery list of everyone who has
+  uploaded at least one video, with their display name/avatar (from
+  `SessionProfile`, if they've set one) and aggregate stats (video
+  count, total likes, total views), most videos first. Reachable via
+  the people icon in the top bar (`/creators`,
+  `CreatorsDiscoveryPage.tsx`).
+- **`GET /api/creators/:sessionId`** — that creator's public profile:
+  the same stats plus every video they've posted, newest first
+  (`/creator/:sessionId`, `CreatorPage.tsx`). Tapping a video opens it
+  full-screen via the same `VideoCard` used in the main feed.
+
+Each video in the main feed also shows its uploader's avatar and name
+(tappable, linking to their creator page) via `uploaderDisplayName`/
+`uploaderAvatar` now included on every serialized video. A session
+that has never uploaded isn't a discoverable creator, even if it has
+set an avatar/display name from just watching — `GET /api/creators/:id`
+returns 404 for it, and it's excluded from the discovery list.
+
 ## Optional CDN storage (ImageKit)
 
 Videos, poster frames, and avatars can optionally be stored on
@@ -377,9 +476,12 @@ upload rather than failing it (see `lib/imagekit.ts`).
 | GET | `/api/videos` | List all videos (with per-session like/favorite/save state) |
 | GET | `/api/videos/search?q=` | Search by title/description |
 | GET | `/api/videos/:id` | Get one video, increments view count |
+| GET | `/api/videos/:id/download` | A piitrade.com-watermarked copy, as an attachment |
 | POST | `/api/videos` | Upload a video (`multipart/form-data`: `video`, `title`, `description`) |
 | POST | `/api/videos/:id/like` \| `/favorite` \| `/save` | Toggle interaction state |
 | GET/POST | `/api/videos/:id/comments` | List / post comments |
+| GET | `/api/creators` | Discover uploaders — display name/avatar + aggregate stats, most videos first |
+| GET | `/api/creators/:sessionId` | One creator's public profile + every video they've uploaded |
 | POST | `/api/visual-search` | `multipart/form-data`: `image` — AI-identify + marketplace lookup (if configured) or ranked similar products from the local catalog |
 | GET | `/api/marketplace/search` | `?q=<text>` — manual, user-typed marketplace search (same fallback ladder as visual search) |
 | GET | `/api/marketplace/account` | Is this session's browser linked to a marketplace account? |

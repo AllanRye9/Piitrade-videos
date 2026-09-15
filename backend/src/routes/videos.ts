@@ -7,9 +7,10 @@ import { uploadVideo } from '../middleware/upload';
 import { extractPoster, getVideoDuration } from '../lib/thumbnail';
 import { transcodeToMp4 } from '../lib/videoTranscode';
 import { uploadToStore } from '../lib/imagekit';
-import { VIDEOS_DIR, POSTERS_DIR } from '../paths';
+import { VIDEOS_DIR, POSTERS_DIR, DOWNLOADS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
-import { ensureHandle, resolveAvatarUrl } from './profile';
+import { burnWatermark } from '../lib/watermark';
+import { resolveAvatarUrl } from './profile';
 
 const router = Router();
 
@@ -35,9 +36,7 @@ type VideoRecord = {
 
 type StateRecord = { videoId: string; liked: boolean; favorited: boolean; saved: boolean };
 
-type UploaderRecord = { sessionId: string; handle: string | null; displayName: string | null; avatar: string | null };
-
-export function getSessionId(req: Request): string {
+function getSessionId(req: Request): string {
   const id = req.header('x-session-id');
   return id && id.trim() ? id.trim() : 'anonymous';
 }
@@ -52,7 +51,7 @@ export function resolveAssetUrl(value: string, localDir: 'videos' | 'posters'): 
   return `/uploads/${localDir}/${value}`;
 }
 
-export function serialize(video: VideoRecord, state?: StateRecord, uploader?: UploaderRecord | null) {
+function serialize(video: VideoRecord, state?: StateRecord, uploader?: { displayName: string | null; avatar: string | null }) {
   return {
     id: video.id,
     title: video.title,
@@ -67,28 +66,28 @@ export function serialize(video: VideoRecord, state?: StateRecord, uploader?: Up
     liked: state?.liked ?? false,
     favorited: state?.favorited ?? false,
     saved: state?.saved ?? false,
-    // Only ever the uploader's *public* handle/displayName/avatar —
-    // never uploaderSessionId itself, which stays server-side so a
-    // viewer can't be tracked across videos by session id.
-    uploader: uploader?.handle ? { handle: uploader.handle, displayName: uploader.displayName, avatar: uploader.avatar } : null,
+    uploaderSessionId: video.uploaderSessionId || null,
+    uploaderDisplayName: uploader?.displayName ?? null,
+    uploaderAvatar: uploader?.avatar ?? null,
   };
 }
 
 /**
- * Batch-fetches public uploader info (handle/displayName/avatar) for a
- * list of videos in a single query, same N+1-avoidance rationale as
- * fetchStatesFor() below. Videos uploaded before uploaderSessionId
- * existed, or whose uploader never claimed a public handle, simply
- * have no entry in the returned map.
+ * Batch-fetches uploader display info (name + avatar) for a list of
+ * videos in a single query, the same N+1-avoiding pattern as
+ * fetchStatesFor below — one query per PAGE of videos, not one per
+ * video, regardless of how many distinct uploaders appear in it.
  */
-async function fetchUploadersFor(videos: VideoRecord[]): Promise<Map<string, UploaderRecord>> {
-  const sessionIds = [...new Set(videos.map((v) => v.uploaderSessionId).filter((id): id is string => !!id))];
+async function fetchUploaderProfilesFor(
+  videos: VideoRecord[]
+): Promise<Map<string, { displayName: string | null; avatar: string | null }>> {
+  const sessionIds = Array.from(new Set(videos.map((v) => v.uploaderSessionId).filter((id): id is string => Boolean(id))));
   if (sessionIds.length === 0) return new Map();
-  const profiles = await prisma.sessionProfile.findMany({ where: { sessionId: { in: sessionIds }, handle: { not: null } } });
+  const profiles = await prisma.sessionProfile.findMany({ where: { sessionId: { in: sessionIds } } });
   return new Map(
-    profiles.map((p: { sessionId: string; handle: string | null; displayName: string | null; avatar: string | null }) => [
+    profiles.map((p: { sessionId: string; displayName: string | null; avatar: string | null }) => [
       p.sessionId,
-      { sessionId: p.sessionId, handle: p.handle, displayName: p.displayName, avatar: p.avatar ? resolveAvatarUrl(p.avatar) : null },
+      { displayName: p.displayName, avatar: p.avatar ? resolveAvatarUrl(p.avatar) : null },
     ])
   );
 }
@@ -113,8 +112,8 @@ router.get('/', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const videos: VideoRecord[] = await prisma.video.findMany({ orderBy: { createdAt: 'desc' } });
   const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
-  const uploaderMap = await fetchUploadersFor(videos);
-  res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)) });
+  const uploaderMap = await fetchUploaderProfilesFor(videos);
+  res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : undefined)) });
 });
 
 // GET /api/videos/search?q=
@@ -135,8 +134,8 @@ router.get('/search', async (req: Request, res: Response) => {
     orderBy: { createdAt: 'desc' },
   });
   const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
-  const uploaderMap = await fetchUploadersFor(videos);
-  res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)) });
+  const uploaderMap = await fetchUploaderProfilesFor(videos);
+  res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : undefined)) });
 });
 
 // GET /api/videos/:id
@@ -147,8 +146,46 @@ router.get('/:id', async (req: Request, res: Response) => {
 
   const updated = await prisma.video.update({ where: { id: video.id }, data: { views: { increment: 1 } } });
   const stateMap = await fetchStatesFor([video.id], sessionId);
-  const uploaderMap = await fetchUploadersFor([updated]);
-  res.json({ video: serialize(updated, stateMap.get(video.id), updated.uploaderSessionId ? uploaderMap.get(updated.uploaderSessionId) : null) });
+  const uploaderMap = await fetchUploaderProfilesFor([updated]);
+  res.json({ video: serialize(updated, stateMap.get(video.id), updated.uploaderSessionId ? uploaderMap.get(updated.uploaderSessionId) : undefined) });
+});
+
+// GET /api/videos/:id/download — a piitrade.com-watermarked copy for
+// saving to the device, distinct from the plain file served for
+// in-app playback. Watermarking is done once and cached in
+// DOWNLOADS_DIR (see lib/watermark.ts) — later downloads of the same
+// video are served instantly from that cache instead of re-encoding.
+router.get('/:id/download', async (req: Request, res: Response) => {
+  const video: VideoRecord | null = await prisma.video.findUnique({ where: { id: req.params.id } });
+  if (!video) throw new HttpError(404, 'Video not found');
+
+  const safeName = (video.title || 'video').replace(/[^\w\-]+/g, '_').slice(0, 80) || 'video';
+  const cachedPath = path.join(DOWNLOADS_DIR, `${video.id}.mp4`);
+  const isRemoteSource = /^https?:\/\//i.test(video.filename);
+  const sourceInput = isRemoteSource ? video.filename : path.join(VIDEOS_DIR, video.filename);
+
+  if (!fs.existsSync(cachedPath)) {
+    fs.mkdirSync(DOWNLOADS_DIR, { recursive: true }); // defensive — index.ts creates this at startup, but don't depend solely on that
+    console.log(`[Download] watermarking video ${video.id} (source: ${isRemoteSource ? 'remote' : 'local'})`);
+    const startedAt = Date.now();
+    try {
+      await burnWatermark(sourceInput, cachedPath);
+      console.log(`[Download] watermarked ${video.id} in ${Date.now() - startedAt}ms`);
+    } catch (err) {
+      // Don't fail the download over a watermarking problem — fall
+      // back to the plain file so the viewer still gets their video.
+      console.error(`[Download] watermarking failed for ${video.id}, falling back to the original file:`, err);
+      fs.rm(cachedPath, { force: true }, () => {}); // clean up any partial output
+      if (isRemoteSource) {
+        res.redirect(sourceInput);
+        return;
+      }
+      res.download(sourceInput, `${safeName}.mp4`);
+      return;
+    }
+  }
+
+  res.download(cachedPath, `${safeName}.mp4`);
 });
 
 // POST /api/videos  (multipart: video, title, description)
@@ -156,7 +193,6 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
   const file = req.file;
   if (!file) throw new HttpError(400, 'No video file uploaded');
 
-  const sessionId = getSessionId(req);
   const title = String(req.body.title || 'Untitled').slice(0, 200);
   const description = String(req.body.description || '').slice(0, 1000);
 
@@ -244,15 +280,6 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
     console.warn('VIDEO_STORE upload failed, keeping local copy:', err instanceof Error ? err.message : err);
   }
 
-  // Real sessions ('anonymous' means no X-Session-Id header at all,
-  // which shouldn't happen from the app itself) get a public handle
-  // so the video they're about to post is immediately discoverable at
-  // /u/:handle instead of only becoming so the next time they open
-  // Settings.
-  if (sessionId !== 'anonymous') {
-    await ensureHandle(sessionId);
-  }
-
   const video = await prisma.video.create({
     data: {
       title,
@@ -262,12 +289,12 @@ router.post('/', uploadVideo.single('video'), async (req: Request, res: Response
       mimeType: 'video/mp4', // always true post-transcode, regardless of the original upload's format
       size: transcodedSize,
       duration,
-      uploaderSessionId: sessionId !== 'anonymous' ? sessionId : null,
+      uploaderSessionId: getSessionId(req),
     },
   });
 
-  const uploaderMap = await fetchUploadersFor([video]);
-  res.status(201).json({ video: serialize(video, undefined, video.uploaderSessionId ? uploaderMap.get(video.uploaderSessionId) : null) });
+  const uploaderMap = await fetchUploaderProfilesFor([video]);
+  res.status(201).json({ video: serialize(video, undefined, video.uploaderSessionId ? uploaderMap.get(video.uploaderSessionId) : undefined) });
 });
 
 function makeToggleHandler(field: 'liked' | 'favorited' | 'saved') {

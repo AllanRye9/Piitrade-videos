@@ -11,11 +11,11 @@ import authRouter from './routes/auth';
 import adminRouter from './routes/admin';
 import marketplaceRouter from './routes/marketplace';
 import profileRouter from './routes/profile';
-import accountsRouter from './routes/accounts';
-import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
+import creatorsRouter from './routes/creators';
+import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR, DOWNLOADS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
 
-for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR]) {
+for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR, DOWNLOADS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -45,7 +45,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/marketplace', marketplaceRouter);
 app.use('/api/profile', profileRouter);
-app.use('/api/accounts', accountsRouter);
+app.use('/api/creators', creatorsRouter);
 
 // Centralized error handler. Thanks to `express-async-errors`, any
 // error thrown (or rejected promise) inside an async route handler

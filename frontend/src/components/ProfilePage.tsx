@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import type { Video } from '../types';
+import type { OrderRecord, Video } from '../types';
 import { api } from '../api';
 import { mediaUrl } from '../config';
 import VideoCard from './VideoCard';
@@ -21,15 +21,20 @@ import {
   Camera,
   Loader2,
   Settings as SettingsIcon,
+  Package,
+  ImageOff,
+  Phone,
+  Mail,
 } from 'lucide-react';
 
-type TabId = 'liked' | 'favorites' | 'downloads' | 'comments' | 'search';
+type TabId = 'liked' | 'favorites' | 'downloads' | 'comments' | 'orders' | 'search';
 
 const TABS: { id: TabId; label: string; icon: typeof Heart }[] = [
   { id: 'liked', label: 'Liked', icon: Heart },
   { id: 'favorites', label: 'Favorites', icon: Bookmark },
   { id: 'downloads', label: 'Downloads', icon: Download },
   { id: 'comments', label: 'Comments', icon: MessageCircle },
+  { id: 'orders', label: 'Orders', icon: Package },
   { id: 'search', label: 'Search', icon: SearchIcon },
 ];
 
@@ -71,6 +76,85 @@ function EmptyState({ label }: { label: string }) {
   return <p className="text-white/50 text-sm text-center mt-10 px-6">{label}</p>;
 }
 
+function OrderCard({ order }: { order: OrderRecord }) {
+  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
+  const placedAt = new Date(order.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+  return (
+    <div className="bg-white/5 rounded-lg p-3 space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-white text-xs font-medium truncate">
+            {order.source === 'admin' ? 'Sold by Piitrade' : order.sellerName || 'Marketplace seller'}
+          </p>
+          <p className="text-white/40 text-[11px]">
+            {placedAt}
+            {order.marketplaceOrderNumber ? ` · #${order.marketplaceOrderNumber}` : ''}
+          </p>
+        </div>
+        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-brand-cyan bg-brand-cyan/10 rounded-full px-2 py-1">
+          {order.status}
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {order.items.map((item) => {
+          const broken = brokenImages.has(item.id);
+          return (
+            <div key={item.id} className="flex items-center gap-3">
+              {item.image && !broken ? (
+                <img
+                  src={mediaUrl(item.image)}
+                  alt={item.name}
+                  loading="lazy"
+                  className="w-11 h-11 rounded object-cover bg-white/10 shrink-0"
+                  onError={() => setBrokenImages((prev) => new Set(prev).add(item.id))}
+                />
+              ) : (
+                <div className="w-11 h-11 rounded bg-white/10 shrink-0 flex items-center justify-center text-white/20">
+                  <ImageOff size={16} />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-xs font-medium truncate">{item.name}</p>
+                <p className="text-white/50 text-[11px]">Qty {item.quantity}</p>
+              </div>
+              <span className="text-brand-cyan text-xs font-semibold shrink-0">{item.price}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="pt-2 border-t border-white/10 text-white/40 text-[11px] space-y-1">
+        <p>Delivered to {order.deliveryName} · {order.deliveryAddress}</p>
+        {order.source === 'admin' && order.paymentLast4 && <p>Paid — card ending {order.paymentLast4}</p>}
+        {order.source === 'marketplace' && order.sellerContact && (
+          <a
+            href={/@/.test(order.sellerContact) ? `mailto:${order.sellerContact}` : `tel:${order.sellerContact.replace(/[^\d+]/g, '')}`}
+            className="flex items-center gap-1.5 text-brand-cyan"
+          >
+            {/@/.test(order.sellerContact) ? <Mail size={11} /> : <Phone size={11} />}
+            {order.sellerContact}
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OrderList({ orders, loading, error }: { orders: OrderRecord[]; loading: boolean; error: string | null }) {
+  if (loading) return <p className="text-white/50 text-sm text-center mt-10">Loading your orders…</p>;
+  if (error) return <p className="text-red-400 text-sm text-center mt-10 px-6">{error}</p>;
+  if (orders.length === 0) return <EmptyState label="Items you check out will show up here." />;
+  return (
+    <div className="space-y-3 px-3 sm:px-4 pb-6">
+      {orders.map((o) => (
+        <OrderCard key={o.id} order={o} />
+      ))}
+    </div>
+  );
+}
+
 function VideoGrid({ videos, onOpen, emptyLabel }: { videos: Video[]; onOpen: (v: Video) => void; emptyLabel: string }) {
   if (videos.length === 0) return <EmptyState label={emptyLabel} />;
   return (
@@ -100,6 +184,11 @@ export default function ProfilePage() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [recentSearches, setRecentSearches] = useState<string[]>(getRecentSearches());
+
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -170,6 +259,23 @@ export default function ProfilePage() {
     e.preventDefault();
     runSearch(searchQuery);
   }
+
+  // Loaded lazily, the first time the Orders tab is opened, rather than
+  // up front with everything else — purchase history is a separate
+  // request from the video lists above and most visits won't need it.
+  useEffect(() => {
+    if (tab !== 'orders' || ordersLoaded) return;
+    setOrdersLoading(true);
+    setOrdersError(null);
+    api
+      .marketplaceOrders()
+      .then((res) => {
+        setOrders(res.orders);
+        setOrdersLoaded(true);
+      })
+      .catch((err) => setOrdersError(err instanceof Error ? err.message : 'Could not load your orders'))
+      .finally(() => setOrdersLoading(false));
+  }, [tab, ordersLoaded]);
 
   return (
     <div className="h-dvh w-full bg-black flex flex-col overflow-hidden">
@@ -275,6 +381,7 @@ export default function ProfilePage() {
                 emptyLabel="Videos you've commented on will show up here."
               />
             )}
+            {tab === 'orders' && <OrderList orders={orders} loading={ordersLoading} error={ordersError} />}
             {tab === 'search' && (
               <div>
                 <form onSubmit={handleSearchSubmit} className="px-3 sm:px-4 pb-3">
@@ -351,7 +458,7 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {showSettings && <ProfileSettings displayName={profile.displayName} handle={profile.handle} onClose={() => setShowSettings(false)} />}
+      {showSettings && <ProfileSettings displayName={profile.displayName} onClose={() => setShowSettings(false)} />}
 
       {previewVideo && (
         <div className="fixed inset-0 z-50 bg-black sm:bg-black/90 flex items-center justify-center">

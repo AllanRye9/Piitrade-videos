@@ -1,29 +1,21 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../api';
-import { setProfileDisplayName, setProfileHandle } from '../profileStore';
+import { setProfileDisplayName } from '../profileStore';
 import { getMuted, setMuted, subscribeMuted } from '../soundPreference';
-import { X, Volume2, VolumeX, Store, Loader2, Check, ExternalLink } from 'lucide-react';
+import { X, Volume2, VolumeX, Store, Loader2, Check } from 'lucide-react';
 
 interface Props {
   displayName: string | null;
-  handle?: string | null;
   onClose: () => void;
 }
 
 type LinkStatus = 'checking' | 'linked' | 'unlinked' | 'error';
 
-export default function ProfileSettings({ displayName, handle, onClose }: Props) {
+export default function ProfileSettings({ displayName, onClose }: Props) {
   const [nameInput, setNameInput] = useState(displayName || '');
   const [savingName, setSavingName] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
-
-  const [handleInput, setHandleInput] = useState(handle || '');
-  const [savingHandle, setSavingHandle] = useState(false);
-  const [handleSaved, setHandleSaved] = useState(false);
-  const [handleError, setHandleError] = useState<string | null>(null);
-
   const muted = useSyncExternalStore(subscribeMuted, getMuted);
 
   const [linkStatus, setLinkStatus] = useState<LinkStatus>('checking');
@@ -46,7 +38,7 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
     setNameError(null);
     setNameSaved(false);
     try {
-      const res = await api.updateProfile({ displayName: trimmed || null });
+      const res = await api.updateProfile(trimmed || null);
       setProfileDisplayName(res.displayName);
       setNameSaved(true);
       setTimeout(() => setNameSaved(false), 1500);
@@ -54,25 +46,6 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
       setNameError(err instanceof Error ? err.message : 'Could not save name');
     } finally {
       setSavingName(false);
-    }
-  }
-
-  async function saveHandle() {
-    const trimmed = handleInput.trim().toLowerCase();
-    if (!trimmed) return;
-    setSavingHandle(true);
-    setHandleError(null);
-    setHandleSaved(false);
-    try {
-      const res = await api.updateHandle(trimmed);
-      setProfileHandle(res.handle);
-      setHandleInput(res.handle);
-      setHandleSaved(true);
-      setTimeout(() => setHandleSaved(false), 1500);
-    } catch (err) {
-      setHandleError(err instanceof Error ? err.message : 'Could not save handle');
-    } finally {
-      setSavingHandle(false);
     }
   }
 
@@ -122,38 +95,6 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
             </div>
             {nameError && <p className="text-red-400 text-xs">{nameError}</p>}
             <p className="text-white/30 text-[11px]">Shown next to your picture in comments and checkout on this device.</p>
-          </section>
-
-          {/* Public handle */}
-          <section className="space-y-2">
-            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Public handle</label>
-            <div className="flex items-center gap-2">
-              <span className="text-white/40 text-sm shrink-0">piitrade.com/u/</span>
-              <input
-                value={handleInput}
-                onChange={(e) => setHandleInput(e.target.value.toLowerCase())}
-                placeholder="your-handle"
-                maxLength={30}
-                className="flex-1 min-w-0 bg-white/10 text-white text-sm rounded-lg px-3 py-2.5 outline-none placeholder:text-white/40"
-              />
-              <button
-                type="button"
-                onClick={saveHandle}
-                disabled={savingHandle || !handleInput.trim() || handleInput.trim() === (handle || '')}
-                className="tap-target shrink-0 h-10 px-4 rounded-lg bg-brand-pink text-white text-sm font-semibold disabled:opacity-40 flex items-center gap-1.5"
-              >
-                {savingHandle ? <Loader2 size={14} className="animate-spin" /> : handleSaved ? <Check size={14} /> : null}
-                {handleSaved ? 'Saved' : 'Save'}
-              </button>
-            </div>
-            {handleError && <p className="text-red-400 text-xs">{handleError}</p>}
-            {handle ? (
-              <Link to={`/u/${handle}`} className="text-brand-cyan text-xs underline inline-flex items-center gap-1">
-                View your public profile <ExternalLink size={11} />
-              </Link>
-            ) : (
-              <p className="text-white/30 text-[11px]">Lets anyone find your uploaded videos at this address. Set automatically the first time you upload.</p>
-            )}
           </section>
 
           {/* Sound */}

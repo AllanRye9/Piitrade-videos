@@ -11,7 +11,11 @@ import type {
   MarketplaceCheckoutResponse,
   MarketplaceCountry,
   CartItem,
-  AccountSummary,
+  Creator,
+  CreatorVideoSummary,
+  DeliveryAddress,
+  PaymentDetails,
+  OrderRecord,
 } from './types';
 import { API_BASE } from './config';
 
@@ -98,6 +102,10 @@ async function adminRequest<T>(path: string, options: RequestInit = {}): Promise
 
 export const api = {
   listVideos: () => request<{ videos: Video[] }>('/api/videos'),
+
+  listCreators: () => request<{ creators: Creator[] }>('/api/creators'),
+
+  getCreator: (sessionId: string) => request<{ creator: Creator; videos: CreatorVideoSummary[] }>(`/api/creators/${sessionId}`),
 
   searchVideos: (q: string) => request<{ videos: Video[] }>(`/api/videos/search?q=${encodeURIComponent(q)}`),
 
@@ -209,30 +217,38 @@ export const api = {
       body: JSON.stringify({ email, password, name, country }),
     }),
 
-  marketplaceCheckout: (items: CartItem[]) =>
+  marketplaceCheckout: (items: CartItem[], address: DeliveryAddress, payment?: PaymentDetails) =>
     request<MarketplaceCheckoutResponse>('/api/marketplace/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, sellerId: i.sellerId })),
+        items: items.map((i) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+          name: i.name,
+          price: i.price,
+          image: i.image,
+          sellerId: i.sellerId,
+          sellerName: i.sellerName,
+          sellerContact: i.sellerContact,
+        })),
+        address,
+        payment,
       }),
     }),
 
-  getProfile: () =>
-    request<{ avatar: string | null; displayName: string | null; handle: string | null; bio: string | null }>('/api/profile'),
+  // This session's local purchase history — every order a successful
+  // checkout above has recorded, newest first. Shown on the profile
+  // page's "Orders" tab.
+  marketplaceOrders: () => request<{ orders: OrderRecord[] }>('/api/marketplace/orders'),
 
-  updateProfile: (fields: { displayName?: string | null; bio?: string | null }) =>
-    request<{ displayName: string | null; bio: string | null }>('/api/profile', {
+  getProfile: () => request<{ avatar: string | null; displayName: string | null }>('/api/profile'),
+
+  updateProfile: (displayName: string | null) =>
+    request<{ displayName: string | null }>('/api/profile', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fields),
-    }),
-
-  updateHandle: (handle: string) =>
-    request<{ handle: string }>('/api/profile/handle', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle }),
+      body: JSON.stringify({ displayName }),
     }),
 
   uploadAvatar: (file: File) => {
@@ -242,12 +258,6 @@ export const api = {
   },
 
   deleteAvatar: () => request<void>('/api/profile/avatar', { method: 'DELETE' }),
-
-  // Public account discovery — see backend/src/routes/accounts.ts.
-  discoverAccounts: (q?: string) =>
-    request<{ accounts: AccountSummary[] }>(`/api/accounts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
-
-  getAccount: (handle: string) => request<{ account: AccountSummary; videos: Video[] }>(`/api/accounts/${encodeURIComponent(handle)}`),
 };
 
 export const adminApi = {
