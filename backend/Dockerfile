@@ -3,13 +3,9 @@ FROM node:20-bookworm-slim
 # ffmpeg is required for real poster-frame extraction and (in the seed
 # script) generating sample videos. sharp's prebuilt binaries need
 # libvips' runtime deps, which this base image already ships with glibc
-# for, so no extra libvips install is needed. fonts-dejavu-core provides
-# the font file used to burn the piitrade.com watermark into downloads
-# (see lib/watermark.ts) — a minimal image has no fonts installed
-# otherwise, which would make that drawtext filter fail outright.
+# for, so no extra libvips install is needed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    fonts-dejavu-core \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -28,7 +24,7 @@ RUN npm run build
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-RUN mkdir -p uploads/videos uploads/posters uploads/products uploads/avatars uploads/downloads
+RUN mkdir -p uploads/videos uploads/posters uploads/products uploads/avatars
 
 EXPOSE 4000
 

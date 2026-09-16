@@ -74,7 +74,6 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
         price: p.price,
         category: p.category,
         image: `/uploads/products/${p.imageFilename}`,
-        images: [`/uploads/products/${p.imageFilename}`],
         match: similarityScore(distance),
         distance,
       };

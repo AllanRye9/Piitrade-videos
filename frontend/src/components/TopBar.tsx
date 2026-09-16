@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, X, Users } from 'lucide-react';
+import { Search, X, Compass } from 'lucide-react';
 import Avatar from './Avatar';
 import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
 
@@ -52,9 +52,10 @@ export default function TopBar({ onSearch, onUploadClick }: Props) {
         )}
       </div>
 
-      {/* Upload, Discover creators, and Profile sit side by side, same
-          height, so the circular buttons read as uniform in size next
-          to the pill-shaped Upload button. */}
+      {/* Upload and Profile sit side by side, same height, so the
+          circular Profile button reads as "uniform in size" to the
+          pill-shaped Upload button next to it rather than looking
+          mismatched. */}
       <button
         type="button"
         onClick={onUploadClick}
@@ -63,11 +64,11 @@ export default function TopBar({ onSearch, onUploadClick }: Props) {
         Upload
       </button>
       <Link
-        to="/creators"
+        to="/discover"
         aria-label="Discover creators"
-        className="tap-target shrink-0 h-11 w-11 rounded-full bg-white/10 text-white flex items-center justify-center border border-white/10"
+        className="tap-target shrink-0 h-11 w-11 rounded-full bg-white/10 flex items-center justify-center border border-white/10 text-white"
       >
-        <Users size={20} />
+        <Compass size={20} />
       </Link>
       <Link
         to="/profile"

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
 import { HttpError } from '../lib/httpError';
 import * as marketplace from '../lib/marketplace';
-import { isValidMarketplaceCountry, MarketplaceCheckoutItem, toSearchResultDto } from '../lib/marketplace';
+import { isValidMarketplaceCountry, MarketplaceCheckoutItem, MarketplaceCheckoutResult, toSearchResultDto } from '../lib/marketplace';
 
 const router = Router();
 
@@ -139,88 +139,21 @@ function makeTokenRunner(sessionId: string, link: { marketplaceToken: string; ma
 }
 
 interface CheckoutRequestItem extends MarketplaceCheckoutItem {
-  /** Which seller's listing this is — see the same-seller grouping note below.
-   *  Absent means the item came from this app's own admin-managed catalog
-   *  (the local phash-fallback search), not the external marketplace. */
+  /** Which seller's listing this is — see the same-seller grouping note below. */
   sellerId?: string;
-  sellerName?: string;
-  sellerContact?: string;
-  // Snapshot of what the buyer saw at add-to-cart time — kept on the local
-  // Order/OrderItem record so purchase history still shows the right name/
-  // image/price even if the source listing later changes or disappears.
-  name: string;
-  price: string;
-  image?: string;
 }
 
-interface DeliveryAddress {
-  name: string;
-  phone: string;
-  address: string;
-}
-
-interface PaymentDetails {
-  cardName: string;
-  cardNumber: string;
-  expiry: string;
-}
-
-function parseAddress(raw: unknown): DeliveryAddress {
-  const a = (raw || {}) as Record<string, unknown>;
-  const name = typeof a.name === 'string' ? a.name.trim() : '';
-  const phone = typeof a.phone === 'string' ? a.phone.trim() : '';
-  const address = typeof a.address === 'string' ? a.address.trim() : '';
-  if (!name || !phone || !address) {
-    throw new HttpError(400, 'A delivery name, phone number, and address are required to check out');
-  }
-  return { name, phone, address };
-}
-
-function parsePayment(raw: unknown): PaymentDetails {
-  const p = (raw || {}) as Record<string, unknown>;
-  const cardName = typeof p.cardName === 'string' ? p.cardName.trim() : '';
-  const cardNumber = typeof p.cardNumber === 'string' ? p.cardNumber.replace(/\s+/g, '') : '';
-  const expiry = typeof p.expiry === 'string' ? p.expiry.trim() : '';
-  if (!cardName || !/^\d{12,19}$/.test(cardNumber) || !expiry) {
-    throw new HttpError(400, 'Valid payment details (name on card, card number, expiry) are required for these items');
-  }
-  return { cardName, cardNumber, expiry };
-}
-
-interface CheckoutOrderResponse {
-  source: 'admin' | 'marketplace';
-  orderId: string;
-  orderNumber?: string;
-  status: string;
-  sellerId?: string;
-  sellerName?: string;
-  sellerContact?: string;
-}
-
-// POST /api/marketplace/checkout
-//   { items: [{ productId, quantity, name, price, image?, sellerId?, sellerName?, sellerContact? }],
-//     address: { name, phone, address },
-//     payment?: { cardName, cardNumber, expiry } }
+// POST /api/marketplace/checkout  { items: [{ productId, quantity, sellerId? }] }
 //
-// Two checkout paths run side by side, split by whether an item has a
-// sellerId:
-//
-//  - Items WITHOUT a sellerId came from this app's own admin-managed
-//    Product catalog (the local phash-fallback search) — there is no
-//    external marketplace account to check out through, so this app
-//    fulfills the order directly once `payment` is provided and
-//    validated, and records it as a real local order.
-//  - Items WITH a sellerId came from the real external marketplace and
-//    go through the existing account-linked checkout below, grouped
-//    per seller (the marketplace requires every item in one order to
-//    share a seller — see marketplace.checkout()).
-//
-// A confirmed delivery address is required either way and is stored on
-// every resulting local Order, so "Orders" on the profile page always
-// shows what was actually confirmed at checkout time.
+// Requires an already-linked marketplace account for this session (see
+// GET /account). The marketplace's own /api/orders endpoint requires
+// every item in ONE order to belong to the same seller — so items are
+// grouped by sellerId here and placed as separate orders per seller.
+// An item with no sellerId is treated as its own single-item group
+// (safe default; the marketplace still validates everything itself).
 router.post('/checkout', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
-  const { items, address: rawAddress, payment: rawPayment } = req.body || {};
+  const { items } = req.body || {};
   if (!Array.isArray(items) || items.length === 0) {
     throw new HttpError(400, 'At least one item is required');
   }
@@ -231,119 +164,38 @@ router.post('/checkout', async (req: Request, res: Response) => {
     if (typeof item.quantity !== 'number' || item.quantity < 1) {
       throw new HttpError(400, `Item ${i + 1} requires a quantity of at least 1`);
     }
-    if (typeof item.name !== 'string' || !item.name) {
-      throw new HttpError(400, `Item ${i + 1} requires a name`);
-    }
     return {
       productId: item.productId,
       quantity: item.quantity,
-      name: item.name,
-      price: typeof item.price === 'string' ? item.price : '',
-      image: typeof item.image === 'string' && item.image ? item.image : undefined,
       sellerId: typeof item.sellerId === 'string' && item.sellerId ? item.sellerId : undefined,
-      sellerName: typeof item.sellerName === 'string' && item.sellerName ? item.sellerName : undefined,
-      sellerContact: typeof item.sellerContact === 'string' && item.sellerContact ? item.sellerContact : undefined,
     };
   });
 
-  const address = parseAddress(rawAddress);
-  const adminItems = parsedItems.filter((i) => !i.sellerId);
-  const marketplaceItems = parsedItems.filter((i) => i.sellerId);
-  const payment = adminItems.length > 0 ? parsePayment(rawPayment) : null;
-
-  const orders: CheckoutOrderResponse[] = [];
-  const failed: Array<{ items: MarketplaceCheckoutItem[]; error: string }> = [];
-
-  // --- Admin-catalog items: fulfilled directly by this app, no external
-  //     marketplace account needed. "Payment" here is this app's own
-  //     mock capture (there's no real payment gateway wired up) — only
-  //     the last 4 digits are ever kept, never the full card number.
-  if (adminItems.length > 0 && payment) {
-    const order = await prisma.order.create({
-      data: {
-        sessionId,
-        source: 'admin',
-        status: 'PAID',
-        sellerName: 'Piitrade',
-        deliveryName: address.name,
-        deliveryPhone: address.phone,
-        deliveryAddress: address.address,
-        paymentMethod: 'card',
-        paymentLast4: payment.cardNumber.slice(-4),
-        items: {
-          create: adminItems.map((i) => ({
-            productId: i.productId,
-            name: i.name,
-            image: i.image,
-            price: i.price,
-            quantity: i.quantity,
-          })),
-        },
-      },
-    });
-    orders.push({ source: 'admin', orderId: order.id, status: order.status });
+  const link = await prisma.marketplaceLink.findUnique({ where: { sessionId } });
+  if (!link) {
+    throw new HttpError(401, 'No marketplace account is linked for this session');
   }
 
-  // --- Marketplace items: existing account-linked, per-seller checkout.
-  if (marketplaceItems.length > 0) {
-    const link = await prisma.marketplaceLink.findUnique({ where: { sessionId } });
-    if (!link) {
-      throw new HttpError(401, 'No marketplace account is linked for this session');
-    }
+  // Group by seller (falling back to one group per item when sellerId
+  // is missing) so each group can be placed as its own valid order.
+  const groups = new Map<string, MarketplaceCheckoutItem[]>();
+  parsedItems.forEach((item, i) => {
+    const key = item.sellerId || `__ungrouped_${i}`;
+    const group = groups.get(key) || [];
+    group.push({ productId: item.productId, quantity: item.quantity });
+    groups.set(key, group);
+  });
 
-    // Group by seller so each group can be placed as its own valid order
-    // (the marketplace rejects a mixed-seller order — see marketplace.ts).
-    const groups = new Map<string, CheckoutRequestItem[]>();
-    marketplaceItems.forEach((item) => {
-      const key = item.sellerId!;
-      const group = groups.get(key) || [];
-      group.push(item);
-      groups.set(key, group);
-    });
+  const orders: MarketplaceCheckoutResult[] = [];
+  const failed: Array<{ items: MarketplaceCheckoutItem[]; error: string }> = [];
+  const withValidToken = makeTokenRunner(sessionId, link);
 
-    const withValidToken = makeTokenRunner(sessionId, link);
-
-    for (const groupItems of groups.values()) {
-      const checkoutItems: MarketplaceCheckoutItem[] = groupItems.map((i) => ({ productId: i.productId, quantity: i.quantity }));
-      try {
-        const result = await withValidToken((token) => marketplace.checkout(token, checkoutItems));
-        const first = groupItems[0];
-        await prisma.order.create({
-          data: {
-            sessionId,
-            source: 'marketplace',
-            status: result.status,
-            sellerId: first.sellerId,
-            sellerName: first.sellerName,
-            sellerContact: first.sellerContact,
-            marketplaceOrderId: result.orderId,
-            marketplaceOrderNumber: result.orderNumber,
-            deliveryName: address.name,
-            deliveryPhone: address.phone,
-            deliveryAddress: address.address,
-            items: {
-              create: groupItems.map((i) => ({
-                productId: i.productId,
-                name: i.name,
-                image: i.image,
-                price: i.price,
-                quantity: i.quantity,
-              })),
-            },
-          },
-        });
-        orders.push({
-          source: 'marketplace',
-          orderId: result.orderId,
-          orderNumber: result.orderNumber,
-          status: result.status,
-          sellerId: first.sellerId,
-          sellerName: first.sellerName,
-          sellerContact: first.sellerContact,
-        });
-      } catch (err) {
-        failed.push({ items: checkoutItems, error: err instanceof Error ? err.message : 'Checkout failed' });
-      }
+  for (const groupItems of groups.values()) {
+    try {
+      const order = await withValidToken((token) => marketplace.checkout(token, groupItems));
+      orders.push(order);
+    } catch (err) {
+      failed.push({ items: groupItems, error: err instanceof Error ? err.message : 'Checkout failed' });
     }
   }
 
@@ -354,33 +206,7 @@ router.post('/checkout', async (req: Request, res: Response) => {
     throw new HttpError(502, first?.error || 'Checkout failed');
   }
 
-  // Where to send the buyer to actually complete a marketplace-sourced
-  // transaction. The real marketplace (see MARKETPLACE_SITE_URL) has no
-  // online payment gateway — its own homepage says "Meet in public,
-  // inspect before paying", and its order-creation source defaults
-  // every order to CASH_ON_DELIVERY — so there is no dedicated payment
-  // page to link to. Its cart is the most direct real page toward
-  // completing the transaction (contacting the seller / arranging
-  // payment). Only relevant when at least one marketplace order went
-  // through; admin-catalog orders are already fully paid above.
-  const siteUrl = (process.env.MARKETPLACE_SITE_URL || '').replace(/\/+$/, '');
-  const redirectUrl = siteUrl && orders.some((o) => o.source === 'marketplace') ? `${siteUrl}/cart` : undefined;
-
-  res.status(201).json({ orders, failed: failed.length > 0 ? failed : undefined, redirectUrl });
-});
-
-// GET /api/marketplace/orders — this session's local purchase history
-// (every Order written by a successful checkout above), newest first,
-// with items included so the profile page can show real images/names/
-// prices rather than just an order number.
-router.get('/orders', async (req: Request, res: Response) => {
-  const sessionId = getSessionId(req);
-  const orders = await prisma.order.findMany({
-    where: { sessionId },
-    orderBy: { createdAt: 'desc' },
-    include: { items: true },
-  });
-  res.json({ orders });
+  res.status(201).json({ orders, failed: failed.length > 0 ? failed : undefined });
 });
 
 export default router;

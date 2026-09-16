@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import type { VisualSearchResult } from '../types';
 import { mediaUrl } from '../config';
-import ImageLightbox from './ImageLightbox';
-import { X, ShoppingCart, Check, SearchX, Search, Images, ImageOff } from 'lucide-react';
+import { X, ShoppingCart, Check, SearchX, Search, ImageOff } from 'lucide-react';
 
 interface Props {
   loading: boolean;
@@ -15,12 +14,28 @@ interface Props {
   matchedQuery?: string | null;
   cartProductIds: Set<string>;
   onAddToCart: (result: VisualSearchResult) => void;
-  onRemoveFromCart: (productId: string) => void;
   /** Manual, user-typed search — independent of the AI crop-to-identify flow.
    *  Doubles as a way to directly verify whether an item exists on the
    *  marketplace at all. */
   onManualSearch: (query: string) => void;
   onClose: () => void;
+}
+
+/** A listing's image, with its own load-error state so one broken CDN
+ *  link (mismatched host, expired signed URL, marketplace hiccup)
+ *  degrades to a placeholder instead of the browser's broken-image
+ *  icon — and without one failed image tripping every other card's
+ *  state, since each instance tracks only its own. */
+function ListingImage({ src, alt }: { src: string | undefined; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <div className="w-full aspect-square bg-white/5 flex items-center justify-center">
+        <ImageOff size={22} className="text-white/25" />
+      </div>
+    );
+  }
+  return <img src={src} alt={alt} onError={() => setFailed(true)} className="w-full aspect-square object-cover" />;
 }
 
 export default function SearchResultsPanel({
@@ -31,16 +46,10 @@ export default function SearchResultsPanel({
   matchedQuery,
   cartProductIds,
   onAddToCart,
-  onRemoveFromCart,
   onManualSearch,
   onClose,
 }: Props) {
   const [manualQuery, setManualQuery] = useState('');
-  const [lightbox, setLightbox] = useState<{ images: string[]; title: string } | null>(null);
-  // Tracks which result ids had their primary image fail to load (e.g. a
-  // dead/expired CDN URL from the marketplace) so those show a clear
-  // "photo unavailable" state instead of a blank/broken image icon.
-  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
 
   function submitManualSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -112,37 +121,9 @@ export default function SearchResultsPanel({
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
             {results.map((r) => {
               const inCart = cartProductIds.has(r.id);
-              const images = r.images && r.images.length > 0 ? r.images : r.image ? [r.image] : [];
-              const imageBroken = brokenImages.has(r.id);
               return (
                 <div key={r.id} className="bg-white/5 rounded-lg overflow-hidden flex flex-col">
-                  <button
-                    type="button"
-                    onClick={() => images.length > 0 && !imageBroken && setLightbox({ images, title: r.name })}
-                    disabled={images.length === 0 || imageBroken}
-                    aria-label={images.length > 0 ? `View photo${images.length > 1 ? 's' : ''} of ${r.name}` : undefined}
-                    className="relative w-full aspect-square bg-white/5"
-                  >
-                    {images.length > 0 && !imageBroken ? (
-                      <img
-                        src={mediaUrl(images[0])}
-                        alt={r.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover"
-                        onError={() => setBrokenImages((prev) => new Set(prev).add(r.id))}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-white/20 text-[10px]">
-                        <ImageOff size={18} />
-                        {imageBroken ? 'Photo unavailable' : 'No photo'}
-                      </div>
-                    )}
-                    {images.length > 1 && (
-                      <span className="absolute bottom-1 right-1 flex items-center gap-0.5 bg-black/60 rounded-full px-1.5 py-0.5 text-[10px] text-white">
-                        <Images size={10} /> {images.length}
-                      </span>
-                    )}
-                  </button>
+                  <ListingImage src={mediaUrl(r.image)} alt={r.name} />
                   <div className="p-2 flex flex-col flex-1">
                     <p className="text-white text-xs font-medium line-clamp-2">{r.name}</p>
                     {r.description && <p className="text-white/50 text-[11px] mt-1 line-clamp-2">{r.description}</p>}
@@ -155,14 +136,15 @@ export default function SearchResultsPanel({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => (inCart ? onRemoveFromCart(r.id) : onAddToCart(r))}
+                        onClick={() => onAddToCart(r)}
+                        disabled={inCart}
                         className={`mt-2 flex items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-semibold ${
-                          inCart ? 'bg-white/10 text-white/60' : 'bg-blue-600 text-white'
+                          inCart ? 'bg-white/10 text-white/40' : 'bg-blue-600 text-white'
                         }`}
                       >
                         {inCart ? (
                           <>
-                            <Check size={12} /> Added — tap to remove
+                            <Check size={12} /> Added
                           </>
                         ) : (
                           <>
@@ -178,10 +160,6 @@ export default function SearchResultsPanel({
           </div>
         )}
       </div>
-
-      {lightbox && (
-        <ImageLightbox images={lightbox.images} initialIndex={0} title={lightbox.title} onClose={() => setLightbox(null)} />
-      )}
     </div>
   );
 }

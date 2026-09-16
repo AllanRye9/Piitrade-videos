@@ -69,24 +69,13 @@ export interface MarketplaceProduct {
   name: string;
   price: string;
   currency?: string;
-  /** First image (or '' if none) — kept for callers that only need a single thumbnail. */
   image: string;
-  /** every image the listing has, in the marketplace's own order — for a zoom/gallery view. */
-  images: string[];
   description: string;
   url?: string;
   inStock?: boolean;
   /** The listing's seller (Listing.userId) — required to group cart items into
    *  same-seller orders at checkout time (see the business rule above). */
   sellerId: string;
-  /** Seller's display name, when the listing response includes one — shown at
-   *  checkout so a buyer knows who they're arranging payment/pickup with
-   *  (the marketplace has no online payment gateway — see checkout()). */
-  sellerName?: string;
-  /** Best-effort seller contact (phone if present, else email) — not a
-   *  confirmed field on every deployment of the marketplace, so this is
-   *  read defensively and simply omitted (never invented) when absent. */
-  sellerContact?: string;
 }
 
 export interface MarketplaceAuthResult {
@@ -170,20 +159,36 @@ async function readError(res: Response): Promise<string | undefined> {
   return undefined;
 }
 
+/**
+ * `productImages[].cdnUrl` is confirmed to already be an absolute URL
+ * (see the file-level comment above). The legacy `images[0]` fallback
+ * is NOT — it's a path relative to the marketplace's OWN backend
+ * (MARKETPLACE_API), not to this app's backend. Left unresolved, the
+ * frontend's mediaUrl() would prefix it with this app's own API_BASE
+ * instead, pointing at the wrong host entirely and rendering as a
+ * broken image on every listing that falls into that fallback. This
+ * is the one place that decides what ends up in a listing's `image`
+ * field, so every caller (search, manual search) gets a URL that
+ * actually loads.
+ */
+function resolveMarketplaceImageUrl(raw: string | null | undefined): string {
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('//')) return `https:${raw}`;
+  const base = baseUrl();
+  return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
+}
+
 export interface MarketplaceSearchResultDto {
   id: string;
   name: string;
   price: string;
   category: string;
   image: string;
-  /** Every image the listing has — for a zoom/gallery view (see Avatar/lightbox in the frontend). */
-  images: string[];
   description?: string;
   productUrl?: string;
   inStock?: boolean;
   sellerId?: string;
-  sellerName?: string;
-  sellerContact?: string;
   match: number;
 }
 
@@ -197,13 +202,10 @@ export function toSearchResultDto(p: MarketplaceProduct, category: string): Mark
     price: p.price,
     category,
     image: p.image,
-    images: p.images,
     description: p.description,
     productUrl: p.url,
     inStock: p.inStock ?? true,
     sellerId: p.sellerId,
-    sellerName: p.sellerName,
-    sellerContact: p.sellerContact,
     match: 100,
   };
 }
@@ -234,20 +236,9 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
     currency?: string;
     stock?: number;
     status?: string;
-    images?: string[] | null;
-    productImages?: Array<{ cdnUrl: string | null }> | null;
-    // Defensive extras: field names occasionally drift between a
-    // marketplace's API versions. These aren't confirmed fields on
-    // this backend, but checking them costs nothing and avoids a
-    // silent "no image" regression if one of them turns out to be
-    // what's actually served in some response.
-    thumbnailUrl?: string | null;
-    imageUrl?: string | null;
-    // Same "field names drift" caution as the image fields above — name/
-    // phone/email on the listing's `user` aren't confirmed fields on this
-    // backend, but reading them defensively (and simply omitting seller
-    // contact info when absent, never inventing it) costs nothing.
-    user?: { id: string; name?: string | null; phone?: string | null; email?: string | null };
+    images?: string[];
+    productImages?: Array<{ cdnUrl: string | null }>;
+    user?: { id: string };
   }
   const data = (await res.json()) as { listings?: RawListing[] };
   const listings = Array.isArray(data.listings) ? data.listings : [];
@@ -256,42 +247,19 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
     console.warn(`[Marketplace] skipping ${withoutSeller} of ${listings.length} listing(s) with no resolvable seller`);
   }
 
-  function extractImages(l: RawListing): string[] {
-    const fromProductImages = (l.productImages || []).map((img) => img.cdnUrl).filter((url): url is string => Boolean(url));
-    if (fromProductImages.length > 0) return fromProductImages;
-    if (Array.isArray(l.images) && l.images.length > 0) return l.images.filter(Boolean);
-    if (l.thumbnailUrl) return [l.thumbnailUrl];
-    if (l.imageUrl) return [l.imageUrl];
-    return [];
-  }
-
-  let listingsWithNoImage = 0;
   const results = listings
     .filter((l) => l.user?.id) // a listing without a resolvable seller can't be checked out — skip rather than crash
-    .map((l) => {
-      const images = extractImages(l);
-      if (images.length === 0) listingsWithNoImage++;
-      return {
-        id: l.id,
-        name: l.title,
-        price: l.currency ? `${l.price} ${l.currency}` : String(l.price),
-        currency: l.currency,
-        image: images[0] || '',
-        images,
-        description: l.description,
-        inStock: l.status ? l.status === 'ACTIVE' && (l.stock ?? 1) > 0 : (l.stock ?? 1) > 0,
-        sellerId: l.user!.id,
-        sellerName: l.user!.name || undefined,
-        sellerContact: l.user!.phone || l.user!.email || undefined,
-      };
-    });
+    .map((l) => ({
+      id: l.id,
+      name: l.title,
+      price: l.currency ? `${l.price} ${l.currency}` : String(l.price),
+      currency: l.currency,
+      image: resolveMarketplaceImageUrl(l.productImages?.find((img) => img.cdnUrl)?.cdnUrl || l.images?.[0]),
+      description: l.description,
+      inStock: l.status ? l.status === 'ACTIVE' && (l.stock ?? 1) > 0 : (l.stock ?? 1) > 0,
+      sellerId: l.user!.id,
+    }));
 
-  if (listingsWithNoImage > 0) {
-    console.warn(
-      `[Marketplace] ${listingsWithNoImage} of ${results.length} listing(s) had no usable image in ` +
-        `productImages/images/thumbnailUrl/imageUrl — check the raw listing shape if this looks wrong`
-    );
-  }
   console.log(
     `[Marketplace] ${results.length} usable listing(s) for "${query}"` +
       (results.length > 0 ? `: ${results.slice(0, 5).map((r) => `"${r.name}" (${r.id})`).join(', ')}${results.length > 5 ? ', …' : ''}` : '')

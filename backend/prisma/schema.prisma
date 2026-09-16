@@ -20,11 +20,10 @@ model Video {
   views          Int      @default(0)
   comments       Int      @default(0)
   createdAt      DateTime @default(now())
-  // The anonymous session (same X-Session-Id used everywhere else)
-  // that uploaded this video — nullable so pre-existing/seeded videos
-  // with no known uploader remain valid. Lets an uploader's videos be
-  // browsed together on a public creator page (see routes/creators.ts)
-  // without requiring real accounts/authentication.
+
+  // The X-Session-Id that uploaded this video (see routes/videos.ts).
+  // Nullable so pre-existing rows (uploaded before this column existed)
+  // still read fine — they just have no discoverable uploader.
   uploaderSessionId String?
 
   commentList    Comment[]
@@ -97,6 +96,16 @@ model SessionProfile {
   // next to their avatar wherever it appears (comments composer,
   // checkout). Purely cosmetic; never used for auth or as a lookup key.
   displayName String?
+  // Public, unique, URL-safe slug (e.g. "rye-uploads") that makes this
+  // otherwise-anonymous session discoverable at /u/:handle. Auto-
+  // generated the first time a session needs one (first video upload,
+  // or first visit to the account-discovery routes) — see
+  // routes/profile.ts's ensureHandle() — and editable afterwards from
+  // Settings. Nullable because most sessions never upload and so never
+  // need one.
+  handle      String?  @unique
+  // Short freeform bio shown on the public /u/:handle profile page.
+  bio         String?
   updatedAt   DateTime @updatedAt
 }
 
@@ -119,56 +128,4 @@ model MarketplaceLink {
   marketplaceRefreshToken String
   marketplaceUserId       String
   linkedAt                DateTime @default(now())
-}
-
-// A locally-recorded order, written once checkout actually succeeds —
-// this is what GET /api/marketplace/orders reads to show a viewer's
-// purchase history on their profile page (there is no local record of
-// a purchase anywhere else; the external marketplace is authoritative
-// for 'marketplace' orders, but never hands this app a history endpoint).
-//
-// `source` distinguishes the two checkout paths (see routes/marketplace.ts):
-//  - "admin"       — items came from this app's own Product catalog
-//    (the local phash-fallback search, with no marketplace seller).
-//    There is no external account to check out through, so this app
-//    fulfills the order directly and records the payment details the
-//    buyer confirmed.
-//  - "marketplace" — items came from the real external marketplace
-//    (each has a sellerId). The marketplace itself creates the
-//    authoritative order; this row is this app's own copy of it, plus
-//    the seller's contact info so the buyer can arrange payment/pickup
-//    (the marketplace has no online payment gateway — see README).
-model Order {
-  id                     String   @id @default(cuid())
-  sessionId              String
-  source                 String
-  status                 String   @default("PENDING")
-  sellerId               String?
-  sellerName             String?
-  sellerContact          String?
-  marketplaceOrderId     String?
-  marketplaceOrderNumber String?
-  deliveryName           String
-  deliveryPhone          String
-  deliveryAddress        String
-  paymentMethod          String?
-  paymentLast4           String?
-  createdAt              DateTime @default(now())
-  items                  OrderItem[]
-
-  @@index([sessionId])
-  @@index([createdAt])
-}
-
-model OrderItem {
-  id        String  @id @default(cuid())
-  orderId   String
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId String
-  name      String
-  image     String?
-  price     String
-  quantity  Int
-
-  @@index([orderId])
 }

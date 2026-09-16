@@ -35,7 +35,6 @@ services:
       AI_SEARCH_API_KEY: ${AI_SEARCH_API_KEY:-}
       MARKETPLACE_API: ${MARKETPLACE_API:-https://backend-production-a662.up.railway.app}
       MARKETPLACE_COUNTRY: ${MARKETPLACE_COUNTRY:-UGANDA}
-      MARKETPLACE_SITE_URL: ${MARKETPLACE_SITE_URL:-https://piitrade.com}
       # Optional ImageKit-backed storage — see .env.example. Local disk
       # is used for whichever of these is left unset.
       VIDEO_STORE: ${VIDEO_STORE:-}

@@ -32,12 +32,6 @@ const path = require('path');
 const dbPath = path.resolve(__dirname, '../dist/db.js');
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma: {} } };
 
-// CAUTION when adding fixtures: this is a substring-match simulation,
-// so a word appearing in one item's title/description can silently
-// satisfy a DIFFERENT test's query and match the wrong item (this has
-// already happened twice while writing this file — "Wooden" and
-// "Genuine" each accidentally appeared in two fixtures). Check new
-// title/description text against every existing fixture before adding it.
 const FAKE_CATALOG = [
   {
     id: '1',
@@ -86,24 +80,6 @@ const FAKE_CATALOG = [
     productImages: [],
     user: { id: 'seller-5' },
   },
-  {
-    // Has multiple images, in a deliberately non-alphabetical order —
-    // used to confirm ALL images are collected, in the order given,
-    // not just the first.
-    id: '5',
-    title: 'Leather Sofa Three Seater',
-    description: 'Real leather, brown, minor wear',
-    price: 900000,
-    currency: 'UGX',
-    stock: 1,
-    status: 'ACTIVE',
-    productImages: [
-      { cdnUrl: 'https://cdn.example/sofa-front.jpg' },
-      { cdnUrl: 'https://cdn.example/sofa-side.jpg' },
-      { cdnUrl: 'https://cdn.example/sofa-back.jpg' },
-    ],
-    user: { id: 'seller-6' },
-  },
 ];
 
 // Fakes the real marketplace's confirmed search behavior: verbatim
@@ -128,26 +104,6 @@ test('finds the real listing when the AI text leads with a word not in the title
   const outcome = await searchProductsWithFallback('Vintage Wooden Dining Chair with Carved Legs');
   assert.ok(outcome.results.some((r) => r.id === '1'), 'expected the Wooden Dining Chair listing to be found');
   assert.ok(outcome.matchedQuery && outcome.matchedQuery.length < 'Vintage Wooden Dining Chair with Carved Legs'.length);
-});
-
-test('collects ALL of a listing\'s images, in order — not just the first', async () => {
-  const outcome = await searchProductsWithFallback('Leather Sofa Three Seater');
-  const sofa = outcome.results.find((r) => r.id === '5');
-  assert.ok(sofa, 'expected the sofa listing to be found');
-  assert.equal(sofa.image, 'https://cdn.example/sofa-front.jpg', 'single `image` should be the first one');
-  assert.deepEqual(sofa.images, [
-    'https://cdn.example/sofa-front.jpg',
-    'https://cdn.example/sofa-side.jpg',
-    'https://cdn.example/sofa-back.jpg',
-  ]);
-});
-
-test('a listing with no images at all gets an empty images array, not a crash', async () => {
-  const outcome = await searchProductsWithFallback('Wooden Toy Box');
-  const toyBox = outcome.results.find((r) => r.id === '4');
-  assert.ok(toyBox, 'expected the toy box listing to be found');
-  assert.equal(toyBox.image, '');
-  assert.deepEqual(toyBox.images, []);
 });
 
 test('finds the real listing when the AI text trails with words not in the title', async () => {
