@@ -11,7 +11,7 @@ import CommentModal from './CommentModal';
 import type { VisualSearchResult, CartItem } from '../types';
 import { getMuted, setMuted as setSharedMuted, subscribeMuted } from '../soundPreference';
 import { renderWatermarkedVideo, triggerBlobDownload } from '../videoWatermark';
-import { Heart, MessageCircle, Bookmark, Search, Download, Volume2, VolumeX, Play } from 'lucide-react';
+import { Heart, MessageCircle, Bookmark, Search, Download, Volume2, VolumeX, Play, Flag } from 'lucide-react';
 
 interface Props {
   video: Video;
@@ -58,6 +58,25 @@ export default function VideoCard({ video, active }: Props) {
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0); // 0–1 while rendering the watermark
   const [downloadFlash, setDownloadFlash] = useState(false); // brief branded confirmation
+
+  const [showReportMenu, setShowReportMenu] = useState(false);
+  const [reported, setReported] = useState(false);
+  const [reportBusy, setReportBusy] = useState(false);
+
+  async function submitReport(reason: 'spam' | 'inappropriate' | 'copyright' | 'other') {
+    setReportBusy(true);
+    try {
+      await api.reportVideo(video.id, reason);
+      setReported(true);
+      setShowReportMenu(false);
+    } catch {
+      // Reporting failing silently is preferable to blocking the rest
+      // of the viewing experience over it — the button just stays
+      // clickable so they can try again.
+    } finally {
+      setReportBusy(false);
+    }
+  }
   const holdRafRef = useRef<number>(0);
   const holdStartRef = useRef<number>(0);
   const longPressFiredRef = useRef(false);
@@ -81,6 +100,24 @@ export default function VideoCard({ video, active }: Props) {
       }
     }
   }, [muted, showSoundHint]);
+
+  // Shown once, ever, until the viewer taps Search for the first
+  // time — crop-to-shop has no real-world equivalent for someone who's
+  // never seen it before, unlike the mute icon (a near-universal
+  // symbol), so it needs an explicit one-line explanation rather than
+  // relying on the icon alone. Same one-flag-in-localStorage pattern
+  // as the sound hint above, and intentionally similarly brief.
+  const [showSearchHint] = useState(
+    () => typeof localStorage === 'undefined' || localStorage.getItem('piitrade_search_hint_seen') !== 'true'
+  );
+
+  function dismissSearchHint() {
+    try {
+      localStorage.setItem('piitrade_search_hint_seen', 'true');
+    } catch {
+      // ignore
+    }
+  }
 
   const wasPlayingRef = useRef(false);
 
@@ -233,6 +270,7 @@ export default function VideoCard({ video, active }: Props) {
 
   function openCrop(e: React.MouseEvent) {
     e.stopPropagation();
+    dismissSearchHint();
     const el = videoRef.current;
     if (!el) return;
     // Pause for the whole visual-search → cart → checkout flow. Only
@@ -427,7 +465,7 @@ export default function VideoCard({ video, active }: Props) {
           aria-hidden="true"
         >
           <span className="bg-black/60 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap">
-            Tap for sound 🔊
+            Tap anywhere for sound 🔊
           </span>
         </div>
       )}
@@ -493,10 +531,18 @@ export default function VideoCard({ video, active }: Props) {
           type="button"
           onClick={openCrop}
           aria-label="Search similar products in this frame"
-          className="tap-target flex flex-col items-center justify-center text-white"
+          className="tap-target flex flex-col items-center justify-center text-white relative"
         >
           <Search size={26} />
           <span className="text-xs mt-1">Search</span>
+          {active && showSearchHint && (
+            <span
+              className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 bg-black/70 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap animate-pulse pointer-events-none"
+              aria-hidden="true"
+            >
+              Tap to shop what you see 🛍️
+            </span>
+          )}
         </button>
         <button
           type="button"
@@ -508,7 +554,43 @@ export default function VideoCard({ video, active }: Props) {
           <Download size={26} className={saved ? 'text-brand-cyan' : ''} />
           <span className="text-xs mt-1">Download</span>
         </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!reported) setShowReportMenu((v) => !v);
+          }}
+          aria-label={reported ? 'Reported' : 'Report video'}
+          aria-pressed={reported}
+          disabled={reported}
+          className="tap-target flex flex-col items-center justify-center text-white disabled:opacity-60"
+        >
+          <Flag size={24} className={reported ? 'text-brand-pink' : ''} fill={reported ? 'currentColor' : 'none'} />
+          <span className="text-xs mt-1">{reported ? 'Reported' : 'Report'}</span>
+        </button>
       </div>
+
+      {/* Report reason popover — a handful of fixed reasons rather than
+          free text, so a flag is triage-able at a glance in the admin
+          queue without needing to read prose per report. */}
+      {showReportMenu && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="safe-right absolute right-2 sm:right-3 bottom-24 z-10 bg-neutral-900 border border-white/10 rounded-xl overflow-hidden shadow-xl w-40"
+        >
+          {(['spam', 'inappropriate', 'copyright', 'other'] as const).map((reason) => (
+            <button
+              key={reason}
+              type="button"
+              disabled={reportBusy}
+              onClick={() => submitReport(reason)}
+              className="block w-full text-left px-3 py-2.5 text-white text-sm capitalize hover:bg-white/10 disabled:opacity-50"
+            >
+              {reason}
+            </button>
+          ))}
+        </div>
+      )}
 
       {showCrop && videoRef.current && (
         <CropOverlay

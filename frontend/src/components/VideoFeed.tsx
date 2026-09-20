@@ -4,11 +4,27 @@ import VideoCard from './VideoCard';
 
 interface Props {
   videos: Video[];
+  /** Called (repeatedly-safe — the caller debounces/no-ops as needed)
+   *  once the viewer scrolls within a few videos of the end of what's
+   *  currently loaded, so the next page can be fetched before they
+   *  actually hit it. */
+  onNearEnd?: () => void;
 }
 
-export default function VideoFeed({ videos }: Props) {
+// How many videos from the end of the loaded list triggers a fetch of
+// the next page — high enough that the next page is likely ready
+// before the viewer scrolls past the last loaded video.
+const NEAR_END_THRESHOLD = 3;
+
+export default function VideoFeed({ videos, onNearEnd }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (onNearEnd && videos.length > 0 && activeIndex >= videos.length - NEAR_END_THRESHOLD) {
+      onNearEnd();
+    }
+  }, [activeIndex, videos.length, onNearEnd]);
 
   useEffect(() => {
     const container = containerRef.current;

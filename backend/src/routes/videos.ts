@@ -10,6 +10,7 @@ import { uploadToStore } from '../lib/imagekit';
 import { VIDEOS_DIR, POSTERS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
 import { ensureHandle, resolveAvatarUrl } from './profile';
+import { uploadLimiter, writeLimiter } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -108,13 +109,34 @@ async function fetchStatesFor(videoIds: string[], sessionId: string): Promise<Ma
   return new Map(states.map((s: StateRecord) => [s.videoId, s]));
 }
 
-// GET /api/videos
+// GET /api/videos?cursor=<videoId>&limit=20
+//
+// Cursor-paginated: without this, every feed load fetched the entire
+// table (fine at dozens of videos, a real problem at thousands).
+// Cursor is a video id rather than an offset, so results stay stable
+// even as new videos are uploaded between page loads.
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 50;
+
 router.get('/', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
-  const videos: VideoRecord[] = await prisma.video.findMany({ orderBy: { createdAt: 'desc' } });
-  const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
-  const uploaderMap = await fetchUploadersFor(videos);
-  res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)) });
+  const cursor = typeof req.query.cursor === 'string' && req.query.cursor ? req.query.cursor : undefined;
+  const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(req.query.limit) || DEFAULT_PAGE_SIZE));
+
+  const videos: VideoRecord[] = await prisma.video.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1, // fetch one extra to know whether there's a next page
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+  });
+  const hasMore = videos.length > limit;
+  const page = hasMore ? videos.slice(0, limit) : videos;
+
+  const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
+  const uploaderMap = await fetchUploadersFor(page);
+  res.json({
+    videos: page.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
+    nextCursor: hasMore ? page[page.length - 1].id : null,
+  });
 });
 
 // GET /api/videos/search?q=
@@ -133,6 +155,7 @@ router.get('/search', async (req: Request, res: Response) => {
       ],
     },
     orderBy: { createdAt: 'desc' },
+    take: MAX_PAGE_SIZE, // safety cap — search has no pagination UI, just bounded results
   });
   const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
   const uploaderMap = await fetchUploadersFor(videos);
@@ -152,7 +175,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/videos  (multipart: video, title, description)
-router.post('/', uploadVideo.single('video'), async (req: Request, res: Response) => {
+router.post('/', uploadLimiter, uploadVideo.single('video'), async (req: Request, res: Response) => {
   const file = req.file;
   if (!file) throw new HttpError(400, 'No video file uploaded');
 
@@ -312,7 +335,7 @@ router.get('/:id/comments', async (req: Request, res: Response) => {
 });
 
 // POST /api/videos/:id/comments  { text, author? }
-router.post('/:id/comments', async (req: Request, res: Response) => {
+router.post('/:id/comments', writeLimiter, async (req: Request, res: Response) => {
   const text = String(req.body.text || '').trim().slice(0, 500);
   if (!text) throw new HttpError(400, 'Comment text is required');
 
@@ -328,6 +351,34 @@ router.post('/:id/comments', async (req: Request, res: Response) => {
   ]);
 
   res.status(201).json({ comment, comments: video.comments + 1 });
+});
+
+const REPORT_REASONS = new Set(['spam', 'inappropriate', 'copyright', 'other']);
+
+// POST /api/videos/:id/report  { reason }
+//
+// No moderation UI existed anywhere before this — bad content only
+// came down if an admin happened to see it. One report per (video,
+// session) — see the Report model's unique constraint — so this can't
+// be scripted into a fake-report pile-on by one anonymous session.
+router.post('/:id/report', writeLimiter, async (req: Request, res: Response) => {
+  const sessionId = getSessionId(req);
+  const videoId = req.params.id;
+  const reason = String(req.body?.reason || '').trim().toLowerCase();
+  if (!REPORT_REASONS.has(reason)) {
+    throw new HttpError(400, `reason must be one of: ${[...REPORT_REASONS].join(', ')}`);
+  }
+
+  const video = await prisma.video.findUnique({ where: { id: videoId } });
+  if (!video) throw new HttpError(404, 'Video not found');
+
+  await prisma.report.upsert({
+    where: { videoId_sessionId: { videoId, sessionId } },
+    update: { reason },
+    create: { videoId, sessionId, reason },
+  });
+
+  res.status(201).json({ reported: true });
 });
 
 export default router;

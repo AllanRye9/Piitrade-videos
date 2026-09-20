@@ -97,6 +97,63 @@ router.delete('/comments/:id', async (req: Request, res: Response) => {
   res.status(204).send();
 });
 
+// GET /api/admin/reports — moderation queue, grouped by video with a
+// count and the set of distinct reasons, newest-reported first. This
+// is the only place flagged content becomes visible to a human —
+// before this route (and the viewer-facing POST /api/videos/:id/report
+// it reads from) existed, nothing surfaced reported content at all.
+router.get('/reports', async (_req: Request, res: Response) => {
+  const grouped = await prisma.report.groupBy({
+    by: ['videoId'],
+    _count: { _all: true },
+    _max: { createdAt: true },
+    orderBy: { _max: { createdAt: 'desc' } },
+  });
+  if (grouped.length === 0) {
+    res.json({ reports: [] });
+    return;
+  }
+
+  const videoIds = grouped.map((g: { videoId: string }) => g.videoId);
+  const [videos, reasonRows] = await Promise.all([
+    prisma.video.findMany({ where: { id: { in: videoIds } } }),
+    prisma.report.findMany({ where: { videoId: { in: videoIds } }, select: { videoId: true, reason: true } }),
+  ]);
+  const videoMap = new Map<string, { id: string; title: string; posterFilename: string | null }>(
+    videos.map((v: { id: string; title: string; posterFilename: string | null }) => [v.id, v])
+  );
+  const reasonsByVideo = new Map<string, Set<string>>();
+  for (const r of reasonRows as { videoId: string; reason: string }[]) {
+    if (!reasonsByVideo.has(r.videoId)) reasonsByVideo.set(r.videoId, new Set());
+    reasonsByVideo.get(r.videoId)!.add(r.reason);
+  }
+
+  res.json({
+    reports: grouped
+      .map((g: { videoId: string; _count: { _all: number }; _max: { createdAt: Date | null } }) => {
+        const video = videoMap.get(g.videoId);
+        if (!video) return null; // report survived video deletion race — skip rather than error
+        return {
+          videoId: g.videoId,
+          title: video.title,
+          poster: video.posterFilename ? `/uploads/posters/${video.posterFilename}` : null,
+          reportCount: g._count._all,
+          reasons: [...(reasonsByVideo.get(g.videoId) || [])],
+          lastReportedAt: g._max.createdAt,
+        };
+      })
+      .filter((r: unknown): r is NonNullable<typeof r> => r !== null),
+  });
+});
+
+// DELETE /api/admin/reports/:videoId — dismiss all reports for a video
+// (i.e. admin reviewed it and it's fine) without deleting the video
+// itself; use DELETE /api/admin/videos/:id for actually removing it.
+router.delete('/reports/:videoId', async (req: Request, res: Response) => {
+  await prisma.report.deleteMany({ where: { videoId: req.params.videoId } });
+  res.status(204).send();
+});
+
 // GET /api/admin/products
 router.get('/products', async (_req: Request, res: Response) => {
   const products = await prisma.product.findMany({ orderBy: { name: 'asc' } });

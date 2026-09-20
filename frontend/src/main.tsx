@@ -12,6 +12,19 @@ import AdminRegister from './admin/AdminRegister';
 import AdminDashboard from './admin/AdminDashboard';
 import './styles/index.css';
 
+// Register the app-shell service worker (see public/sw.js) — narrow in
+// scope (shell only, never /api or /uploads) so it can't ever serve
+// stale video data. Guarded for browsers without SW support rather
+// than assumed, since the app must keep working there too.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Non-fatal — the app works fully without offline/installable
+      // support, it just loses that enhancement on this browser.
+    });
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>

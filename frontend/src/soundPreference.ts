@@ -30,11 +30,31 @@ function readInitial(): boolean {
 let muted = readInitial();
 const listeners = new Set<() => void>();
 
+// Whether the current preference is still just the browser-mandated
+// autoplay default, or something the viewer actually chose (by
+// tapping the mute icon, or from a prior visit — see readInitial).
+// Drives registerFirstInteractionAutoUnmute below: an explicit choice
+// is never second-guessed, but a viewer who's never touched the mute
+// icon shouldn't have to find and tap that one specific tiny icon
+// just to get sound — everything (autoplay policy aside) about a
+// TikTok-style feed assumes sound-on, so the first tap/keypress
+// anywhere in the app, on a session with no stored preference at all,
+// is treated as "I'm engaging with this, give me sound" the same way
+// tapping the speaker icon would.
+let hasExplicitPreference = (() => {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
+})();
+
 export function getMuted(): boolean {
   return muted;
 }
 
 export function setMuted(value: boolean): void {
+  hasExplicitPreference = true;
   if (muted === value) return;
   muted = value;
   try {
@@ -48,4 +68,30 @@ export function setMuted(value: boolean): void {
 export function subscribeMuted(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+let firstInteractionRegistered = false;
+
+/**
+ * Call once, near the app root. No-ops if the viewer already has an
+ * explicit mute preference (nothing to override) or has already been
+ * registered this session. Otherwise, the very next pointer/keyboard
+ * interaction anywhere in the app unmutes — a real user gesture, so
+ * it satisfies the same browser autoplay-with-sound requirement the
+ * mute button itself relies on, it's just no longer gated behind
+ * finding that one specific icon first.
+ */
+export function registerFirstInteractionAutoUnmute(): void {
+  if (firstInteractionRegistered || hasExplicitPreference) return;
+  firstInteractionRegistered = true;
+
+  const unmuteOnce = () => {
+    document.removeEventListener('pointerdown', unmuteOnce);
+    document.removeEventListener('keydown', unmuteOnce);
+    document.removeEventListener('touchstart', unmuteOnce);
+    if (!hasExplicitPreference) setMuted(false);
+  };
+  document.addEventListener('pointerdown', unmuteOnce, { once: true, passive: true });
+  document.addEventListener('keydown', unmuteOnce, { once: true });
+  document.addEventListener('touchstart', unmuteOnce, { once: true, passive: true });
 }

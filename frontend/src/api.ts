@@ -17,6 +17,19 @@ import { API_BASE } from './config';
 
 const SESSION_KEY = 'piitrade_session_id';
 const ADMIN_TOKEN_KEY = 'piitrade_admin_token';
+const ACCOUNT_EMAIL_KEY = 'piitrade_account_email';
+
+/** The signed-up email for this session, if any — purely a local UI
+ *  flag ("Signed in as …" vs "Sign up / Log in" in Settings); the
+ *  server never reads this back, only X-Session-Id. */
+export function getAccountEmail(): string | null {
+  return localStorage.getItem(ACCOUNT_EMAIL_KEY);
+}
+
+export function setAccountEmail(email: string | null) {
+  if (email) localStorage.setItem(ACCOUNT_EMAIL_KEY, email);
+  else localStorage.removeItem(ACCOUNT_EMAIL_KEY);
+}
 
 /**
  * `crypto.randomUUID()` is only available in secure contexts (HTTPS)
@@ -51,6 +64,19 @@ function getSessionId(): string {
     localStorage.setItem(SESSION_KEY, id);
   }
   return id;
+}
+
+/**
+ * Adopts `id` as this browser's X-Session-Id from now on — used after
+ * a successful login (see api.login below), where the server returns
+ * the CANONICAL sessionId for that account (the one its videos/handle
+ * are actually attached to), which is usually not the id this browser
+ * had been using. Every other request already just reads whatever's
+ * in SESSION_KEY, so nothing else needs to change for the switch to
+ * take effect.
+ */
+export function setSessionId(id: string) {
+  localStorage.setItem(SESSION_KEY, id);
 }
 
 export function getAdminToken(): string | null {
@@ -97,9 +123,17 @@ async function adminRequest<T>(path: string, options: RequestInit = {}): Promise
 }
 
 export const api = {
-  listVideos: () => request<{ videos: Video[] }>('/api/videos'),
+  listVideos: (cursor?: string | null) =>
+    request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
 
   searchVideos: (q: string) => request<{ videos: Video[] }>(`/api/videos/search?q=${encodeURIComponent(q)}`),
+
+  reportVideo: (id: string, reason: 'spam' | 'inappropriate' | 'copyright' | 'other') =>
+    request<{ reported: boolean }>(`/api/videos/${id}/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    }),
 
   getVideo: (id: string) => request<{ video: Video }>(`/api/videos/${id}`),
 
@@ -248,6 +282,22 @@ export const api = {
     request<{ accounts: AccountSummary[] }>(`/api/accounts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
 
   getAccount: (handle: string) => request<{ account: AccountSummary; videos: Video[] }>(`/api/accounts/${encodeURIComponent(handle)}`),
+
+  // Real accounts — see backend/src/routes/account.ts. Both calls
+  // return the CANONICAL sessionId for the account; callers must pass
+  // it to setSessionId() (exported above) to actually adopt it, which
+  // is what makes the account's existing videos/handle show up.
+  signup: (email: string, password: string) =>
+    request<{ sessionId: string; email: string; handle: string | null; displayName: string | null; avatar: string | null; bio: string | null }>(
+      '/api/account/signup',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }
+    ),
+
+  login: (email: string, password: string) =>
+    request<{ sessionId: string; email: string; handle: string | null; displayName: string | null; avatar: string | null; bio: string | null }>(
+      '/api/account/login',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }
+    ),
 };
 
 export const adminApi = {

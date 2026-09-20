@@ -28,6 +28,7 @@ model Video {
 
   commentList    Comment[]
   states         UserVideoState[]
+  reportList     Report[]
 
   @@index([createdAt])
   @@index([uploaderSessionId])
@@ -72,6 +73,23 @@ model Product {
   phash         String
 }
 
+// A viewer's flag on a video, for the admin moderation queue (GET
+// /api/admin/reports). One row per (video, session) — a session can
+// flag a given video only once (see the unique constraint), which
+// keeps a single anonymous session from padding a video's report
+// count, without requiring real accounts to report abuse.
+model Report {
+  id        String   @id @default(cuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  sessionId String
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@unique([videoId, sessionId])
+  @@index([videoId])
+}
+
 // Admin accounts for the /admin dashboard. This app has no public user
 // accounts — regular visitors interact anonymously via a per-browser
 // session id (see UserVideoState). Only admins log in.
@@ -80,6 +98,24 @@ model AdminUser {
   email        String   @unique
   passwordHash String
   createdAt    DateTime @default(now())
+}
+
+// A real, persistent account a viewer/creator can sign up for so their
+// handle and uploads survive clearing browser storage or switching
+// devices — see routes/account.ts. Deliberately thin: identity for
+// everyday actions (likes, uploads, comments) still flows entirely
+// through X-Session-Id/SessionProfile exactly as before. Signing up
+// or logging in just tells the caller which SessionProfile.sessionId
+// is "canonical" for this email, via SessionProfile.userId below, so
+// the frontend can adopt it as its own X-Session-Id afterwards and
+// regain access to that identity's videos/handle from any device.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  profile SessionProfile?
 }
 
 // Per anonymous-browser-session profile info the viewer can set for
@@ -106,6 +142,13 @@ model SessionProfile {
   handle      String?  @unique
   // Short freeform bio shown on the public /u/:handle profile page.
   bio         String?
+  // Set once this session has signed up/logged in for a real account
+  // (see routes/account.ts) — the User this profile (and everything
+  // tied to this sessionId: uploads, likes, handle) now belongs to.
+  // Nullable/unique: most sessions stay anonymous forever, and each
+  // User has exactly one canonical SessionProfile.
+  userId      String?  @unique
+  user        User?    @relation(fields: [userId], references: [id])
   updatedAt   DateTime @updatedAt
 }
 

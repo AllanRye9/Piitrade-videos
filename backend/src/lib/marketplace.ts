@@ -171,7 +171,7 @@ async function readError(res: Response): Promise<string | undefined> {
  * field, so every caller (search, manual search) gets a URL that
  * actually loads.
  */
-function resolveMarketplaceImageUrl(raw: string | null | undefined): string {
+export function resolveMarketplaceImageUrl(raw: string | null | undefined): string {
   if (!raw) return '';
   if (/^https?:\/\//i.test(raw)) return raw;
   if (raw.startsWith('//')) return `https:${raw}`;

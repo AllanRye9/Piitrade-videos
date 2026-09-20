@@ -7,6 +7,7 @@ import { uploadImage } from '../middleware/upload';
 import { uploadToStore } from '../lib/imagekit';
 import { AVATARS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
+import { writeLimiter } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -108,7 +109,7 @@ router.put('/', async (req: Request, res: Response) => {
 });
 
 // PUT /api/profile/handle  { handle: string }
-router.put('/handle', async (req: Request, res: Response) => {
+router.put('/handle', writeLimiter, async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const handle = String(req.body?.handle || '').trim().toLowerCase();
   if (!HANDLE_PATTERN.test(handle)) {

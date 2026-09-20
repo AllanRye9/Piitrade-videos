@@ -46,15 +46,18 @@ router.get('/', async (req: Request, res: Response) => {
   }
 
   const sessionIds = profiles.map((p) => p.sessionId);
-  const grouped: { uploaderSessionId: string | null; _count: { _all: number }; _sum: { likes: number | null } }[] =
-    await prisma.video.groupBy({
-      by: ['uploaderSessionId'],
-      where: { uploaderSessionId: { in: sessionIds } },
-      orderBy: { uploaderSessionId: 'asc' },
-      _count: { _all: true },
-      _sum: { likes: true },
-    } as any);
-  const statsBySession = new Map(grouped.map((g) => [g.uploaderSessionId, { count: g._count._all, likes: g._sum.likes || 0 }]));
+  const grouped = await prisma.video.groupBy({
+    by: ['uploaderSessionId'],
+    where: { uploaderSessionId: { in: sessionIds } },
+    _count: { _all: true },
+    _sum: { likes: true },
+  });
+  const statsBySession = new Map<string | null, { count: number; likes: number }>(
+    grouped.map((g: { uploaderSessionId: string | null; _count: { _all: number }; _sum: { likes: number | null } }) => [
+      g.uploaderSessionId,
+      { count: g._count._all, likes: g._sum.likes || 0 },
+    ])
+  );
 
   const accounts = profiles
     .map((p) => {
