@@ -11,6 +11,7 @@ import { VIDEOS_DIR, POSTERS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
 import { ensureHandle, resolveAvatarUrl } from './profile';
 import { uploadLimiter, writeLimiter } from '../middleware/rateLimit';
+import { extractHashtags } from '../lib/hashtags';
 
 const router = Router();
 
@@ -30,8 +31,10 @@ type VideoRecord = {
   likes: number;
   views: number;
   comments: number;
+  shares: number;
   createdAt: Date;
   uploaderSessionId?: string | null;
+  hashtags?: string[];
 };
 
 type StateRecord = { videoId: string; liked: boolean; favorited: boolean; saved: boolean };
@@ -64,6 +67,8 @@ export function serialize(video: VideoRecord, state?: StateRecord, uploader?: Up
     likes: video.likes,
     views: video.views,
     comments: video.comments,
+    shares: video.shares,
+    hashtags: video.hashtags || [],
     createdAt: video.createdAt,
     liked: state?.liked ?? false,
     favorited: state?.favorited ?? false,
@@ -160,6 +165,54 @@ router.get('/search', async (req: Request, res: Response) => {
   const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
   const uploaderMap = await fetchUploadersFor(videos);
   res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)) });
+});
+
+// GET /api/videos/hashtag/:tag?cursor=&limit=
+//
+// Two path segments, so this can't collide with GET /:id above despite
+// both being registered as single-word-looking routes — Express only
+// matches /:id against exactly one segment. Cursor-paginated the same
+// way the main feed is (see GET / above).
+router.get('/hashtag/:tag', async (req: Request, res: Response) => {
+  const tag = req.params.tag.toLowerCase();
+  const sessionId = getSessionId(req);
+  const cursor = typeof req.query.cursor === 'string' && req.query.cursor ? req.query.cursor : undefined;
+  const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(req.query.limit) || DEFAULT_PAGE_SIZE));
+
+  const videos: VideoRecord[] = await prisma.video.findMany({
+    where: { hashtags: { has: tag } },
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+  });
+  const hasMore = videos.length > limit;
+  const page = hasMore ? videos.slice(0, limit) : videos;
+
+  const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
+  const uploaderMap = await fetchUploadersFor(page);
+  res.json({
+    tag,
+    videos: page.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
+    nextCursor: hasMore ? page[page.length - 1].id : null,
+  });
+});
+
+// GET /api/videos/hashtags/trending
+//
+// Postgres array columns don't have a Prisma query-builder way to
+// "group by element", so this is the one place in the app using
+// $queryRaw — a fixed, parameterless aggregate query with no user
+// input in it, unnesting every video's hashtags array and counting
+// occurrences. Capped to the 20 most-used tags.
+router.get('/hashtags/trending', async (_req: Request, res: Response) => {
+  const rows = await prisma.$queryRaw<{ tag: string; count: bigint }[]>`
+    SELECT tag, count(*) as count
+    FROM "Video", unnest(hashtags) AS tag
+    GROUP BY tag
+    ORDER BY count DESC, tag ASC
+    LIMIT 20
+  `;
+  res.json({ hashtags: rows.map((r: { tag: string; count: bigint }) => ({ tag: r.tag, count: Number(r.count) })) });
 });
 
 // GET /api/videos/:id
@@ -286,6 +339,7 @@ router.post('/', uploadLimiter, uploadVideo.single('video'), async (req: Request
       size: transcodedSize,
       duration,
       uploaderSessionId: sessionId !== 'anonymous' ? sessionId : null,
+      hashtags: extractHashtags(title, description),
     },
   });
 
@@ -325,32 +379,105 @@ router.post('/:id/like', makeToggleHandler('liked'));
 router.post('/:id/favorite', makeToggleHandler('favorited'));
 router.post('/:id/save', makeToggleHandler('saved'));
 
-// GET /api/videos/:id/comments
-router.get('/:id/comments', async (req: Request, res: Response) => {
-  const comments = await prisma.comment.findMany({
-    where: { videoId: req.params.id },
-    orderBy: { createdAt: 'desc' },
-  });
-  res.json({ comments });
+// POST /api/videos/:id/share
+//
+// Called when the viewer actually uses the share sheet or copies the
+// link (see VideoCard.tsx) — a raw activity counter, not a per-session
+// toggle like like/save above: sharing the same video twice is normal,
+// so there's no state to read back, just an increment. This is what
+// makes "how often is this shared" visible at all — nothing tracked
+// it before, because nothing in the app could be shared before (no
+// per-video permalink existed until this feature added one — see
+// AccountPage-style single-video route at /v/:id).
+router.post('/:id/share', writeLimiter, async (req: Request, res: Response) => {
+  const video = await prisma.video.update({
+    where: { id: req.params.id },
+    data: { shares: { increment: 1 } },
+  }).catch(() => null);
+  if (!video) throw new HttpError(404, 'Video not found');
+  res.json({ shares: video.shares });
 });
 
-// POST /api/videos/:id/comments  { text, author? }
+// GET /api/videos/:id/comments — top-level comments only (replies are
+// fetched on demand via GET /:id/comments/:commentId/replies, the same
+// "collapsed by default" behavior TikTok/Instagram use), each with a
+// replyCount so the frontend knows whether to show a "View N replies"
+// affordance at all.
+router.get('/:id/comments', async (req: Request, res: Response) => {
+  const videoId = req.params.id;
+  const [comments, replyCounts] = await Promise.all([
+    prisma.comment.findMany({ where: { videoId, parentId: null }, orderBy: { createdAt: 'desc' } }),
+    prisma.comment.groupBy({ by: ['parentId'], where: { videoId, parentId: { not: null } }, _count: { _all: true } }),
+  ]);
+  const countByParent = new Map<string, number>(
+    replyCounts.map((r: { parentId: string | null; _count: { _all: number } }) => [r.parentId as string, r._count._all])
+  );
+  res.json({
+    comments: comments.map((c: { id: string }) => ({ ...c, replyCount: countByParent.get(c.id) || 0 })),
+  });
+});
+
+// GET /api/videos/:id/comments/:commentId/replies — replies for one
+// top-level comment. No pagination: a single comment thread realistically
+// never gets large enough to need it, capped at 100 as a safety valve.
+router.get('/:id/comments/:commentId/replies', async (req: Request, res: Response) => {
+  const replies = await prisma.comment.findMany({
+    where: { videoId: req.params.id, parentId: req.params.commentId },
+    orderBy: { createdAt: 'asc' }, // replies read naturally oldest-first, unlike top-level comments
+    take: 100,
+  });
+  res.json({ replies });
+});
+
+// POST /api/videos/:id/comments  { text, author?, parentId? }
 router.post('/:id/comments', writeLimiter, async (req: Request, res: Response) => {
   const text = String(req.body.text || '').trim().slice(0, 500);
   if (!text) throw new HttpError(400, 'Comment text is required');
 
   const author = String(req.body.author || 'Guest').slice(0, 60);
   const videoId = req.params.id;
+  const commenterSessionId = getSessionId(req);
+  const requestedParentId = typeof req.body.parentId === 'string' && req.body.parentId ? req.body.parentId : null;
 
   const video = await prisma.video.findUnique({ where: { id: videoId } });
   if (!video) throw new HttpError(404, 'Video not found');
 
+  // Flatten replies-to-replies to one level: if the requested parent is
+  // itself a reply, attach to ITS parent instead of nesting further —
+  // matches the TikTok/Instagram convention rather than allowing
+  // arbitrarily deep threads.
+  let parentId: string | null = null;
+  let notifyRecipientSessionId: string | null = null;
+  if (requestedParentId) {
+    const parent = await prisma.comment.findUnique({ where: { id: requestedParentId } });
+    if (!parent || parent.videoId !== videoId) throw new HttpError(404, 'Comment not found');
+    parentId = parent.parentId || parent.id;
+    notifyRecipientSessionId = parent.sessionId;
+  }
+
   const [comment] = await prisma.$transaction([
-    prisma.comment.create({ data: { videoId, author, text } }),
+    prisma.comment.create({ data: { videoId, author, text, sessionId: commenterSessionId, parentId } }),
     prisma.video.update({ where: { id: videoId }, data: { comments: { increment: 1 } } }),
   ]);
 
-  res.status(201).json({ comment, comments: video.comments + 1 });
+  // Replying notifies whoever you replied to; a top-level comment
+  // notifies the video's uploader instead. Either way: never notify
+  // yourself, and only when the recipient is actually known (older
+  // comments/videos may predate sessionId/uploaderSessionId tracking).
+  const recipient = requestedParentId ? notifyRecipientSessionId : video.uploaderSessionId;
+  if (recipient && recipient !== commenterSessionId) {
+    await prisma.notification.create({
+      data: {
+        recipientSessionId: recipient,
+        type: 'comment',
+        actorSessionId: commenterSessionId,
+        videoId,
+        commentText: text.slice(0, 140),
+      },
+    });
+  }
+
+  res.status(201).json({ comment: { ...comment, replyCount: 0 }, comments: video.comments + 1 });
 });
 
 const REPORT_REASONS = new Set(['spam', 'inappropriate', 'copyright', 'other']);

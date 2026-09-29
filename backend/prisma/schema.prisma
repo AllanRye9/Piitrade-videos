@@ -19,6 +19,19 @@ model Video {
   likes          Int      @default(0)
   views          Int      @default(0)
   comments       Int      @default(0)
+  // Times the share action was used (Web Share sheet or copy-link —
+  // see POST /:id/share in routes/videos.ts). Unlike likes/saves this
+  // has no per-session dedupe: sharing the same video twice is a
+  // perfectly normal thing to do, it's a raw activity counter, not a
+  // vote.
+  shares         Int      @default(0)
+  // Parsed from title+description at upload/edit time (see
+  // lib/hashtags.ts) — a native Postgres text array rather than a
+  // separate Hashtag model + join table, since all this needs is
+  // "does this video have tag X" (`has`/`hasSome` filters) and a
+  // simple unnest+count for trending (routes/videos.ts), neither of
+  // which benefits from a full relational model.
+  hashtags       String[] @default([])
   createdAt      DateTime @default(now())
 
   // The X-Session-Id that uploaded this video (see routes/videos.ts).
@@ -29,20 +42,35 @@ model Video {
   commentList    Comment[]
   states         UserVideoState[]
   reportList     Report[]
+  notifications  Notification[]
 
   @@index([createdAt])
   @@index([uploaderSessionId])
 }
 
+// A top-level comment or a reply (see parentId). Replies are flattened
+// to exactly one level deep — replying to a reply attaches to its
+// parent's own thread, matching the TikTok/Instagram convention,
+// rather than allowing infinitely deep nesting (see routes/videos.ts's
+// POST /:id/comments for where that flattening happens).
 model Comment {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   videoId   String
-  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
-  author    String   @default("Guest")
+  video     Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  author    String    @default("Guest")
   text      String
-  createdAt DateTime @default(now())
+  // Nullable — comments posted before this field existed have no
+  // recorded author session, so "who to notify on reply" and
+  // "flatten nested replies" both degrade gracefully to "unknown" for
+  // those old rows rather than erroring.
+  sessionId String?
+  parentId  String?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+  createdAt DateTime  @default(now())
 
   @@index([videoId])
+  @@index([parentId])
 }
 
 // Per-browser-session like/favorite/save state, keyed by an anonymous
@@ -90,6 +118,48 @@ model Report {
   @@index([videoId])
 }
 
+// A follow relationship between two sessions (see accounts.ts's
+// POST /:handle/follow). Kept as plain sessionId pairs, the same
+// pattern as Report/UserVideoState/MarketplaceLink above, rather than
+// requiring a real User — following a creator shouldn't need an
+// account any more than liking a video does. followerSessionId is the
+// viewer; followingSessionId is whichever session holds the handle
+// being followed (a handle always belongs to exactly one session —
+// see SessionProfile.handle).
+model Follow {
+  id                 String   @id @default(cuid())
+  followerSessionId  String
+  followingSessionId String
+  createdAt          DateTime @default(now())
+
+  @@unique([followerSessionId, followingSessionId])
+  @@index([followingSessionId])
+  @@index([followerSessionId])
+}
+
+// In-app notification center (Cluster 4.4 — deliberately just the
+// in-app list, not push/email/SMS, which need separate delivery
+// infra). Two triggers for v1: a new follower (created in
+// accounts.ts's POST /:handle/follow) and a comment on your video
+// (created in videos.ts's POST /:id/comments) — the two payoffs of
+// the Follow and comment features already built. Sessionid-keyed like
+// everything else here; actorSessionId is resolved to a handle/avatar
+// at read time (routes/notifications.ts) rather than snapshotted, so
+// it stays correct if the actor later changes their display name.
+model Notification {
+  id                 String    @id @default(cuid())
+  recipientSessionId String
+  type               String // 'follow' | 'comment'
+  actorSessionId     String
+  videoId            String?
+  video              Video?    @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  commentText        String?
+  read               Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  @@index([recipientSessionId, createdAt])
+}
+
 // Admin accounts for the /admin dashboard. This app has no public user
 // accounts — regular visitors interact anonymously via a per-browser
 // session id (see UserVideoState). Only admins log in.
@@ -115,7 +185,26 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
 
-  profile SessionProfile?
+  profile      SessionProfile?
+  resetTokens  PasswordResetToken[]
+}
+
+// Forgot-password flow (see routes/account.ts). Stores a HASH of the
+// token, never the raw value — the raw token only ever exists in the
+// emailed link, exactly like a session cookie or password itself
+// would be handled. `usedAt` makes a token single-use even within its
+// expiry window, so a reset link found in an old email (or intercepted
+// once) can't be replayed.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 // Per anonymous-browser-session profile info the viewer can set for

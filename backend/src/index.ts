@@ -13,6 +13,7 @@ import marketplaceRouter from './routes/marketplace';
 import profileRouter from './routes/profile';
 import accountsRouter from './routes/accounts';
 import accountRouter from './routes/account';
+import notificationsRouter from './routes/notifications';
 import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
 
@@ -48,6 +49,7 @@ app.use('/api/marketplace', marketplaceRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/accounts', accountsRouter);
 app.use('/api/account', accountRouter);
+app.use('/api/notifications', notificationsRouter);
 
 // Centralized error handler. Thanks to `express-async-errors`, any
 // error thrown (or rejected promise) inside an async route handler

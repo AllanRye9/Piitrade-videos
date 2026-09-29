@@ -11,7 +11,7 @@ import CommentModal from './CommentModal';
 import type { VisualSearchResult, CartItem } from '../types';
 import { getMuted, setMuted as setSharedMuted, subscribeMuted } from '../soundPreference';
 import { renderWatermarkedVideo, triggerBlobDownload } from '../videoWatermark';
-import { Heart, MessageCircle, Bookmark, Search, Download, Volume2, VolumeX, Play, Flag } from 'lucide-react';
+import { Heart, MessageCircle, Bookmark, Search, Download, Volume2, VolumeX, Play, Flag, Share2 } from 'lucide-react';
 
 interface Props {
   video: Video;
@@ -28,6 +28,35 @@ function formatCount(n: number): string {
   return String(n);
 }
 
+const HASHTAG_TOKEN = /#([a-z0-9_]{1,30})/gi;
+
+/** Renders `text` with any #hashtag substrings turned into links to
+ *  /tag/:tag, so a caption's hashtags are tappable exactly where they
+ *  appear rather than duplicated as a separate chip row underneath —
+ *  matches the TikTok/Instagram convention this feature is based on. */
+function linkifyHashtags(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  for (const match of text.matchAll(HASHTAG_TOKEN)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) parts.push(text.slice(lastIndex, index));
+    parts.push(
+      <Link
+        key={key++}
+        to={`/tag/${match[1].toLowerCase()}`}
+        onClick={(e) => e.stopPropagation()}
+        className="text-brand-cyan font-medium hover:underline"
+      >
+        #{match[1]}
+      </Link>
+    );
+    lastIndex = index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
 export default function VideoCard({ video, active }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(true);
@@ -40,6 +69,8 @@ export default function VideoCard({ video, active }: Props) {
   const [saved, setSaved] = useState(video.saved);
   const [likes, setLikes] = useState(video.likes);
   const [commentCount, setCommentCount] = useState(video.comments);
+  const [shareCount, setShareCount] = useState(video.shares);
+  const [shareFlash, setShareFlash] = useState<'shared' | 'copied' | null>(null);
   const [showCrop, setShowCrop] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -175,6 +206,43 @@ export default function VideoCard({ video, active }: Props) {
     } catch {
       setFavorited((f) => !f);
     }
+  }
+
+  // The permalink is what makes this shareable at all — before this
+  // feature, a video only existed as a card inside the feed's own
+  // scroll state, with no URL that pointed at just it. Uses the
+  // native share sheet (WhatsApp/Instagram/etc. all show up in it for
+  // free on mobile) where available, falling back to copying the link
+  // on browsers without Web Share support (desktop, mostly).
+  async function handleShare(e: React.MouseEvent) {
+    e.stopPropagation();
+    const url = `${window.location.origin}/v/${video.id}`;
+    const shareData = { title: video.title || 'Piitrade video', text: 'Shop what you see on Piitrade', url };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        setShareFlash('shared');
+      } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        setShareFlash('copied');
+      } else {
+        return; // nothing usable on this browser — fail quietly rather than error
+      }
+    } catch {
+      // Covers the user dismissing the native share sheet, which
+      // rejects the promise — that's a cancel, not a failure, so no
+      // error state and no share is counted below.
+      return;
+    }
+
+    setShareCount((c) => c + 1);
+    setTimeout(() => setShareFlash(null), 1600);
+    api.shareVideo(video.id).catch(() => {
+      // Non-fatal — the share already happened from the viewer's
+      // perspective (sheet opened / link copied); losing the count
+      // increment isn't worth surfacing an error over.
+    });
   }
 
   // "Download" — renders a watermarked copy (piitrade.com branding
@@ -431,7 +499,7 @@ export default function VideoCard({ video, active }: Props) {
           being produced after either the button or the long-press. */}
       {downloading && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40 pointer-events-none">
-          <span className="text-white text-xs font-semibold tracking-wide">Adding piitrade.com watermark…</span>
+          <span className="text-white text-xs font-semibold tracking-wide">Processing download…</span>
           <div className="w-40 h-1.5 rounded-full bg-white/20 overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-brand-pink to-brand-cyan transition-all"
@@ -446,6 +514,14 @@ export default function VideoCard({ video, active }: Props) {
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="animate-pulse bg-black/60 rounded-full px-4 py-2 flex items-center gap-2 text-white text-xs font-semibold">
             <Download size={14} className="text-brand-cyan" /> Saved with piitrade.com watermark
+          </div>
+        </div>
+      )}
+
+      {shareFlash && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="bg-black/60 rounded-full px-4 py-2 flex items-center gap-2 text-white text-xs font-semibold">
+            <Share2 size={14} className="text-brand-cyan" /> {shareFlash === 'copied' ? 'Link copied' : 'Shared'}
           </div>
         </div>
       )}
@@ -480,8 +556,10 @@ export default function VideoCard({ video, active }: Props) {
             @{video.uploader.displayName || video.uploader.handle}
           </Link>
         )}
-        <p className="font-semibold text-sm drop-shadow break-words">{video.title}</p>
-        {video.description && <p className="text-xs text-white/80 mt-1 line-clamp-2 drop-shadow">{video.description}</p>}
+        <p className="font-semibold text-sm drop-shadow break-words">{linkifyHashtags(video.title)}</p>
+        {video.description && (
+          <p className="text-xs text-white/80 mt-1 line-clamp-2 drop-shadow">{linkifyHashtags(video.description)}</p>
+        )}
       </div>
 
       <div className="safe-right safe-bottom absolute right-2 sm:right-3 bottom-4 flex flex-col items-center gap-3 sm:gap-5">
@@ -511,6 +589,15 @@ export default function VideoCard({ video, active }: Props) {
         >
           <MessageCircle size={26} />
           <span className="text-xs mt-1">{formatCount(commentCount)}</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleShare}
+          aria-label="Share this video"
+          className="tap-target flex flex-col items-center justify-center text-white"
+        >
+          <Share2 size={26} />
+          <span className="text-xs mt-1">{formatCount(shareCount)}</span>
         </button>
         <button
           type="button"

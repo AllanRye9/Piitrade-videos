@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { AccountSummary } from '../types';
+import type { AccountSummary, TrendingHashtag } from '../types';
 import { api } from '../api';
 import Avatar from './Avatar';
-import { ArrowLeft, Search, X, Film, Heart } from 'lucide-react';
+import { ArrowLeft, Search, X, Film, Heart, Users, Hash } from 'lucide-react';
 
 export default function DiscoverPage() {
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
@@ -11,6 +11,7 @@ export default function DiscoverPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [trending, setTrending] = useState<TrendingHashtag[]>([]);
 
   function load(q: string) {
     setLoading(true);
@@ -24,6 +25,7 @@ export default function DiscoverPage() {
 
   useEffect(() => {
     load('');
+    api.getTrendingHashtags().then((res) => setTrending(res.hashtags)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -70,6 +72,22 @@ export default function DiscoverPage() {
         </div>
       </div>
 
+      {trending.length > 0 && (
+        <div className="px-3 sm:px-4 pb-3 shrink-0 flex gap-2 overflow-x-auto">
+          {trending.map((h) => (
+            <Link
+              key={h.tag}
+              to={`/tag/${h.tag}`}
+              className="shrink-0 flex items-center gap-1 bg-white/10 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap"
+            >
+              <Hash size={12} className="text-brand-cyan" />
+              {h.tag}
+              <span className="text-white/40">{h.count}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto px-3 sm:px-4 pb-6">
         {loading && <p className="text-white/50 text-sm text-center mt-10">Loading…</p>}
         {!loading && error && <p className="text-white/60 text-sm text-center mt-10">{error}</p>}
@@ -90,6 +108,9 @@ export default function DiscoverPage() {
                   <p className="text-white/40 text-xs truncate">@{a.handle}</p>
                 </div>
                 <div className="flex flex-col items-end text-white/60 text-[11px] gap-0.5 shrink-0">
+                  <span className="flex items-center gap-1">
+                    <Users size={11} /> {a.followersCount}
+                  </span>
                   <span className="flex items-center gap-1">
                     <Film size={11} /> {a.videoCount}
                   </span>

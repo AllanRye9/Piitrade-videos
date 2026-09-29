@@ -5,6 +5,10 @@ import App from './App';
 import ProfilePage from './components/ProfilePage';
 import AccountPage from './components/AccountPage';
 import DiscoverPage from './components/DiscoverPage';
+import VideoPermalinkPage from './components/VideoPermalinkPage';
+import HashtagPage from './components/HashtagPage';
+import AuthGate from './components/AuthGate';
+import RequireConsumerAuth from './components/RequireConsumerAuth';
 import { AdminAuthProvider } from './admin/AdminAuthContext';
 import RequireAdmin from './admin/RequireAdmin';
 import AdminLogin from './admin/AdminLogin';
@@ -40,10 +44,27 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               </RequireAdmin>
             }
           />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/discover" element={<DiscoverPage />} />
-          <Route path="/u/:handle" element={<AccountPage />} />
-          <Route path="/*" element={<App />} />
+          {/* Reachable unconditionally, authed or not — resetting a
+              password is a valid thing to do even while already signed
+              in on this particular browser (e.g. suspected compromise),
+              and a person arriving from the emailed link is by
+              definition not signed in here yet. */}
+          <Route path="/reset-password" element={<AuthGate onAuthenticated={() => window.location.assign('/')} />} />
+          <Route
+            path="/*"
+            element={
+              <RequireConsumerAuth>
+                <Routes>
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/discover" element={<DiscoverPage />} />
+                  <Route path="/u/:handle" element={<AccountPage />} />
+                  <Route path="/v/:id" element={<VideoPermalinkPage />} />
+                  <Route path="/tag/:tag" element={<HashtagPage />} />
+                  <Route path="/*" element={<App />} />
+                </Routes>
+              </RequireConsumerAuth>
+            }
+          />
         </Routes>
       </AdminAuthProvider>
     </BrowserRouter>

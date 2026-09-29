@@ -1,9 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import { api, setSessionId, getAccountEmail, setAccountEmail } from '../api';
-import { setProfileDisplayName, setProfileHandle, setProfileAvatar, setProfileBio } from '../profileStore';
+import { api, getAccountEmail, setAccountEmail, resetSessionId } from '../api';
+import { setProfileDisplayName, setProfileHandle } from '../profileStore';
 import { getMuted, setMuted, subscribeMuted } from '../soundPreference';
-import { X, Volume2, VolumeX, Store, Loader2, Check, ExternalLink, LogIn, UserPlus, LogOut } from 'lucide-react';
+import { X, Volume2, VolumeX, Store, Loader2, Check, ExternalLink, KeyRound, LogOut } from 'lucide-react';
 
 interface Props {
   displayName: string | null;
@@ -26,50 +26,41 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
 
   const muted = useSyncExternalStore(subscribeMuted, getMuted);
 
-  const [accountEmail, setAccountEmailState] = useState(getAccountEmail());
-  const [authMode, setAuthMode] = useState<'signup' | 'login'>('signup');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
+  // Settings is now only reachable once already signed in (login/
+  // register is the first thing the app shows otherwise — see
+  // AuthGate/RequireConsumerAuth), so this is always populated here;
+  // no inline signup/login form needed in Settings any more.
+  const accountEmail = getAccountEmail();
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
-  async function submitAuth(e: React.FormEvent) {
-    e.preventDefault();
-    setAuthBusy(true);
-    setAuthError(null);
+  async function requestPasswordReset() {
+    if (!accountEmail) return;
+    setResetBusy(true);
     try {
-      const res = authMode === 'signup' ? await api.signup(authEmail.trim(), authPassword) : await api.login(authEmail.trim(), authPassword);
-      setSessionId(res.sessionId);
-      setAccountEmail(res.email);
-      setAccountEmailState(res.email);
-      setProfileDisplayName(res.displayName);
-      setProfileHandle(res.handle);
-      setProfileAvatar(res.avatar);
-      setProfileBio(res.bio);
-      setNameInput(res.displayName || '');
-      setHandleInput(res.handle || '');
-      setAuthPassword('');
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : `Could not ${authMode === 'signup' ? 'sign up' : 'log in'}`);
+      await api.forgotPassword(accountEmail);
+      setResetSent(true);
+    } catch {
+      // The endpoint always reports success regardless — a thrown
+      // error here means the request itself failed (network, rate
+      // limit), not that the email wasn't found, so just leave the
+      // button as-is for another try rather than claiming it sent.
     } finally {
-      setAuthBusy(false);
+      setResetBusy(false);
     }
   }
 
   function signOut() {
-    // "Signing out" here only clears the local "signed in as" flag and
-    // starts a fresh anonymous session id — it does NOT delete the
-    // account or its videos, which stay reachable by logging back in
-    // with the same email from any device.
+    // Clears the "signed in" flag AND starts a fresh, unlinked session
+    // id (see resetSessionId's own comment for exactly why the second
+    // part is required, not optional) — then reloads so
+    // RequireConsumerAuth re-reads both and shows AuthGate again,
+    // exactly like a first-ever visit. Does NOT delete the account or
+    // its videos, which stay reachable by logging back in with the
+    // same email/handle from any device.
     setAccountEmail(null);
-    setAccountEmailState(null);
-    setSessionId(crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
-    setProfileDisplayName(null);
-    setProfileHandle(null);
-    setProfileAvatar(null);
-    setProfileBio(null);
-    setNameInput('');
-    setHandleInput('');
+    resetSessionId();
+    window.location.assign('/');
   }
 
   const [linkStatus, setLinkStatus] = useState<LinkStatus>('checking');
@@ -145,71 +136,24 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
         </div>
 
         <div className="p-4 space-y-6">
-          {/* Account — real signup/login so a handle & uploads survive
-              clearing browser storage or switching devices, instead of
-              living only in this browser's anonymous session id. */}
+          {/* Account */}
           <section className="space-y-2">
             <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Account</label>
-            {accountEmail ? (
-              <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2.5">
-                <span className="text-white text-sm truncate">Signed in as {accountEmail}</span>
-                <button type="button" onClick={signOut} className="tap-target shrink-0 text-white/60 text-xs flex items-center gap-1">
-                  <LogOut size={14} /> Sign out
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={submitAuth} className="space-y-2">
-                <div className="flex gap-1 bg-white/5 rounded-lg p-1">
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode('signup')}
-                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold flex items-center justify-center gap-1 ${authMode === 'signup' ? 'bg-brand-pink text-white' : 'text-white/50'}`}
-                  >
-                    <UserPlus size={13} /> Sign up
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMode('login')}
-                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold flex items-center justify-center gap-1 ${authMode === 'login' ? 'bg-brand-pink text-white' : 'text-white/50'}`}
-                  >
-                    <LogIn size={13} /> Log in
-                  </button>
-                </div>
-                <input
-                  type="email"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  required
-                  className="w-full bg-white/10 text-white text-sm rounded-lg px-3 py-2.5 outline-none placeholder:text-white/40"
-                />
-                <input
-                  type="password"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  placeholder={authMode === 'signup' ? 'Password (min 8 characters)' : 'Password'}
-                  autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
-                  minLength={authMode === 'signup' ? 8 : undefined}
-                  required
-                  className="w-full bg-white/10 text-white text-sm rounded-lg px-3 py-2.5 outline-none placeholder:text-white/40"
-                />
-                {authError && <p className="text-red-400 text-xs">{authError}</p>}
-                <button
-                  type="submit"
-                  disabled={authBusy}
-                  className="w-full h-10 rounded-lg bg-brand-pink text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
-                >
-                  {authBusy && <Loader2 size={14} className="animate-spin" />}
-                  {authMode === 'signup' ? 'Create account' : 'Log in'}
-                </button>
-                <p className="text-white/30 text-[11px]">
-                  {authMode === 'signup'
-                    ? 'Keeps your handle and uploads recoverable if you clear this browser or switch devices.'
-                    : 'Logging in restores the handle and videos tied to your account on this device.'}
-                </p>
-              </form>
-            )}
+            <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2.5">
+              <span className="text-white text-sm truncate">Signed in as {accountEmail}</span>
+              <button type="button" onClick={signOut} className="tap-target shrink-0 text-white/60 text-xs flex items-center gap-1">
+                <LogOut size={14} /> Sign out
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={requestPasswordReset}
+              disabled={resetBusy || resetSent}
+              className="w-full flex items-center justify-center gap-1.5 text-white/60 text-xs py-1 disabled:opacity-60"
+            >
+              {resetBusy ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+              {resetSent ? 'Reset link sent — check your email' : 'Change password'}
+            </button>
           </section>
 
           {/* Display name */}

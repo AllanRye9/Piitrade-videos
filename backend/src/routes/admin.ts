@@ -6,6 +6,7 @@ import { requireAdmin } from '../middleware/requireAdmin';
 import { uploadImage } from '../middleware/upload';
 import { computeImageHash } from '../lib/phash';
 import { HttpError } from '../lib/httpError';
+import { extractHashtags } from '../lib/hashtags';
 import { PRODUCTS_DIR, VIDEOS_DIR, POSTERS_DIR } from '../paths';
 import { v4 as uuid } from 'uuid';
 
@@ -56,7 +57,15 @@ router.patch('/videos/:id', async (req: Request, res: Response) => {
 
   const updated = await prisma.video.update({
     where: { id: video.id },
-    data: { ...(title !== undefined ? { title } : {}), ...(description !== undefined ? { description } : {}) },
+    data: {
+      ...(title !== undefined ? { title } : {}),
+      ...(description !== undefined ? { description } : {}),
+      // Re-parse whenever either changes, so an edited caption's
+      // hashtags don't go stale relative to what's actually displayed.
+      ...(title !== undefined || description !== undefined
+        ? { hashtags: extractHashtags(title ?? video.title, description ?? video.description) }
+        : {}),
+    },
   });
   res.json({ video: updated });
 });

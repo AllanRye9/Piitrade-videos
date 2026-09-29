@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { AccountSummary, Video } from '../types';
 import { api } from '../api';
 import { mediaUrl } from '../config';
 import Avatar from './Avatar';
 import VideoCard from './VideoCard';
-import { ArrowLeft, Heart, MessageCircle, Play, Film } from 'lucide-react';
+import { getProfileState, subscribeProfile } from '../profileStore';
+import { ArrowLeft, Heart, MessageCircle, Play, Film, Loader2 } from 'lucide-react';
 
 function VideoThumb({ video, onOpen }: { video: Video; onOpen: (v: Video) => void }) {
   return (
@@ -48,6 +49,9 @@ export default function AccountPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [previewVideo, setPreviewVideo] = useState<Video | null>(null);
+  const [followBusy, setFollowBusy] = useState(false);
+  const ownProfile = useSyncExternalStore(subscribeProfile, getProfileState);
+  const isOwnAccount = !!account && !!ownProfile.handle && account.handle === ownProfile.handle;
 
   useEffect(() => {
     if (!handle) return;
@@ -62,6 +66,25 @@ export default function AccountPage() {
       .catch((err) => setError(err instanceof Error ? err.message : 'Could not load this account'))
       .finally(() => setLoading(false));
   }, [handle]);
+
+  async function toggleFollow() {
+    if (!account || followBusy) return;
+    setFollowBusy(true);
+    // Optimistic — matches the like/save pattern used throughout
+    // VideoCard, reverted below only if the request actually fails.
+    const wasFollowing = !!account.isFollowing;
+    setAccount((prev) =>
+      prev ? { ...prev, isFollowing: !wasFollowing, followersCount: prev.followersCount + (wasFollowing ? -1 : 1) } : prev
+    );
+    try {
+      const res = await api.followAccount(account.handle);
+      setAccount((prev) => (prev ? { ...prev, isFollowing: res.following, followersCount: res.followersCount } : prev));
+    } catch {
+      setAccount((prev) => (prev ? { ...prev, isFollowing: wasFollowing, followersCount: prev.followersCount } : prev));
+    } finally {
+      setFollowBusy(false);
+    }
+  }
 
   return (
     <div className="h-dvh w-full bg-black flex flex-col overflow-hidden">
@@ -90,7 +113,22 @@ export default function AccountPage() {
                 <span className="flex items-center gap-1">
                   <Heart size={13} /> {account.totalLikes} likes
                 </span>
+                <span>{account.followersCount} followers</span>
+                {account.followingCount !== undefined && <span>{account.followingCount} following</span>}
               </div>
+              {!isOwnAccount && (
+                <button
+                  type="button"
+                  onClick={toggleFollow}
+                  disabled={followBusy}
+                  className={`tap-target mt-1 px-6 py-2 rounded-full text-sm font-semibold flex items-center gap-1.5 disabled:opacity-60 ${
+                    account.isFollowing ? 'bg-white/10 text-white border border-white/20' : 'bg-brand-pink text-white'
+                  }`}
+                >
+                  {followBusy && <Loader2 size={14} className="animate-spin" />}
+                  {account.isFollowing ? 'Following' : 'Follow'}
+                </button>
+              )}
             </div>
 
             <div className="pt-3">

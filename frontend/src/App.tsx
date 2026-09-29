@@ -1,19 +1,33 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import type { Video } from './types';
 import VideoFeed from './components/VideoFeed';
 import TopBar from './components/TopBar';
 import UploadModal from './components/UploadModal';
+import ProfileSettings from './components/ProfileSettings';
+import NotificationsPanel from './components/NotificationsPanel';
 import { registerFirstInteractionAutoUnmute } from './soundPreference';
+import { ensureProfileLoaded, getProfileState, subscribeProfile } from './profileStore';
+
+// How often to refresh the unread-notifications badge in the
+// background. There's no WebSocket/push infra in this app (a real
+// "live" badge would need one), so this is a deliberately cheap
+// approximation — good enough for "did something happen recently"
+// without building real-time infrastructure for it.
+const NOTIFICATION_POLL_MS = 30_000;
 
 export default function App() {
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searching, setSearching] = useState(false);
+  const profile = useSyncExternalStore(subscribeProfile, getProfileState);
 
   // Registered once, here, rather than per-VideoCard — it only needs
   // one document-level listener for the whole app, and mounting
@@ -21,6 +35,17 @@ export default function App() {
   // mounted) would otherwise register (and no-op) it redundantly.
   useEffect(() => {
     registerFirstInteractionAutoUnmute();
+    ensureProfileLoaded();
+
+    function refreshUnreadCount() {
+      api
+        .getNotifications()
+        .then((res) => setUnreadCount(res.unreadCount))
+        .catch(() => {}); // a failed background poll just tries again next interval
+    }
+    refreshUnreadCount();
+    const interval = setInterval(refreshUnreadCount, NOTIFICATION_POLL_MS);
+    return () => clearInterval(interval);
   }, []);
 
   function loadAll() {
@@ -84,7 +109,13 @@ export default function App() {
     // one video stretching edge-to-edge across a wide monitor.
     <div className="h-dvh w-full bg-black sm:bg-neutral-950 flex items-center justify-center overflow-hidden">
       <div className="relative h-full w-full sm:h-[94dvh] sm:max-h-[900px] sm:w-[420px] sm:rounded-2xl sm:overflow-hidden sm:shadow-2xl sm:shadow-black/60 bg-black">
-        <TopBar onSearch={handleSearch} onUploadClick={() => setShowUpload(true)} />
+        <TopBar
+          onSearch={handleSearch}
+          onUploadClick={() => setShowUpload(true)}
+          onSettingsClick={() => setShowSettings(true)}
+          onNotificationsClick={() => setShowNotifications(true)}
+          unreadCount={unreadCount}
+        />
 
         {loading && (
           <div className="h-full w-full flex items-center justify-center text-white/60 text-sm">Loading videos…</div>
@@ -108,6 +139,12 @@ export default function App() {
         {!loading && !error && videos.length > 0 && <VideoFeed videos={videos} onNearEnd={loadMore} />}
 
         {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />}
+        {showSettings && (
+          <ProfileSettings displayName={profile.displayName} handle={profile.handle} onClose={() => setShowSettings(false)} />
+        )}
+        {showNotifications && (
+          <NotificationsPanel onClose={() => setShowNotifications(false)} onRead={() => setUnreadCount(0)} />
+        )}
       </div>
     </div>
   );

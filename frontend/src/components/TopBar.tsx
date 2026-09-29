@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, X, Compass } from 'lucide-react';
+import { Search, X, Compass, Settings as SettingsIcon, Bell } from 'lucide-react';
 import Avatar from './Avatar';
 import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
 
 interface Props {
   onSearch: (query: string) => void;
   onUploadClick: () => void;
+  onSettingsClick: () => void;
+  onNotificationsClick: () => void;
+  unreadCount: number;
 }
 
-export default function TopBar({ onSearch, onUploadClick }: Props) {
+export default function TopBar({ onSearch, onUploadClick, onSettingsClick, onNotificationsClick, unreadCount }: Props) {
   const [query, setQuery] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profile = useSyncExternalStore(subscribeProfile, getProfileState);
@@ -70,6 +73,27 @@ export default function TopBar({ onSearch, onUploadClick }: Props) {
       >
         <Compass size={20} />
       </Link>
+      <button
+        type="button"
+        onClick={onNotificationsClick}
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        className="tap-target shrink-0 relative h-11 w-11 rounded-full bg-white/10 flex items-center justify-center border border-white/10 text-white"
+      >
+        <Bell size={20} />
+        {unreadCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-brand-pink text-white text-[10px] font-bold flex items-center justify-center">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={onSettingsClick}
+        aria-label="Open settings"
+        className="tap-target shrink-0 h-11 w-11 rounded-full bg-white/10 flex items-center justify-center border border-white/10 text-white"
+      >
+        <SettingsIcon size={20} />
+      </button>
       <Link
         to="/profile"
         aria-label="Open your profile"

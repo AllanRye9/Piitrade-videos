@@ -16,6 +16,8 @@ export interface Video {
   likes: number;
   views: number;
   comments: number;
+  shares: number;
+  hashtags: string[];
   createdAt: string;
   liked: boolean;
   favorited: boolean;
@@ -32,6 +34,11 @@ export interface AccountSummary {
   bio: string | null;
   videoCount: number;
   totalLikes: number;
+  followersCount: number;
+  /** Only present on the single-account page (GET /api/accounts/:handle) —
+   *  omitted on the discover list, where it isn't worth a query per row. */
+  followingCount?: number;
+  isFollowing?: boolean;
 }
 
 export interface Comment {
@@ -40,6 +47,10 @@ export interface Comment {
   author: string;
   text: string;
   createdAt: string;
+  /** Present on top-level comments (GET /:id/comments) — omitted on
+   *  replies themselves, since a reply can't have its own replies
+   *  (threading is flattened to one level — see the backend). */
+  replyCount?: number;
 }
 
 export interface VisualSearchResult {
@@ -132,4 +143,19 @@ export interface AdminStats {
   products: number;
   totalViews: number;
   totalLikes: number;
+}
+
+export interface AppNotification {
+  id: string;
+  type: 'follow' | 'comment';
+  read: boolean;
+  createdAt: string;
+  commentText: string | null;
+  actor: { handle: string | null; displayName: string | null; avatar: string | null };
+  video: { id: string; title: string; poster: string | null } | null;
+}
+
+export interface TrendingHashtag {
+  tag: string;
+  count: number;
 }

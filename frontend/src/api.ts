@@ -12,6 +12,8 @@ import type {
   MarketplaceCountry,
   CartItem,
   AccountSummary,
+  AppNotification,
+  TrendingHashtag,
 } from './types';
 import { API_BASE } from './config';
 
@@ -75,6 +77,24 @@ function getSessionId(): string {
  * in SESSION_KEY, so nothing else needs to change for the switch to
  * take effect.
  */
+/**
+ * Starts a brand-new, unlinked anonymous session — used by sign-out
+ * (see ProfileSettings) so a signed-out browser genuinely stops being
+ * the previous account's identity. This matters more than it sounds:
+ * without it, X-Session-Id keeps pointing at the account's canonical,
+ * already-userId-linked SessionProfile even after "signing out" — and
+ * signing up again from that same browser would silently re-point
+ * that SAME SessionProfile (with its existing handle and videos) onto
+ * the new account, since SessionProfile.userId is a plain update keyed
+ * on sessionId. Generating a fresh id here is what actually severs
+ * that link.
+ */
+export function resetSessionId(): string {
+  const id = generateUUID();
+  localStorage.setItem(SESSION_KEY, id);
+  return id;
+}
+
 export function setSessionId(id: string) {
   localStorage.setItem(SESSION_KEY, id);
 }
@@ -128,12 +148,21 @@ export const api = {
 
   searchVideos: (q: string) => request<{ videos: Video[] }>(`/api/videos/search?q=${encodeURIComponent(q)}`),
 
+  getHashtagVideos: (tag: string, cursor?: string | null) =>
+    request<{ tag: string; videos: Video[]; nextCursor: string | null }>(
+      `/api/videos/hashtag/${encodeURIComponent(tag)}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`
+    ),
+
+  getTrendingHashtags: () => request<{ hashtags: TrendingHashtag[] }>('/api/videos/hashtags/trending'),
+
   reportVideo: (id: string, reason: 'spam' | 'inappropriate' | 'copyright' | 'other') =>
     request<{ reported: boolean }>(`/api/videos/${id}/report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason }),
     }),
+
+  shareVideo: (id: string) => request<{ shares: number }>(`/api/videos/${id}/share`, { method: 'POST' }),
 
   getVideo: (id: string) => request<{ video: Video }>(`/api/videos/${id}`),
 
@@ -171,11 +200,12 @@ export const api = {
   save: (id: string) => request<{ saved: boolean }>(`/api/videos/${id}/save`, { method: 'POST' }),
 
   getComments: (id: string) => request<{ comments: Comment[] }>(`/api/videos/${id}/comments`),
-  postComment: (id: string, text: string, author?: string) =>
+  getReplies: (id: string, commentId: string) => request<{ replies: Comment[] }>(`/api/videos/${id}/comments/${commentId}/replies`),
+  postComment: (id: string, text: string, author?: string, parentId?: string) =>
     request<{ comment: Comment; comments: number }>(`/api/videos/${id}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, author }),
+      body: JSON.stringify({ text, author, parentId }),
     }),
 
   visualSearch: (imageBlob: Blob) => {
@@ -283,6 +313,16 @@ export const api = {
 
   getAccount: (handle: string) => request<{ account: AccountSummary; videos: Video[] }>(`/api/accounts/${encodeURIComponent(handle)}`),
 
+  followAccount: (handle: string) =>
+    request<{ following: boolean; followersCount: number }>(`/api/accounts/${encodeURIComponent(handle)}/follow`, { method: 'POST' }),
+
+  getNotifications: (cursor?: string | null) =>
+    request<{ notifications: AppNotification[]; nextCursor: string | null; unreadCount: number }>(
+      `/api/notifications${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`
+    ),
+
+  markNotificationsRead: () => request<{ ok: boolean }>('/api/notifications/read-all', { method: 'POST' }),
+
   // Real accounts — see backend/src/routes/account.ts. Both calls
   // return the CANONICAL sessionId for the account; callers must pass
   // it to setSessionId() (exported above) to actually adopt it, which
@@ -293,11 +333,25 @@ export const api = {
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }
     ),
 
-  login: (email: string, password: string) =>
+  login: (emailOrHandle: string, password: string) =>
     request<{ sessionId: string; email: string; handle: string | null; displayName: string | null; avatar: string | null; bio: string | null }>(
       '/api/account/login',
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emailOrHandle, password }) }
     ),
+
+  forgotPassword: (emailOrHandle: string) =>
+    request<{ message: string }>('/api/account/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emailOrHandle }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ reset: boolean }>('/api/account/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password }),
+    }),
 };
 
 export const adminApi = {
