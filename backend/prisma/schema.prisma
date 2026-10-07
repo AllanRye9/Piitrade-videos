@@ -67,10 +67,28 @@ model Comment {
   parentId  String?
   parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   Comment[] @relation("CommentReplies")
+  likes       Int           @default(0)
+  likeRecords CommentLike[]
   createdAt DateTime  @default(now())
 
   @@index([videoId])
   @@index([parentId])
+}
+
+// One (comment, session) pair per like — same toggle-by-uniqueness
+// pattern as Follow/Report above, kept as its own tiny table rather
+// than reusing UserVideoState, since a comment-like is a single
+// boolean (no favorite/save equivalent) and doesn't need that model's
+// other two fields.
+model CommentLike {
+  id        String   @id @default(cuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  sessionId String
+  createdAt DateTime @default(now())
+
+  @@unique([commentId, sessionId])
+  @@index([commentId])
 }
 
 // Per-browser-session like/favorite/save state, keyed by an anonymous

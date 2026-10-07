@@ -146,6 +146,8 @@ export const api = {
   listVideos: (cursor?: string | null) =>
     request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
 
+  getTrendingVideos: () => request<{ videos: Video[] }>('/api/videos/trending'),
+
   searchVideos: (q: string) => request<{ videos: Video[] }>(`/api/videos/search?q=${encodeURIComponent(q)}`),
 
   getHashtagVideos: (tag: string, cursor?: string | null) =>
@@ -201,6 +203,8 @@ export const api = {
 
   getComments: (id: string) => request<{ comments: Comment[] }>(`/api/videos/${id}/comments`),
   getReplies: (id: string, commentId: string) => request<{ replies: Comment[] }>(`/api/videos/${id}/comments/${commentId}/replies`),
+  likeComment: (id: string, commentId: string) =>
+    request<{ liked: boolean; likes: number }>(`/api/videos/${id}/comments/${commentId}/like`, { method: 'POST' }),
   postComment: (id: string, text: string, author?: string, parentId?: string) =>
     request<{ comment: Comment; comments: number }>(`/api/videos/${id}/comments`, {
       method: 'POST',

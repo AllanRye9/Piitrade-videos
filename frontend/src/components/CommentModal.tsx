@@ -4,7 +4,7 @@ import { api } from '../api';
 import { markVideoCommented } from '../profileActivity';
 import Avatar from './Avatar';
 import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
-import { X, Send, CornerDownRight, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { X, Send, CornerDownRight, ChevronDown, ChevronUp, Loader2, Heart } from 'lucide-react';
 
 interface Props {
   videoId: string;
@@ -21,10 +21,40 @@ function CommentRow({
   isReply: boolean;
   onReply: (c: Comment) => void;
 }) {
+  const [liked, setLiked] = useState(c.liked);
+  const [likes, setLikes] = useState(c.likes);
+
+  async function toggleLike() {
+    // Optimistic — matches the like/save pattern used throughout
+    // VideoCard, reverted only if the request actually fails.
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setLikes((n) => n + (wasLiked ? -1 : 1));
+    try {
+      const res = await api.likeComment(c.videoId, c.id);
+      setLiked(res.liked);
+      setLikes(res.likes);
+    } catch {
+      setLiked(wasLiked);
+      setLikes((n) => n + (wasLiked ? 1 : -1));
+    }
+  }
+
   return (
     <div className={isReply ? 'py-2' : 'py-2 border-b border-white/5'}>
       <p className="text-white/80 text-xs font-semibold">{c.author}</p>
-      <p className="text-white text-sm">{c.text}</p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-white text-sm flex-1">{c.text}</p>
+        <button
+          type="button"
+          onClick={toggleLike}
+          aria-label={liked ? 'Unlike comment' : 'Like comment'}
+          className="tap-target shrink-0 flex flex-col items-center text-white/50 -mt-1"
+        >
+          <Heart size={14} className={liked ? 'text-brand-pink' : ''} fill={liked ? 'currentColor' : 'none'} />
+          {likes > 0 && <span className="text-[10px] mt-0.5">{likes}</span>}
+        </button>
+      </div>
       {!isReply && (
         <button type="button" onClick={() => onReply(c)} className="mt-1 text-white/40 text-xs font-medium">
           Reply
@@ -125,8 +155,8 @@ export default function CommentModal({ videoId, onClose, onCommentPosted }: Prop
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/60">
-      <div className="safe-bottom safe-left safe-right modal-max-h-80 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/60 backdrop-blur-sm">
+      <div className="animate-sheet-in safe-bottom safe-left safe-right modal-max-h-80 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl flex flex-col">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-white font-semibold text-sm">Comments</span>
           <button type="button" onClick={onClose} aria-label="Close comments" className="tap-target -mr-2 text-white/60">

@@ -9,6 +9,9 @@ import VideoPermalinkPage from './components/VideoPermalinkPage';
 import HashtagPage from './components/HashtagPage';
 import AuthGate from './components/AuthGate';
 import RequireConsumerAuth from './components/RequireConsumerAuth';
+import TermsPage from './components/legal/TermsPage';
+import PrivacyPage from './components/legal/PrivacyPage';
+import DmcaPage from './components/legal/DmcaPage';
 import { AdminAuthProvider } from './admin/AdminAuthContext';
 import RequireAdmin from './admin/RequireAdmin';
 import AdminLogin from './admin/AdminLogin';
@@ -50,6 +53,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               and a person arriving from the emailed link is by
               definition not signed in here yet. */}
           <Route path="/reset-password" element={<AuthGate onAuthenticated={() => window.location.assign('/')} />} />
+          {/* Legal pages — reachable outside the login gate too, same
+              reasoning as /reset-password: a prospective user should be
+              able to read these before signing up, not only after. */}
+          <Route path="/legal/terms" element={<TermsPage />} />
+          <Route path="/legal/privacy" element={<PrivacyPage />} />
+          <Route path="/legal/dmca" element={<DmcaPage />} />
           <Route
             path="/*"
             element={

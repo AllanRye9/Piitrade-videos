@@ -138,17 +138,62 @@ export default function VideoCard({ video, active }: Props) {
   // symbol), so it needs an explicit one-line explanation rather than
   // relying on the icon alone. Same one-flag-in-localStorage pattern
   // as the sound hint above, and intentionally similarly brief.
-  const [showSearchHint] = useState(
+  const [showSearchHint, setShowSearchHint] = useState(
     () => typeof localStorage === 'undefined' || localStorage.getItem('piitrade_search_hint_seen') !== 'true'
   );
 
   function dismissSearchHint() {
+    setShowSearchHint(false);
     try {
       localStorage.setItem('piitrade_search_hint_seen', 'true');
     } catch {
       // ignore
     }
   }
+
+  // Auto-hides after a few seconds rather than lingering indefinitely —
+  // this also gives the long-press hint below its turn, since that one
+  // is staggered to wait until this one is gone (see its own effect).
+  // Not marked "seen" by the timer itself, only by actually using
+  // Search — so it still shows again on a future visit if they haven't.
+  useEffect(() => {
+    if (!active || !showSearchHint) return;
+    const t = setTimeout(() => setShowSearchHint(false), 4000);
+    return () => clearTimeout(t);
+  }, [active, showSearchHint]);
+
+  // Same reasoning and pattern as the search hint above — holding the
+  // video for 3 seconds to download it has no discoverability
+  // affordance otherwise (nothing about the Download button's icon
+  // suggests the video itself is also a trigger), so a first-time
+  // viewer has no way to learn this control exists without being told
+  // once. Dismissed the first time a download actually happens,
+  // whether triggered by the button or by the hold itself.
+  const [showLongPressHint, setShowLongPressHint] = useState(
+    () => typeof localStorage === 'undefined' || localStorage.getItem('piitrade_longpress_hint_seen') !== 'true'
+  );
+
+  function dismissLongPressHint() {
+    setShowLongPressHint(false);
+    try {
+      localStorage.setItem('piitrade_longpress_hint_seen', 'true');
+    } catch {
+      // ignore
+    }
+  }
+
+  // Staggered behind the search hint above — both are anchored to
+  // adjacent buttons with less vertical gap between them than either
+  // hint pill is tall, so showing both at once (a real scenario for a
+  // genuinely first-time viewer) would visually collide. Waiting for
+  // showSearchHint to be false first — whether from its own timeout or
+  // from being dismissed by tapping Search — guarantees the two can
+  // never render simultaneously.
+  useEffect(() => {
+    if (!active || !showLongPressHint || showSearchHint) return;
+    const t = setTimeout(() => setShowLongPressHint(false), 4000);
+    return () => clearTimeout(t);
+  }, [active, showLongPressHint, showSearchHint]);
 
   const wasPlayingRef = useRef(false);
 
@@ -254,6 +299,7 @@ export default function VideoCard({ video, active }: Props) {
   // tap button below and the long-press control on the video itself.
   async function downloadWithWatermark() {
     if (downloading) return;
+    dismissLongPressHint();
     setDownloading(true);
     setDownloadProgress(0);
     const src = mediaUrl(video.url) || video.url;
@@ -453,6 +499,16 @@ export default function VideoCard({ video, active }: Props) {
         className="h-full w-full object-contain"
       />
 
+      {/* Persistent contrast backing for the caption and action-button
+          column below — without this, those icons/text are plain white
+          directly on top of whatever the video itself shows, and
+          against a bright or light-colored frame they can become
+          nearly illegible. The caption text has its own drop-shadow as
+          a second layer of insurance, but the action icons had neither
+          before this — just white-on-video and hoping the video was
+          dark enough. */}
+      <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/70 via-black/25 to-transparent pointer-events-none" />
+
       {!playing && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-16 h-16 rounded-full bg-black/40 flex items-center justify-center text-white">
@@ -526,18 +582,26 @@ export default function VideoCard({ video, active }: Props) {
         </div>
       )}
 
+      {/* top offset clears TopBar's own height (12px top/bottom padding +
+          44px of h-11 content = 68px) PLUS the safe-area inset TopBar
+          itself adds via its `safe-top` class — without matching that,
+          this sits at a bare pixel offset that lands directly under
+          TopBar's Settings/Avatar icons (same z-30-vs-unset-z-index
+          problem the tab switcher below has to account for too). */}
       <button
         type="button"
         onClick={toggleMute}
         aria-label={muted ? 'Unmute video' : 'Mute video'}
-        className="tap-target safe-right absolute top-4 right-4 text-white bg-black/30 rounded-full flex items-center justify-center"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.75rem)' }}
+        className="tap-target safe-right absolute right-4 text-white bg-black/30 rounded-full flex items-center justify-center"
       >
         {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
       </button>
 
       {active && showSoundHint && (
         <div
-          className="safe-right absolute top-4 right-16 sm:right-20 flex items-center pointer-events-none animate-pulse"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.75rem)' }}
+          className="safe-right absolute right-16 sm:right-20 flex items-center pointer-events-none animate-pulse"
           aria-hidden="true"
         >
           <span className="bg-black/60 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap">
@@ -562,7 +626,12 @@ export default function VideoCard({ video, active }: Props) {
         )}
       </div>
 
-      <div className="safe-right safe-bottom absolute right-2 sm:right-3 bottom-4 flex flex-col items-center gap-3 sm:gap-5">
+      {/* drop-shadow on the container applies to every icon/label inside
+          it as one filter — belt-and-suspenders alongside the new
+          persistent bottom gradient above, rather than relying on
+          either alone to keep these legible against arbitrary video
+          content. */}
+      <div className="safe-right safe-bottom absolute right-2 sm:right-3 bottom-4 flex flex-col items-center gap-3 sm:gap-5 drop-shadow-md">
         <button
           type="button"
           onClick={handleLike}
@@ -636,10 +705,18 @@ export default function VideoCard({ video, active }: Props) {
           onClick={handleDownload}
           aria-label="Download video"
           aria-pressed={saved}
-          className="tap-target flex flex-col items-center justify-center text-white"
+          className="tap-target flex flex-col items-center justify-center text-white relative"
         >
           <Download size={26} className={saved ? 'text-brand-cyan' : ''} />
           <span className="text-xs mt-1">Download</span>
+          {active && showLongPressHint && !showSearchHint && (
+            <span
+              className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 bg-black/70 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap animate-pulse pointer-events-none"
+              aria-hidden="true"
+            >
+              Hold video to download 📥
+            </span>
+          )}
         </button>
         <button
           type="button"

@@ -43,6 +43,17 @@ Living tracking file for this app's feature work. Update this alongside the code
 3. **In-app notifications** — new-follower and new-comment triggers, unread badge (polled, not push/real-time), notification panel
 4. **Hashtags** — parsed automatically from title/description (no new upload UI), inline tappable tags, `/tag/:tag` results page, trending-hashtags chips on Discover
 5. **Threaded comment replies** — one level deep, collapsed by default, replying notifies the original commenter (not just the video's uploader)
+6. **Comment likes** — same toggle-by-uniqueness pattern as Follow/Report, own `CommentLike` table rather than reusing `UserVideoState`
+
+### Developer tooling
+- CI pipeline (`.github/workflows/ci.yml`) — typecheck + build + test for both apps on every push/PR to `main`; there was no CI configuration in this repo before this
+- Long-press-to-download onboarding hint — same one-time-localStorage-flag pattern as the crop-to-shop hint; this was flagged twice as the most-hidden control in the app before being fixed
+
+### Legal
+- Terms of Service, Privacy Policy, and Copyright/DMCA policy — `/legal/terms`, `/legal/privacy`, `/legal/dmca`, reachable without an account. **These are drafted content, not reviewed by a lawyer** — placeholders like `[LEGAL ENTITY NAME]`, `[CONTACT EMAIL]`, `[JURISDICTION]`, and `[DESIGNATED AGENT NAME]` need filling in, and the substance needs real legal review before this is relied on in production.
+
+### Discovery
+- Trending feed — `GET /api/videos/trending`, a capped top-50 list ranked by a recency-weighted "hot" score (engagement ÷ a growing power of age in hours, the same shape Reddit/Hacker News use), added as a second tab alongside the existing newest-first feed rather than replacing its cursor pagination
 
 ### Reports delivered
 - Codebase gap analysis (Parts A–C: architecture, UX/onboarding, "video shopping culture" gaps)
@@ -58,11 +69,8 @@ Ordered roughly by priority, not by section — items already flagged as launch-
 ### Launch-blocking
 - **Mobile money checkout (MTN MoMo / Airtel Money)** — nothing in the reviewed code confirms this exists; card-first checkout would lock out most of the addressable market in this app's target region
 - **Creator commission / take-rate** — no monetization engine defined; this is what gives creators a financial reason to post more shoppable video
-- **Long-press download has no onboarding** — flagged twice now; nothing teaches a first-time viewer that holding the video does anything
 
 ### Product/UX
-- Algorithmic/personalized feed (still strictly newest-first)
-- Comment likes
 - Reactions beyond like, duet/stitch
 - Real branded PWA icons (currently a placeholder SVG)
 - i18n (Luganda/Swahili)
@@ -83,8 +91,7 @@ Ordered roughly by priority, not by section — items already flagged as launch-
 ### Infrastructure & compliance
 - Automated content moderation (nudity/violence detection) — human report/flag queue exists, automated doesn't
 - Microservices, CDN, database sharding, autoscaling (currently a single Railway service)
-- Broader automated test coverage / CI pipeline (still effectively one test file)
-- Legal pages: Terms of Service, Privacy Policy, DMCA policy
+- Broader automated test coverage (CI pipeline itself now exists — see Completed — but there's still effectively one test file for it to run)
 
 ---
 
@@ -94,8 +101,6 @@ Brief, not exhaustive — enough to start from, not a full design doc for each.
 
 - **Mobile money checkout**: confirm first whether the underlying Piitrade/3R-Elite marketplace API already supports MTN MoMo/Airtel Money — if so this is a verification task, not a build. If not, it's the single highest-priority engineering item in this whole list.
 - **Creator commission**: don't invent a novel model — adapt TikTok Shop's actual structure (tiered ~10–25%, trending toward a hybrid flat-fee-plus-percentage) at a smaller scale. Needs the take-rate decided first, since commission is a slice of it.
-- **Long-press download onboarding**: same pattern already built for the crop-to-shop hint (a one-time, localStorage-flagged tooltip) — cheap to add, no new infrastructure.
-- **Algorithmic feed**: doesn't need real ML to start — a simple engagement-weighted score (watch time, likes, shares already tracked) beats pure newest-first and is a incremental change to the existing feed query, not a rewrite.
 - **Push notifications**: the in-app `Notification` model already exists; adding Web Push only needs VAPID keys + a service-worker push handler, reusing the same trigger points (follow, comment) rather than building new ones.
 - **Third-party marketplace integration (Amazon/Noon/Dubizzle)**: confirmed not officially possible in the "pull their catalog in" direction on any of the three — this stays rejected. The only sanctioned versions are outbound affiliate links or becoming a seller who pushes Piitrade's own catalog *out* to those platforms, which is a business-development effort, not a code change.
 - **HLS streaming**: highest engineering cost on this list — needs a resolution ladder at transcode time (ffmpeg already in place, so it's an extension of the existing pipeline) plus a segment-serving/CDN layer. Worth sequencing after the launch-blocking items, not before.

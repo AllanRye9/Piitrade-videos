@@ -47,6 +47,8 @@ export interface Comment {
   author: string;
   text: string;
   createdAt: string;
+  likes: number;
+  liked: boolean;
   /** Present on top-level comments (GET /:id/comments) — omitted on
    *  replies themselves, since a reply can't have its own replies
    *  (threading is flattened to one level — see the backend). */

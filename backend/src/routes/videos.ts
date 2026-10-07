@@ -144,6 +144,44 @@ router.get('/', async (req: Request, res: Response) => {
   });
 });
 
+// GET /api/videos/trending
+//
+// A safe ADDITION alongside the main feed rather than a replacement
+// for it — the main feed's cursor pagination is proven and this
+// deliberately doesn't touch it. Ranking is a classic "hot" score
+// (engagement weighted, divided by a growing power of age in hours —
+// the same shape Reddit/Hacker News use) computed in raw SQL, since
+// Prisma's query builder has no way to ORDER BY a computed expression
+// like this. No cursor: a capped top-50 list that's recomputed fresh
+// on every load, not a feed you page through indefinitely.
+router.get('/trending', async (req: Request, res: Response) => {
+  const sessionId = getSessionId(req);
+  const ranked = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Video"
+    ORDER BY (likes * 2 + comments * 3 + shares * 4 + views * 0.1)
+             / POWER(EXTRACT(EPOCH FROM (now() - "createdAt")) / 3600 + 2, 1.5) DESC
+    LIMIT 50
+  `;
+  const ids = ranked.map((r: { id: string }) => r.id);
+  if (ids.length === 0) {
+    res.json({ videos: [] });
+    return;
+  }
+
+  const videos: VideoRecord[] = await prisma.video.findMany({ where: { id: { in: ids } } });
+  const videoMap = new Map<string, VideoRecord>(videos.map((v) => [v.id, v]));
+  // `IN (...)` doesn't preserve order — re-sort to match the SQL's
+  // actual ranking rather than whatever order Postgres happened to
+  // return rows in.
+  const ordered = ids.map((id: string) => videoMap.get(id)).filter((v: VideoRecord | undefined): v is VideoRecord => !!v);
+
+  const stateMap = await fetchStatesFor(ids, sessionId);
+  const uploaderMap = await fetchUploadersFor(ordered);
+  res.json({
+    videos: ordered.map((v: VideoRecord) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
+  });
+});
+
 // GET /api/videos/search?q=
 router.get('/search', async (req: Request, res: Response) => {
   const q = String(req.query.q || '').trim();
@@ -403,8 +441,23 @@ router.post('/:id/share', writeLimiter, async (req: Request, res: Response) => {
 // "collapsed by default" behavior TikTok/Instagram use), each with a
 // replyCount so the frontend knows whether to show a "View N replies"
 // affordance at all.
+// Batch-fetches which of `commentIds` this session has liked, in one
+// query — same N+1-avoidance rationale as fetchStatesFor/fetchUploadersFor
+// elsewhere in this file.
+async function fetchCommentLikesFor(commentIds: string[], sessionId: string): Promise<Set<string>> {
+  if (commentIds.length === 0) return new Set();
+  const likes = await prisma.commentLike.findMany({ where: { commentId: { in: commentIds }, sessionId } });
+  return new Set(likes.map((l: { commentId: string }) => l.commentId));
+}
+
+// GET /api/videos/:id/comments — top-level comments only (replies are
+// fetched on demand via GET /:id/comments/:commentId/replies, the same
+// "collapsed by default" behavior TikTok/Instagram use), each with a
+// replyCount so the frontend knows whether to show a "View N replies"
+// affordance at all.
 router.get('/:id/comments', async (req: Request, res: Response) => {
   const videoId = req.params.id;
+  const sessionId = getSessionId(req);
   const [comments, replyCounts] = await Promise.all([
     prisma.comment.findMany({ where: { videoId, parentId: null }, orderBy: { createdAt: 'desc' } }),
     prisma.comment.groupBy({ by: ['parentId'], where: { videoId, parentId: { not: null } }, _count: { _all: true } }),
@@ -412,8 +465,9 @@ router.get('/:id/comments', async (req: Request, res: Response) => {
   const countByParent = new Map<string, number>(
     replyCounts.map((r: { parentId: string | null; _count: { _all: number } }) => [r.parentId as string, r._count._all])
   );
+  const likedSet = await fetchCommentLikesFor(comments.map((c: { id: string }) => c.id), sessionId);
   res.json({
-    comments: comments.map((c: { id: string }) => ({ ...c, replyCount: countByParent.get(c.id) || 0 })),
+    comments: comments.map((c: { id: string }) => ({ ...c, replyCount: countByParent.get(c.id) || 0, liked: likedSet.has(c.id) })),
   });
 });
 
@@ -421,12 +475,39 @@ router.get('/:id/comments', async (req: Request, res: Response) => {
 // top-level comment. No pagination: a single comment thread realistically
 // never gets large enough to need it, capped at 100 as a safety valve.
 router.get('/:id/comments/:commentId/replies', async (req: Request, res: Response) => {
+  const sessionId = getSessionId(req);
   const replies = await prisma.comment.findMany({
     where: { videoId: req.params.id, parentId: req.params.commentId },
     orderBy: { createdAt: 'asc' }, // replies read naturally oldest-first, unlike top-level comments
     take: 100,
   });
-  res.json({ replies });
+  const likedSet = await fetchCommentLikesFor(replies.map((r: { id: string }) => r.id), sessionId);
+  res.json({ replies: replies.map((r: { id: string }) => ({ ...r, liked: likedSet.has(r.id) })) });
+});
+
+// POST /api/videos/:id/comments/:commentId/like — toggle, same
+// on-repeat-call-undoes-it shape as /videos/:id/like etc.
+router.post('/:id/comments/:commentId/like', writeLimiter, async (req: Request, res: Response) => {
+  const sessionId = getSessionId(req);
+  const commentId = req.params.commentId;
+  const key = { commentId_sessionId: { commentId, sessionId } };
+  const existing = await prisma.commentLike.findUnique({ where: key });
+
+  if (existing) {
+    await prisma.$transaction([
+      prisma.commentLike.delete({ where: key }),
+      prisma.comment.update({ where: { id: commentId }, data: { likes: { decrement: 1 } } }),
+    ]);
+  } else {
+    await prisma.$transaction([
+      prisma.commentLike.create({ data: { commentId, sessionId } }),
+      prisma.comment.update({ where: { id: commentId }, data: { likes: { increment: 1 } } }),
+    ]);
+  }
+
+  const comment = await prisma.comment.findUnique({ where: { id: commentId } });
+  if (!comment) throw new HttpError(404, 'Comment not found');
+  res.json({ liked: !existing, likes: comment.likes });
 });
 
 // POST /api/videos/:id/comments  { text, author?, parentId? }
@@ -477,7 +558,7 @@ router.post('/:id/comments', writeLimiter, async (req: Request, res: Response) =
     });
   }
 
-  res.status(201).json({ comment: { ...comment, replyCount: 0 }, comments: video.comments + 1 });
+  res.status(201).json({ comment: { ...comment, replyCount: 0, liked: false }, comments: video.comments + 1 });
 });
 
 const REPORT_REASONS = new Set(['spam', 'inappropriate', 'copyright', 'other']);

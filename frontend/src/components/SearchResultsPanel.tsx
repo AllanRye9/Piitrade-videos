@@ -138,7 +138,7 @@ export default function SearchResultsPanel({
                         type="button"
                         onClick={() => onAddToCart(r)}
                         disabled={inCart}
-                        className={`mt-2 flex items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-semibold ${
+                        className={`mt-2 flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold ${
                           inCart ? 'bg-white/10 text-white/40' : 'bg-blue-600 text-white'
                         }`}
                       >

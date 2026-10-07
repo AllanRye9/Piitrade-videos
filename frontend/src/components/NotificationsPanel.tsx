@@ -70,9 +70,9 @@ export default function NotificationsPanel({ onClose, onRead }: Props) {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center sm:justify-center bg-black/70" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center sm:justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md sm:max-h-[600px] bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
+        className="animate-sheet-in safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md sm:max-h-[600px] bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api, setSessionId, setAccountEmail } from '../api';
 import { setProfileDisplayName, setProfileHandle, setProfileAvatar, setProfileBio } from '../profileStore';
 import { Loader2, LogIn, UserPlus, ArrowLeft } from 'lucide-react';
@@ -211,6 +211,17 @@ export default function AuthGate({ onAuthenticated }: Props) {
               {busy ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
               Create account
             </button>
+            <p className="text-white/30 text-[11px] text-center">
+              By creating an account you agree to our{' '}
+              <Link to="/legal/terms" className="underline">
+                Terms
+              </Link>{' '}
+              and{' '}
+              <Link to="/legal/privacy" className="underline">
+                Privacy Policy
+              </Link>
+              .
+            </p>
             <p className="text-white/50 text-sm text-center pt-2">
               Already have an account?{' '}
               <button

@@ -121,8 +121,8 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
   const total = items.length;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center sm:justify-center bg-black/70">
-      <div className="safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto">
+    <div className="fixed inset-0 z-[60] flex items-end sm:items-center sm:justify-center bg-black/70 backdrop-blur-sm">
+      <div className="animate-sheet-in safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <div className="flex items-center gap-2 min-w-0">
             <Avatar src={profile.avatar} size={26} alt="You" />
@@ -176,7 +176,7 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
                     setAuthMode('login');
                     setError(null);
                   }}
-                  className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium ${
+                  className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-medium ${
                     authMode === 'login' ? 'bg-white text-black' : 'text-white/60'
                   }`}
                 >
@@ -188,7 +188,7 @@ export default function CheckoutModal({ items, onCancel, onComplete }: Props) {
                     setAuthMode('register');
                     setError(null);
                   }}
-                  className={`flex-1 flex items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium ${
+                  className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-medium ${
                     authMode === 'register' ? 'bg-white text-black' : 'text-white/60'
                   }`}
                 >

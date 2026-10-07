@@ -1,0 +1,51 @@
+name: CI
+
+# Runs typecheck + build (+ tests, for the backend) on every push and
+# pull request — there was no CI configuration in this repo before
+# this file, so nothing ran automatically on any change. This does
+# NOT deploy anything; it only verifies the code compiles and the
+# existing test suite passes.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      # Generates the real Prisma Client (this runner has full network
+      # access, unlike some sandboxed dev environments — see the
+      # comment in test/marketplace.test.js) so typecheck/build below
+      # catch real Prisma-schema mismatches, not just plain TS errors.
+      - run: npx prisma generate
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

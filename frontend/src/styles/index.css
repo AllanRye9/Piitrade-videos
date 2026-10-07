@@ -12,6 +12,30 @@ html, body, #root {
   text-size-adjust: 100%;
 }
 
+/* Smooth-by-default interactive elements. Most buttons/links across
+   the app (TopBar, AuthGate, DiscoverPage, and others) had no
+   transition classes at all, so every hover/active/disabled state
+   change — background, text color, border, opacity — snapped
+   instantly, which reads as noticeably less polished than it should.
+   Rather than touch every individual button across a dozen files, one
+   sensible default here covers all of them at once; a component that
+   already sets its own `transition-*` utility keeps that instead,
+   since a more specific class wins the cascade over this element
+   selector either way. Transform is deliberately excluded — several
+   places (the long-press download ring, canvas-driven video
+   transforms) drive that property from JS/rAF every frame, and a CSS
+   transition fighting those would visibly lag behind the real value. */
+button, a {
+  transition-property: background-color, border-color, color, opacity, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  button, a {
+    transition-duration: 0ms;
+  }
+}
+
 /* `100dvh` (dynamic viewport height) is what actually keeps the app
    from jumping around as mobile browser chrome shows/hides, but it's
    only supported in fairly recent engines (Safari 15.4+, Chrome/Edge
@@ -58,6 +82,47 @@ body {
 }
 .snap-start {
   scroll-snap-align: start;
+}
+
+/* Entrance animations for sheets/dialogs. None of the modal-style
+   overlays (comments, settings, notifications, checkout, upload)
+   animated in at all before this — React's conditional `{show && ...}`
+   mount just pops the element in instantly. No new dependency needed
+   (tailwindcss-animate isn't installed) — plain keyframes + a class
+   applied to the sheet/card itself, not its backdrop. Respects
+   prefers-reduced-motion, since a sliding/fading sheet is exactly the
+   kind of motion that setting exists to suppress. */
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-sheet-in {
+  animation: sheet-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.animate-dialog-in {
+  animation: dialog-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-sheet-in,
+  .animate-dialog-in {
+    animation: none;
+  }
 }
 
 /* Firefox/older WebKit builds render focus rings inconsistently on

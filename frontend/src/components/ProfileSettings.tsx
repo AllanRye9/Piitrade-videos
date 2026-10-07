@@ -126,8 +126,8 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center sm:justify-center bg-black/70">
-      <div className="safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center sm:justify-center bg-black/70 backdrop-blur-sm">
+      <div className="animate-sheet-in safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
           <span className="text-white font-semibold text-sm">Settings</span>
           <button type="button" onClick={onClose} aria-label="Close settings" className="tap-target -mr-2 text-white/60">
@@ -267,6 +267,18 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
                 : 'Used to check out items you find while watching, without logging in every time.'}
             </p>
           </section>
+
+          <div className="flex items-center justify-center gap-3 pt-1 text-white/30 text-xs">
+            <Link to="/legal/terms" className="underline">
+              Terms
+            </Link>
+            <Link to="/legal/privacy" className="underline">
+              Privacy
+            </Link>
+            <Link to="/legal/dmca" className="underline">
+              Copyright
+            </Link>
+          </div>
         </div>
       </div>
     </div>

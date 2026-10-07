@@ -27,6 +27,10 @@ export default function App() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searching, setSearching] = useState(false);
+  // 'trending' is a capped, non-paginated top-50 list (see GET
+  // /api/videos/trending) — a safe addition alongside the existing
+  // cursor-paginated 'latest' feed rather than a replacement for it.
+  const [mode, setMode] = useState<'latest' | 'trending'>('latest');
   const profile = useSyncExternalStore(subscribeProfile, getProfileState);
 
   // Registered once, here, rather than per-VideoCard — it only needs
@@ -62,12 +66,31 @@ export default function App() {
       .finally(() => setLoading(false));
   }
 
+  function loadTrending() {
+    setLoading(true);
+    setError(null);
+    setSearching(false);
+    setNextCursor(null); // trending has no further pages to load
+    api
+      .getTrendingVideos()
+      .then((res) => setVideos(res.videos))
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load trending videos'))
+      .finally(() => setLoading(false));
+  }
+
+  function switchMode(next: 'latest' | 'trending') {
+    setMode(next);
+    if (next === 'trending') loadTrending();
+    else loadAll();
+  }
+
   // Fetches the next page and appends it — called by VideoFeed once the
   // viewer scrolls near the end of what's currently loaded. Skipped
   // entirely while a search is active (search results aren't paginated)
-  // or there's nothing further to fetch.
+  // or there's nothing further to fetch — which includes 'trending'
+  // mode, a fixed top-50 list with no cursor at all.
   function loadMore() {
-    if (searching || loadingMore || !nextCursor) return;
+    if (mode !== 'latest' || searching || loadingMore || !nextCursor) return;
     setLoadingMore(true);
     api
       .listVideos(nextCursor)
@@ -83,7 +106,7 @@ export default function App() {
 
   function handleSearch(query: string) {
     if (!query) {
-      loadAll();
+      switchMode(mode);
       return;
     }
     setLoading(true);
@@ -116,6 +139,34 @@ export default function App() {
           onNotificationsClick={() => setShowNotifications(true)}
           unreadCount={unreadCount}
         />
+
+        {!searching && (
+          // top offset matches TopBar's own bottom edge exactly (see the
+          // comment on VideoCard's mute button for the same calculation)
+          // — a bare `top-16` here used to land this switcher inside
+          // TopBar's own (safe-area-aware) height on any notched device.
+          <div
+            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.25rem)' }}
+            className="absolute left-0 right-0 z-10 flex justify-center gap-1 px-3 py-1.5 pointer-events-none"
+          >
+            <div className="flex gap-1 bg-black/40 backdrop-blur rounded-full p-1 pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => switchMode('latest')}
+                className={`px-3 py-1 rounded-full text-xs font-semibold ${mode === 'latest' ? 'bg-white text-black' : 'text-white/70'}`}
+              >
+                Latest
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('trending')}
+                className={`px-3 py-1 rounded-full text-xs font-semibold ${mode === 'trending' ? 'bg-white text-black' : 'text-white/70'}`}
+              >
+                Trending
+              </button>
+            </div>
+          </div>
+        )}
 
         {loading && (
           <div className="h-full w-full flex items-center justify-center text-white/60 text-sm">Loading videos…</div>
