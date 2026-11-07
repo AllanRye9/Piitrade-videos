@@ -23,6 +23,9 @@ for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR]) {
 
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
+const allowedOrigins = process.env.ALLOWED_ORIGIN
+  ? [...process.env.ALLOWED_ORIGIN.split(',').map((origin) => origin.trim()), 'https://localhost']
+  : true;
 
 // Security headers. Cross-origin resource policy is relaxed for
 // /uploads since video/image files there are meant to be embedded
@@ -31,7 +34,7 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(compression());
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGIN ? process.env.ALLOWED_ORIGIN.split(',') : true,
+    origin: allowedOrigins,
   })
 );
 app.use(express.json());
