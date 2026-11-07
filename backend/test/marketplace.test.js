@@ -262,9 +262,9 @@ test('GET /api/marketplace/search with a matching (but shortened-needed) query r
   assert.equal(body.results[0].price, 'UGX 35,000');
   // yotweek.com is a classifieds site: every result must open the
   // listing there (no cart/checkout), and carry the "see all" link.
-  assert.match(body.results[0].listingUrl, /^https:\/\/piitrade\.com\/listings\/3\?/);
+  assert.match(body.results[0].listingUrl, /^https:\/\/yotweek\.com\/listings\/3\?/);
   assert.match(body.results[0].listingUrl, /utm_source=piitrade_videos/);
-  assert.match(body.browseUrl, /^https:\/\/piitrade\.com\/listings\?q=/);
+  assert.match(body.browseUrl, /^https:\/\/yotweek\.com\/listings\?q=/);
   assert.notEqual(body.matchedQuery, 'Genuine Samsung Galaxy Charger Adapter Brand New');
 });
 

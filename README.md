@@ -33,12 +33,12 @@ docker compose up --build
 >    actually runs (a saved dashboard override takes priority over the
 >    file and re-introduces the same crash).
 >
-> Then set an environment variable **`VITE_API_BASE_URL`** to wherever
-> you host the backend (e.g. `https://yotweek.com`, from Railway,
-> Render, Fly.io, or a VPS running `docker compose`) — the frontend
-> uses it to reach `/api` and `/uploads` cross-origin. On that backend
-> host, also set **`ALLOWED_ORIGIN`** to your Vercel URL so CORS
-> allows it. Without a backend deployed somewhere, the Vercel-hosted
+Then set an environment variable **`VITE_API_BASE_URL`** to wherever
+you host the backend (for example, `https://piitrade-videos.onrender.com`,
+or a Railway, Fly.io, or VPS host running `docker compose`) — the frontend
+uses it to reach `/api` and `/uploads` cross-origin. On that backend
+host, set **`ALLOWED_ORIGIN`** to include `https://yotweek.com` (and
+any staging frontend origins) so CORS allows it. Without a backend deployed somewhere, the Vercel-hosted
 > frontend will load but every API call (feed, upload, admin) will
 > fail — Vercel is only ever the static half of this app.
 >
