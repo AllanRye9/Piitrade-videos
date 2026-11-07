@@ -3,7 +3,10 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags: ['v*']
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -26,6 +29,9 @@ jobs:
           java-version: 17
 
       - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
       - name: Validate backend URL
         env:

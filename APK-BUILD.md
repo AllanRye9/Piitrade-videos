@@ -17,7 +17,7 @@ Requirements: Node 18+, JDK 17, Android SDK (Android Studio installs it).
 Output: `frontend/android/app/build/outputs/apk/debug/app-debug.apk`
 Install: `adb install -r app-debug.apk` or copy the file to the phone.
 
-No local tooling? Push the repo to GitHub, set a repository variable `VITE_API_BASE_URL`, then run **Actions > Build Android APK**; download the APK from the run's artifacts.
+No local tooling? Set the repository variable `VITE_API_BASE_URL`. GitHub Actions builds the debug APK on pushes and pull requests targeting `main`, on `v*` tags, and when manually run via **Actions > Build Android APK**. Download the APK from the run's artifacts.
 
 ## 3. Android Studio route
     cd frontend && npm ci && npm run cap:sync && npm run cap:open
