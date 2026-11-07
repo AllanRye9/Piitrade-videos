@@ -186,7 +186,7 @@ router.post('/forgot-password', authLimiter, async (req: Request, res: Response)
       data: { userId: user.id, tokenHash: hashToken(rawToken), expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
     });
 
-    const appUrl = (process.env.APP_URL || 'https://piitrade.com').replace(/\/+$/, '');
+    const appUrl = (process.env.APP_URL || 'https://yotweek.com').replace(/\/+$/, '');
     const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
     await sendEmail({
       to: user.email,

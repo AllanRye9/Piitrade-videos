@@ -4,23 +4,23 @@ import { listingUrl, searchUrl } from './piitrade';
 /**
  * Client for the Piitrade classifieds marketplace's backend API, used
  * to turn "what's in this video frame" (or a typed search) into real
- * listings the viewer can open on piitrade.com.
+ * listings the viewer can open on yotweek.com.
  *
- * piitrade.com is a CLASSIFIEDS marketplace: there is no cart, stock
+ * yotweek.com is a CLASSIFIEDS marketplace: there is no cart, stock
  * count, checkout or order for Piitrade Videos to place. An earlier
  * version of this file logged viewers into the marketplace and
  * created orders (POST /api/orders); all of that was removed on
  * purpose. This module is read-only — it searches listings, and every
- * result carries a `listingUrl` that opens the listing on piitrade.com,
+ * result carries a `listingUrl` that opens the listing on yotweek.com,
  * where the viewer contacts the seller through the marketplace's own
  * messaging, subject to its own terms and safety rules.
  *
  * Set MARKETPLACE_API to the marketplace's BACKEND base URL — NOT the
- * piitrade.com frontend. Verified against the live site: the website
+ * yotweek.com frontend. Verified against the live site: the website
  * loads listing images from a separate Railway-hosted backend
  * (https://backend-production-a662.up.railway.app/api/images/...), and
- * https://piitrade.com/listings returns an HTML page, not JSON, so
- * pointing MARKETPLACE_API at piitrade.com fails every search with a
+ * https://yotweek.com/listings returns an HTML page, not JSON, so
+ * pointing MARKETPLACE_API at yotweek.com fails every search with a
  * JSON-parse error. Railway hostnames can change on redeploy — see
  * .env.example for how to re-derive the current one.
  *
@@ -45,7 +45,7 @@ import { listingUrl, searchUrl } from './piitrade';
 const REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_CURRENCY = process.env.MARKETPLACE_DEFAULT_CURRENCY || 'UGX';
 
-/** A listing from piitrade.com as shown on a result card in the video feed. */
+/** A listing from yotweek.com as shown on a result card in the video feed. */
 export interface MarketplaceProduct {
   id: string;
   name: string;
@@ -55,7 +55,7 @@ export interface MarketplaceProduct {
   originalPrice?: string;
   image: string;
   description: string;
-  /** Where to open this listing on piitrade.com. */
+  /** Where to open this listing on yotweek.com. */
   listingUrl: string;
   location?: string;
   condition?: string;
@@ -112,7 +112,7 @@ export function resolveMarketplaceImageUrl(raw: string | null | undefined): stri
   return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
 }
 
-/** "UGX 800,000" — the same "<CURRENCY> <grouped number>" form piitrade.com itself shows. */
+/** "UGX 800,000" — the same "<CURRENCY> <grouped number>" form yotweek.com itself shows. */
 export function formatPrice(price: unknown, currency?: string | null): string {
   const value = typeof price === 'number' ? price : Number(price);
   const code = (currency || DEFAULT_CURRENCY).toUpperCase();
@@ -191,7 +191,7 @@ export interface MarketplaceSearchResultDto {
   category: string;
   image: string;
   description?: string;
-  /** Opens this listing (or, for the local demo catalog, a piitrade.com search) on piitrade.com. */
+  /** Opens this listing (or, for the local demo catalog, a yotweek.com search) on yotweek.com. */
   listingUrl: string;
   location?: string;
   condition?: string;
@@ -225,7 +225,7 @@ export function toSearchResultDto(p: MarketplaceProduct, category: string): Mark
   };
 }
 
-/** Link to the full result set for `query` on piitrade.com ("See all on Piitrade"). */
+/** Link to the full result set for `query` on yotweek.com ("See all on Piitrade"). */
 export function browseUrlFor(query: string): string {
   return searchUrl(query);
 }

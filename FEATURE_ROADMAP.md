@@ -11,11 +11,11 @@ Living tracking file for this app's feature work. Update this alongside the code
 - Mixed server-side with ffmpeg and cut to the clip length, so the 30-second limit still holds; validated and cleaned up on every error path; covered by unit tests plus a real-ffmpeg test that checks the volume levels
 
 ### Classifieds refocus, 30-second limit and UI redesign
-- piitrade.com is now a classifieds marketplace, so the in-video cart, checkout, marketplace login/registration and order placement were **removed**. Results are classifieds cards that open the listing on piitrade.com (with a "See all on piitrade.com" link, a safety line, and UTM attribution)
+- yotweek.com is now a classifieds marketplace, so the in-video cart, checkout, marketplace login/registration and order placement were **removed**. Results are classifieds cards that open the listing on yotweek.com (with a "See all on yotweek.com" link, a safety line, and UTM attribution)
 - Videos limited to **30 seconds**, enforced on the server (before and after transcoding); longer uploads open a **trim editor** (looping preview, draggable window, keyboard support) and the server cuts the clip with ffmpeg
 - **Latest / Trending** moved out of the video into a solid header bar; account/notification/discover/settings controls consolidated into one account menu
 - Video action rail reduced from 7 buttons to 5 (Like, Comment, Share, Find, More); favorite/download/report moved into a More sheet; long-press and extra hint bubbles reduced; thin playback progress line added
-- Rebranded to piitrade.com's orange (`#F55906`)
+- Rebranded to yotweek.com's orange (`#F55906`)
 - `MarketplaceLink` table is deprecated and unused — **drop it in a follow-up migration** once you're happy nothing needs the stored tokens
 
 ### Foundation
@@ -29,7 +29,7 @@ Living tracking file for this app's feature work. Update this alongside the code
 - Marketplace listing-image bug — a fallback image path was being resolved against the wrong backend host
 
 ### Shopping & discovery
-- Long-press (3s hold) watermarked video download — client-side canvas + MediaRecorder pipeline, animated `piitrade.com` branding burned into frames; same pipeline also runs from the Download button
+- Long-press (3s hold) watermarked video download — client-side canvas + MediaRecorder pipeline, animated `yotweek.com` branding burned into frames; same pipeline also runs from the Download button
 - Discoverable creator accounts — `Video.uploaderSessionId`, `SessionProfile.handle`/`bio`, public `/u/:handle` profile pages, `/discover` directory
 
 ### Platform hardening (Part A)

@@ -79,8 +79,8 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
         price: p.price,
         category: p.category,
         image: `/uploads/products/${p.imageFilename}`,
-        // The demo catalog isn't real piitrade.com inventory, so there
-        // is no listing to open — send the viewer to a piitrade.com
+        // The demo catalog isn't real yotweek.com inventory, so there
+        // is no listing to open — send the viewer to a yotweek.com
         // search for the closest-matching product's name instead.
         listingUrl: browseUrlFor(p.name),
         match: similarityScore(distance),

@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Matches piitrade.com's own theme colour (#F55906) so the
+        // Matches yotweek.com's own theme colour (#F55906) so the
         // video companion reads as the same product as the
         // marketplace it refers viewers to.
         brand: {

@@ -25,7 +25,7 @@ interface SendEmailInput {
 
 export async function sendEmail(input: SendEmailInput): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || 'Piitrade <no-reply@piitrade.com>';
+  const from = process.env.EMAIL_FROM || 'Piitrade <no-reply@yotweek.com>';
 
   if (!apiKey) {
     console.warn(

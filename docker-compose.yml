@@ -36,7 +36,7 @@ services:
       MARKETPLACE_API: ${MARKETPLACE_API:-https://backend-production-a662.up.railway.app}
       MARKETPLACE_COUNTRY: ${MARKETPLACE_COUNTRY:-UGANDA}
       MARKETPLACE_DEFAULT_CURRENCY: ${MARKETPLACE_DEFAULT_CURRENCY:-UGX}
-      PIITRADE_SITE_URL: ${PIITRADE_SITE_URL:-https://piitrade.com}
+      PIITRADE_SITE_URL: ${PIITRADE_SITE_URL:-https://yotweek.com}
       # Optional ImageKit-backed storage — see .env.example. Local disk
       # is used for whichever of these is left unset.
       VIDEO_STORE: ${VIDEO_STORE:-}

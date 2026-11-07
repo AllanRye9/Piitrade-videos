@@ -68,7 +68,7 @@ export default function VideoMoreSheet({ favorited, reported, reportBusy, onFavo
               <Download size={20} className="text-white/60" />
               <span>
                 <span className="block text-white text-sm">Download</span>
-                <span className="block text-white/40 text-xs">Saved with a piitrade.com watermark. You can also hold the video for 3 seconds.</span>
+                <span className="block text-white/40 text-xs">Saved with a yotweek.com watermark. You can also hold the video for 3 seconds.</span>
               </span>
             </button>
             <button type="button" onClick={() => setView('report')} disabled={reported} className={row}>

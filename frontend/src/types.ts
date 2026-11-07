@@ -56,9 +56,9 @@ export interface Comment {
 }
 
 /** One result card in the "Find on Piitrade" sheet — a classifieds
- *  listing from piitrade.com (or, for the local demo-catalog fallback,
- *  a stand-in that links to a piitrade.com search). There is nothing
- *  to add to a cart or check out: piitrade.com is a classifieds site,
+ *  listing from yotweek.com (or, for the local demo-catalog fallback,
+ *  a stand-in that links to a yotweek.com search). There is nothing
+ *  to add to a cart or check out: yotweek.com is a classifieds site,
  *  so the card just opens the listing there. */
 export interface VisualSearchResult {
   id: string;
@@ -70,7 +70,7 @@ export interface VisualSearchResult {
   category: string;
   image: string;
   description?: string;
-  /** Opens this listing on piitrade.com. */
+  /** Opens this listing on yotweek.com. */
   listingUrl: string;
   location?: string;
   condition?: string;
@@ -87,7 +87,7 @@ export interface MarketplaceSearchResponse {
   results: VisualSearchResult[];
   identification?: string;
   matchedQuery?: string | null;
-  /** "See all results" on piitrade.com. */
+  /** "See all results" on yotweek.com. */
   browseUrl?: string;
 }
 

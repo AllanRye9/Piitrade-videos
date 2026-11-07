@@ -6,7 +6,7 @@ import { toSearchResultDto, browseUrlFor } from '../lib/marketplace';
 const router = Router();
 
 // GET /api/marketplace/search?q=<text> — manual, user-typed search of
-// the piitrade.com classifieds.
+// the yotweek.com classifieds.
 //
 // Independent of the AI-identify pipeline in visualSearch.ts: this
 // lets a viewer type their own words and search the marketplace
@@ -16,9 +16,9 @@ const router = Router();
 // marketplace's own search is a verbatim substring match and even a
 // typed multi-word phrase can miss a shorter real listing title.
 //
-// Read-only on purpose: piitrade.com is a classifieds site, so there
+// Read-only on purpose: yotweek.com is a classifieds site, so there
 // is nothing to buy or check out here — each result's `listingUrl`
-// opens the listing on piitrade.com, and `browseUrl` opens the full
+// opens the listing on yotweek.com, and `browseUrl` opens the full
 // result set there.
 router.get('/search', async (req: Request, res: Response) => {
   const q = req.query.q;

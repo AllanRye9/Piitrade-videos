@@ -34,7 +34,7 @@ docker compose up --build
 >    file and re-introduces the same crash).
 >
 > Then set an environment variable **`VITE_API_BASE_URL`** to wherever
-> you host the backend (e.g. `https://api.yourapp.com`, from Railway,
+> you host the backend (e.g. `https://yotweek.com`, from Railway,
 > Render, Fly.io, or a VPS running `docker compose`) — the frontend
 > uses it to reach `/api` and `/uploads` cross-origin. On that backend
 > host, also set **`ALLOWED_ORIGIN`** to your Vercel URL so CORS
@@ -109,30 +109,30 @@ Everything in this app talks to a real database and real files on disk
   search — see "Known limitations" below.
 - **Admin auth** is real JWT + bcrypt, not a hardcoded check.
 
-## Relationship to piitrade.com
+## Relationship to yotweek.com
 
-Piitrade Videos is the **short-video companion of the piitrade.com
+Piitrade Videos is the **short-video companion of the yotweek.com
 classifieds marketplace** and exists to send viewers there. It never
 sells anything itself: there is no cart, no checkout, no order and no
 marketplace login in this app. (Earlier versions did all of that
 against the marketplace's `/api/orders`; it was removed because a
-classifieds site has no orders — buyers contact sellers on piitrade.com.)
+classifieds site has no orders — buyers contact sellers on yotweek.com.)
 
 What it does instead:
 
 - **Find** (the orange button on every video) — the viewer marks what
   they see, or types a search, and the app looks up matching live
-  listings on piitrade.com.
+  listings on yotweek.com.
 - Each result is a classifieds card (price, original price if
   reduced, location, condition, store, verified-seller badge) that
-  **opens the listing at `https://piitrade.com/listings/<id>`** in a
-  new tab, plus a **"See all on piitrade.com"** button
+  **opens the listing at `https://yotweek.com/listings/<id>`** in a
+  new tab, plus a **"See all on yotweek.com"** button
   (`/listings?q=<query>`) and the site's "meet in public, inspect
   before paying" safety line.
 - The account menu links to **Browse listings**, **Sell something**
-  and **Safety tips** on piitrade.com.
+  and **Safety tips** on yotweek.com.
 - Links carry `utm_source=piitrade_videos&utm_medium=video` so
-  piitrade.com can attribute the visits.
+  yotweek.com can attribute the visits.
 
 `PIITRADE_SITE_URL` (backend) / `VITE_PIITRADE_SITE_URL` (frontend)
 set the public website; `MARKETPLACE_API` is a different thing — the
@@ -159,20 +159,20 @@ MARKETPLACE_API=https://backend-production-a662.up.railway.app
 MARKETPLACE_COUNTRY=UGANDA
 ```
 
-**Important — `MARKETPLACE_API` is the backend host, not `piitrade.com`.**
-An earlier version of this pointed it at `https://piitrade.com`
-directly, on the assumption that `https://piitrade.com/listings?q=...`
+**Important — `MARKETPLACE_API` is the backend host, not `yotweek.com`.**
+An earlier version of this pointed it at `https://yotweek.com`
+directly, on the assumption that `https://yotweek.com/listings?q=...`
 was a JSON search endpoint. It isn't — fetching that exact URL live
-returned piitrade.com's full rendered HTML browse page (nav, filters,
+returned yotweek.com's full rendered HTML browse page (nav, filters,
 footer, "0 listings" as page text), not JSON, which would have made
-every search fail with a JSON-parse error. Fetching piitrade.com's own
+every search fail with a JSON-parse error. Fetching yotweek.com's own
 homepage showed it loads its listing images from a separate backend
 host — `https://backend-production-a662.up.railway.app/api/images/...`
 — confirming the real JSON API lives there, at `/api/listings`,
 and `/api/listings` (matching the backend source reviewed
 directly for this integration). **Railway hostnames can change on
 redeploy** — if this stops working, get the current one the same way:
-open piitrade.com, view an image URL, and use that host.
+open yotweek.com, view an image URL, and use that host.
 
 `AI_SEARCH_API_KEY` is left blank on purpose — the live worker doesn't
 check for one today. `MARKETPLACE_COUNTRY` is optional (sent as
@@ -254,7 +254,7 @@ a region entirely.
 
 Results are shown in the same "Find on Piitrade" sheet either way — a
 bottom sheet, so the paused video stays visible above it. Tapping a
-result opens that listing on piitrade.com; the video resumes when the
+result opens that listing on yotweek.com; the video resumes when the
 sheet is closed.
 
 ### The `worker/` service
@@ -293,7 +293,7 @@ backend/
   prisma/seed.ts              # generates real sample videos (ffmpeg) + product images (sharp)
   src/routes/videos.ts        # public: list/search/upload/like/favorite/save/comments
   src/routes/visualSearch.ts  # AI-identify + marketplace lookup, or perceptual-hash fallback
-  src/routes/marketplace.ts   # manual search of piitrade.com listings (read-only)
+  src/routes/marketplace.ts   # manual search of yotweek.com listings (read-only)
   test/marketplace.test.js    # regression tests for the search fallback ladder (npm test)
   src/routes/profile.ts       # avatar + display name (per anonymous session)
   src/routes/auth.ts          # admin register/login/me
@@ -301,7 +301,7 @@ backend/
   src/lib/phash.ts            # the dHash algorithm + Hamming distance (fallback search)
   src/lib/aiSearch.ts         # client for the AI_SEARCH identification service
   src/lib/marketplace.ts      # client for the MARKETPLACE_API listings search
-  src/lib/piitrade.ts         # piitrade.com URL helpers (listing / search links)
+  src/lib/piitrade.ts         # yotweek.com URL helpers (listing / search links)
   src/lib/videoLimits.ts      # the 30-second cap + trim-window rules (npm test)
   src/lib/thumbnail.ts        # ffmpeg poster-frame extraction
   src/lib/auth.ts             # bcrypt hashing + JWT signing/verification
@@ -339,7 +339,7 @@ differently.
 
 **Settings** (account menu → Settings) is a dedicated panel
 (`ProfileSettings.tsx`) covering display name, the shared sound
-on/off preference (see `soundPreference.ts`), and a link out to piitrade.com — rather than settings being scattered
+on/off preference (see `soundPreference.ts`), and a link out to yotweek.com — rather than settings being scattered
 across the profile page's header.
 
 ## Video length: 30-second limit and trimming
@@ -347,7 +347,7 @@ across the profile page's header.
 Videos are limited to **30 seconds** (`MAX_VIDEO_SECONDS` in
 `backend/src/lib/videoLimits.ts`, mirrored as `MAX_VIDEO_SECONDS` in
 `frontend/src/config.ts`) — they are short clips showing an item or a
-seller, with the listing on piitrade.com carrying the detail.
+seller, with the listing on yotweek.com carrying the detail.
 
 A longer video is **not simply rejected** — the upload dialog opens a
 **trim editor** (`frontend/src/components/VideoTrimmer.tsx`):
@@ -404,7 +404,7 @@ be previewed, but are accepted and mixed all the same.
 The header is a slim, solid bar *beside* the video, not on it: logo,
 **Latest / Trending** tabs, search, upload, and one account menu
 (profile, notifications, discover, settings, and shortcuts to Browse /
-Sell / Safety on piitrade.com). The video stage fills the rest. Each
+Sell / Safety on yotweek.com). The video stage fills the rest. Each
 video shows only Like, Comment, Share, **Find**, and a **⋯** menu
 (favorite, download, report), plus the creator, title and a thin
 progress line. From the `sm` breakpoint up the stage is a centred,
@@ -456,7 +456,7 @@ upload rather than failing it (see `lib/imagekit.ts`).
 | POST | `/api/videos/:id/like` \| `/favorite` \| `/save` | Toggle interaction state |
 | GET/POST | `/api/videos/:id/comments` | List / post comments |
 | POST | `/api/visual-search` | `multipart/form-data`: `image` — AI-identify + marketplace lookup (if configured) or ranked similar products from the local catalog |
-| GET | `/api/marketplace/search` | `?q=<text>` — manual, user-typed search of piitrade.com listings (same fallback ladder as visual search); returns `results[]` (each with `listingUrl`) and `browseUrl` |
+| GET | `/api/marketplace/search` | `?q=<text>` — manual, user-typed search of yotweek.com listings (same fallback ladder as visual search); returns `results[]` (each with `listingUrl`) and `browseUrl` |
 | GET | `/api/profile` | This session's avatar + display name |
 | PUT | `/api/profile` | `{ displayName: string \| null }` |
 | POST | `/api/profile/avatar` | `multipart/form-data`: `avatar` |

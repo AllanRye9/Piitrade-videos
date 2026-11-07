@@ -2,7 +2,7 @@ import { HttpError } from './httpError';
 
 /**
  * Hard cap on the length of a published video. Piitrade Videos is a
- * short-form companion to the piitrade.com classifieds marketplace —
+ * short-form companion to the yotweek.com classifieds marketplace —
  * clips are meant to show an item or a seller in a few seconds, not
  * replace a listing's own photos/description.
  */

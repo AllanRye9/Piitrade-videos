@@ -8,7 +8,7 @@
  * the backend on Railway/Render/Fly/a VPS, since Vercel's serverless
  * functions can't run a stateful Postgres+ffmpeg backend), set
  * VITE_API_BASE_URL at build time to the backend's full origin, e.g.
- * `https://api.yourapp.com` (no trailing slash). Every API call and
+ * `https://yotweek.com` (no trailing slash). Every API call and
  * every video/poster/product-image URL will then resolve against it
  * instead of the frontend's own origin.
  */
@@ -22,15 +22,15 @@ export function mediaUrl(path: string | null | undefined): string | undefined {
 }
 
 /**
- * The public piitrade.com classifieds marketplace this app is the
+ * The public yotweek.com classifieds marketplace this app is the
  * video companion of. Piitrade Videos never sells anything itself —
  * every "buy", "contact the seller", "sell" or "safety" path leads to
  * a page on this site. Override with VITE_PIITRADE_SITE_URL (no
  * trailing slash) for staging.
  */
-export const PIITRADE_SITE_URL = (import.meta.env.VITE_PIITRADE_SITE_URL || 'https://piitrade.com').replace(/\/$/, '');
+export const PIITRADE_SITE_URL = (import.meta.env.VITE_PIITRADE_SITE_URL || 'https://yotweek.com').replace(/\/$/, '');
 
-/** A page on piitrade.com, tagged so the marketplace can attribute the visit to the videos app. */
+/** A page on yotweek.com, tagged so the marketplace can attribute the visit to the videos app. */
 export function piitradeUrl(path: string): string {
   const url = new URL(`${PIITRADE_SITE_URL}${path.startsWith('/') ? '' : '/'}${path}`);
   url.searchParams.set('utm_source', 'piitrade_videos');

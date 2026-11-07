@@ -256,7 +256,7 @@ export default function VideoCard({ video, active }: Props) {
     });
   }
 
-  // "Download" — renders a watermarked copy (piitrade.com branding
+  // "Download" — renders a watermarked copy (yotweek.com branding
   // burned into the frames — see videoWatermark.ts) and saves it to
   // the device, AND records the server-side `saved` flag (the same
   // field the Profile page's Downloads tab reads back), so the two
@@ -517,7 +517,7 @@ export default function VideoCard({ video, active }: Props) {
       {downloadFlash && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="animate-pulse bg-black/60 rounded-full px-4 py-2 flex items-center gap-2 text-white text-xs font-semibold">
-            <Download size={14} className="text-brand-amber" /> Saved with piitrade.com watermark
+            <Download size={14} className="text-brand-amber" /> Saved with yotweek.com watermark
           </div>
         </div>
       )}

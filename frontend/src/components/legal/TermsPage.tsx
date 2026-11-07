@@ -20,7 +20,7 @@ export default function TermsPage() {
         An account is required to upload videos, comment, follow creators, or complete a purchase. You're
         responsible for keeping your password confidential and for all activity under your account. You may set a
         public handle, display name, avatar, and bio; your handle is visible to other users at a public profile URL
-        (<code>piitrade.com/u/your-handle</code>).
+        (<code>yotweek.com/u/your-handle</code>).
       </p>
 
       <h2>3. Content you post</h2>
@@ -45,10 +45,10 @@ export default function TermsPage() {
 
       <h2>4. Finding items on Piitrade</h2>
       <p>
-        Piitrade Videos is the short-video companion of the Piitrade classifieds marketplace (piitrade.com). It helps
-        you find listings related to what you see in a video and then opens the listing on piitrade.com. Piitrade
+        Piitrade Videos is the short-video companion of the Piitrade classifieds marketplace (yotweek.com). It helps
+        you find listings related to what you see in a video and then opens the listing on yotweek.com. Piitrade
         Videos does not sell items, take payments, or process orders. Any contact with a seller, price negotiation,
-        payment, and handover happens between you and the seller through piitrade.com and is subject to the
+        payment, and handover happens between you and the seller through yotweek.com and is subject to the
         Marketplace's own terms and safety guidance. Piitrade Videos is not a party to those transactions and is not
         responsible for the listings, sellers, or items.
       </p>

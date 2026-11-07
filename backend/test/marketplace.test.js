@@ -260,7 +260,7 @@ test('GET /api/marketplace/search with a matching (but shortened-needed) query r
   assert.equal(body.results[0].id, '3');
   assert.equal(body.results[0].name, 'Samsung Galaxy Charger');
   assert.equal(body.results[0].price, 'UGX 35,000');
-  // piitrade.com is a classifieds site: every result must open the
+  // yotweek.com is a classifieds site: every result must open the
   // listing there (no cart/checkout), and carry the "see all" link.
   assert.match(body.results[0].listingUrl, /^https:\/\/piitrade\.com\/listings\/3\?/);
   assert.match(body.results[0].listingUrl, /utm_source=piitrade_videos/);
@@ -276,7 +276,7 @@ test('GET /api/marketplace/search with a true miss returns HTTP 200 with empty r
   assert.equal(body.matchedQuery, null);
 });
 
-test('the old cart/checkout/account routes no longer exist (piitrade.com is a classifieds site)', async () => {
+test('the old cart/checkout/account routes no longer exist (yotweek.com is a classifieds site)', async () => {
   for (const [method, route] of [
     ['POST', '/api/marketplace/checkout'],
     ['POST', '/api/marketplace/login'],
