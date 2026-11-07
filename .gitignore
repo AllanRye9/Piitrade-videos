@@ -7,3 +7,14 @@ backend/uploads/products/*
 !backend/uploads/**/.gitkeep
 frontend/dist/
 .DS_Store
+
+# Android / Capacitor
+frontend/.env.production
+frontend/android/app/build/
+frontend/android/build/
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/android/app/src/main/assets/public/
+frontend/android/capacitor-cordova-android-plugins/build/
+*.jks
+*.keystore

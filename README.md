@@ -109,7 +109,45 @@ Everything in this app talks to a real database and real files on disk
   search — see "Known limitations" below.
 - **Admin auth** is real JWT + bcrypt, not a hardcoded check.
 
-## In-video shopping: AI identify → marketplace lookup → cart → checkout
+## Relationship to piitrade.com
+
+Piitrade Videos is the **short-video companion of the piitrade.com
+classifieds marketplace** and exists to send viewers there. It never
+sells anything itself: there is no cart, no checkout, no order and no
+marketplace login in this app. (Earlier versions did all of that
+against the marketplace's `/api/orders`; it was removed because a
+classifieds site has no orders — buyers contact sellers on piitrade.com.)
+
+What it does instead:
+
+- **Find** (the orange button on every video) — the viewer marks what
+  they see, or types a search, and the app looks up matching live
+  listings on piitrade.com.
+- Each result is a classifieds card (price, original price if
+  reduced, location, condition, store, verified-seller badge) that
+  **opens the listing at `https://piitrade.com/listings/<id>`** in a
+  new tab, plus a **"See all on piitrade.com"** button
+  (`/listings?q=<query>`) and the site's "meet in public, inspect
+  before paying" safety line.
+- The account menu links to **Browse listings**, **Sell something**
+  and **Safety tips** on piitrade.com.
+- Links carry `utm_source=piitrade_videos&utm_medium=video` so
+  piitrade.com can attribute the visits.
+
+`PIITRADE_SITE_URL` (backend) / `VITE_PIITRADE_SITE_URL` (frontend)
+set the public website; `MARKETPLACE_API` is a different thing — the
+marketplace's backend JSON API, used only to search listings.
+
+Result cards show location, condition, store, verified badge and
+original price **only if the listings API returns them** (they are
+read defensively from `location`/`city`, `condition`,
+`store.name`/`storeName`, `user.isVerified`/`verified`/`kycVerified`
+and `originalPrice`/`compareAtPrice`); a listing without them still
+renders cleanly with just its title, price and image. Only listings
+that are live (`status` absent or `ACTIVE`) are shown. If the real
+field names differ, adjust `toResult()` in `backend/src/lib/marketplace.ts`.
+
+## Finding items: AI identify → marketplace lookup → listing links
 
 **The exact `.env` values to use right now** (also in `.env.example`) —
 **verified by actually fetching the live site**, not just assumed:
@@ -131,7 +169,7 @@ every search fail with a JSON-parse error. Fetching piitrade.com's own
 homepage showed it loads its listing images from a separate backend
 host — `https://backend-production-a662.up.railway.app/api/images/...`
 — confirming the real JSON API lives there, at `/api/listings`,
-`/api/auth/*`, `/api/orders` (matching the backend source reviewed
+and `/api/listings` (matching the backend source reviewed
 directly for this integration). **Railway hostnames can change on
 redeploy** — if this stops working, get the current one the same way:
 open piitrade.com, view an image URL, and use that host.
@@ -141,7 +179,7 @@ check for one today. `MARKETPLACE_COUNTRY` is optional (sent as
 `&country=` on every search, confirmed as a real supported parameter
 on `/api/listings`); leave it blank to search without a country filter.
 
-Tapping **Search** on a video now lets you mark the region to search
+Tapping **Find** on a video lets you mark the region to search
 as a **rectangle, square, circle, or freeform lasso** (not just a
 rectangle), then runs one of two search paths:
 
@@ -214,42 +252,10 @@ exposed in the UI two ways: a search box inside the results panel
 "type to search instead" link in the crop overlay that skips marking
 a region entirely.
 
-Results are shown in the same results panel either way. Tapping a
-result adds it to an in-video cart; once the cart has an item, a blue
-**"Click to checkout"** bar appears. Checkout:
-
-1. Checks whether this browser session already has a linked
-   marketplace account (`GET /api/marketplace/account`).
-2. If not, prompts login/register.
-   - **Login** proceeds straight into checkout.
-   - **Register does NOT** — the marketplace requires email
-     verification before its `/api/auth/login` will succeed (this is
-     enforced by the marketplace itself, not a choice made here), so
-     registering shows a "check your email, then log in" screen
-     instead of pretending checkout can continue immediately.
-3. If already linked, checks out immediately.
-4. On success (or on cancel at any point), the video **resumes
-   watching** — it's paused only for the duration of this flow, never
-   permanently.
-
-**Same-seller order grouping.** The marketplace's `POST /api/orders`
-requires every item in one order to belong to the same seller. Since
-an AI-identified search can surface products from different sellers,
-checkout groups cart items by `sellerId` (carried through from the
-search result) and places one order per seller. If the cart has items
-from 3 sellers, checkout produces up to 3 orders; if one seller's
-group fails, the rest still go through and the failed items stay in
-the cart rather than the whole checkout failing.
-
-**Session tokens.** The marketplace's access token expires in ~1h;
-rather than asking a returning viewer to log in again, checkout
-transparently exchanges the stored refresh token for a new access
-token on a 401 and retries once. Both tokens are stored server-side
-only (see the `MarketplaceLink` Prisma model), keyed by the same
-anonymous `X-Session-Id` used elsewhere in the app — neither is ever
-sent to the browser. The refresh token itself is extracted by hand
-from the marketplace's httpOnly `Set-Cookie` on login, since this is
-a server-to-server call rather than a browser session.
+Results are shown in the same "Find on Piitrade" sheet either way — a
+bottom sheet, so the paused video stays visible above it. Tapping a
+result opens that listing on piitrade.com; the video resumes when the
+sheet is closed.
 
 ### The `worker/` service
 
@@ -283,25 +289,27 @@ reasonable regardless of selection size or source video resolution.
 
 ```
 backend/
-  prisma/schema.prisma        # Video, Comment, UserVideoState, Product, AdminUser, MarketplaceLink
+  prisma/schema.prisma        # Video, Comment, UserVideoState, Product, AdminUser (MarketplaceLink is deprecated/unused)
   prisma/seed.ts              # generates real sample videos (ffmpeg) + product images (sharp)
   src/routes/videos.ts        # public: list/search/upload/like/favorite/save/comments
   src/routes/visualSearch.ts  # AI-identify + marketplace lookup, or perceptual-hash fallback
-  src/routes/marketplace.ts   # marketplace account link (login/register), checkout, manual search
+  src/routes/marketplace.ts   # manual search of piitrade.com listings (read-only)
   test/marketplace.test.js    # regression tests for the search fallback ladder (npm test)
   src/routes/profile.ts       # avatar + display name (per anonymous session)
   src/routes/auth.ts          # admin register/login/me
   src/routes/admin.ts         # admin-only: video/comment moderation, product CRUD, stats
   src/lib/phash.ts            # the dHash algorithm + Hamming distance (fallback search)
   src/lib/aiSearch.ts         # client for the AI_SEARCH identification service
-  src/lib/marketplace.ts      # client for the MARKETPLACE_API service
+  src/lib/marketplace.ts      # client for the MARKETPLACE_API listings search
+  src/lib/piitrade.ts         # piitrade.com URL helpers (listing / search links)
+  src/lib/videoLimits.ts      # the 30-second cap + trim-window rules (npm test)
   src/lib/thumbnail.ts        # ffmpeg poster-frame extraction
   src/lib/auth.ts             # bcrypt hashing + JWT signing/verification
   src/middleware/requireAdmin.ts
 worker/
   worker.js                   # standalone service hosting the identification AI (AI_SEARCH target)
 frontend/
-  src/components/             # feed, video card, crop overlay, cart bar, checkout modal, upload/comment modals, Avatar, ProfileSettings
+  src/components/             # header, feed, video card, crop overlay, Find results sheet, More sheet, upload + trim editor, comments, Avatar, ProfileSettings
   src/profileStore.ts         # shared avatar/display-name state (external-store pattern)
   src/soundPreference.ts      # shared feed-wide mute/unmute state (external-store pattern)
   src/admin/                  # login, register, dashboard + tabs (stats/videos/comments/products)
@@ -312,7 +320,7 @@ docker-compose.yml
 ## Profile: avatar, display name, and settings
 
 Every viewer (anonymous, session-scoped — same `X-Session-Id` pattern
-as likes/favorites/marketplace linking) can set an avatar and a
+as likes/favorites) can set an avatar and a
 display name via `GET/PUT /api/profile` and `POST/DELETE
 /api/profile/avatar`. Both are stored in the `SessionProfile` model —
 the avatar as either a local disk filename or, when `IMAGES_POINT` is
@@ -322,18 +330,85 @@ configured, a full ImageKit URL (same resolution pattern as
 **The picture appears everywhere it should**, not just on the profile
 page: the frontend keeps it in one shared store
 (`frontend/src/profileStore.ts`, same external-store pattern as
-`soundPreference.ts`) so every consumer — the top nav bar, the comment
-composer, and the checkout modal — reads the same state and updates
+`soundPreference.ts`) so every consumer — the header's account button and the comment
+composer — reads the same state and updates
 the instant it changes anywhere. A single `<Avatar>` component
 (`frontend/src/components/Avatar.tsx`) renders it consistently
 (picture if set, a fallback icon otherwise) so no two spots draw it
 differently.
 
-**Settings** (gear icon on the profile page) is a dedicated panel
+**Settings** (account menu → Settings) is a dedicated panel
 (`ProfileSettings.tsx`) covering display name, the shared sound
-on/off preference (see `soundPreference.ts`), and marketplace account
-status with an unlink action — rather than settings being scattered
+on/off preference (see `soundPreference.ts`), and a link out to piitrade.com — rather than settings being scattered
 across the profile page's header.
+
+## Video length: 30-second limit and trimming
+
+Videos are limited to **30 seconds** (`MAX_VIDEO_SECONDS` in
+`backend/src/lib/videoLimits.ts`, mirrored as `MAX_VIDEO_SECONDS` in
+`frontend/src/config.ts`) — they are short clips showing an item or a
+seller, with the listing on piitrade.com carrying the detail.
+
+A longer video is **not simply rejected** — the upload dialog opens a
+**trim editor** (`frontend/src/components/VideoTrimmer.tsx`):
+
+- a looping preview of just the selected part, over a timeline of the
+  whole video;
+- drag either end to trim, or drag the middle to slide the window
+  (arrow keys work on the handles; Shift = 1s steps). The window can
+  never be longer than 30s or shorter than 1s;
+- the chosen start/end are sent as `trimStart`/`trimEnd` and the
+  **server does the cut** with ffmpeg while it normalizes the file, so
+  it works for every accepted format, and timestamps restart at 0.
+- Formats a browser can't decode (AVI/MKV/WMV/FLV) can't be previewed
+  locally. They upload as before; if the server measures them over 30s
+  it answers `VIDEO_TOO_LONG` with the real duration, and the dialog
+  switches to a no-preview mode where the uploader picks the start
+  time.
+
+The limit is enforced on the server (the client check is only
+convenience): the source length is read with ffprobe **before** any
+transcoding, and the finished file is measured again before it is
+stored. Videos uploaded before this limit existed (up to 60s) are left
+as they are.
+
+## Adding audio to a video
+
+Once a video is chosen, the upload editor offers **Add audio** (music or
+a voiceover — MP3, M4A, AAC, WAV, OGG, Opus, FLAC, up to 50 MB). The
+uploader sets:
+
+- **Original sound** and **Added audio** volumes (0–100%). Original
+  sound at *Off* replaces the video's sound with the added audio.
+- **Start the audio at** — which part of the track to use, when the
+  track is longer than the clip.
+
+The preview plays the added audio in step with the video (including
+inside the trim editor's loop), so the mix can be heard before posting.
+The browser preview is only a guide — the real mix is made on the
+server (`lib/audioMix.ts`, `lib/videoTranscode.ts`) with ffmpeg:
+
+- the audio is **cut to the clip's length** (after any trim), so a long
+  track never makes a video longer than 30 seconds;
+- with sound on both sides they are **mixed** at the chosen levels
+  (`amix`, no automatic level halving); a silent video simply gets the
+  added audio;
+- a track that ends early leaves the rest of the clip quiet rather than
+  shortening the video.
+
+Formats a browser can't decode (e.g. FLAC/Opus in some browsers) can't
+be previewed, but are accepted and mixed all the same.
+
+## Layout
+
+The header is a slim, solid bar *beside* the video, not on it: logo,
+**Latest / Trending** tabs, search, upload, and one account menu
+(profile, notifications, discover, settings, and shortcuts to Browse /
+Sell / Safety on piitrade.com). The video stage fills the rest. Each
+video shows only Like, Comment, Share, **Find**, and a **⋯** menu
+(favorite, download, report), plus the creator, title and a thin
+progress line. From the `sm` breakpoint up the stage is a centred,
+phone-proportioned column under a full-width header.
 
 ## Video uploads: accepted formats, transcoding, and audio
 
@@ -377,15 +452,11 @@ upload rather than failing it (see `lib/imagekit.ts`).
 | GET | `/api/videos` | List all videos (with per-session like/favorite/save state) |
 | GET | `/api/videos/search?q=` | Search by title/description |
 | GET | `/api/videos/:id` | Get one video, increments view count |
-| POST | `/api/videos` | Upload a video (`multipart/form-data`: `video`, `title`, `description`) |
+| POST | `/api/videos` | Upload a video (`multipart/form-data`: `video`, `title`, `description`, optional `trimStart`/`trimEnd` in seconds; optional `audio` file with `videoVolume`, `audioVolume` (0–1) and `audioStart` in seconds). Max 30s — a longer video needs a trim window or is rejected with `code: VIDEO_TOO_LONG` and its `duration` |
 | POST | `/api/videos/:id/like` \| `/favorite` \| `/save` | Toggle interaction state |
 | GET/POST | `/api/videos/:id/comments` | List / post comments |
 | POST | `/api/visual-search` | `multipart/form-data`: `image` — AI-identify + marketplace lookup (if configured) or ranked similar products from the local catalog |
-| GET | `/api/marketplace/search` | `?q=<text>` — manual, user-typed marketplace search (same fallback ladder as visual search) |
-| GET | `/api/marketplace/account` | Is this session's browser linked to a marketplace account? |
-| POST | `/api/marketplace/login` \| `/register` | Link this session to a marketplace account |
-| DELETE | `/api/marketplace/account` | Unlink |
-| POST | `/api/marketplace/checkout` | `{ items: [{ productId, quantity }] }` — requires an already-linked account |
+| GET | `/api/marketplace/search` | `?q=<text>` — manual, user-typed search of piitrade.com listings (same fallback ladder as visual search); returns `results[]` (each with `listingUrl`) and `browseUrl` |
 | GET | `/api/profile` | This session's avatar + display name |
 | PUT | `/api/profile` | `{ displayName: string \| null }` |
 | POST | `/api/profile/avatar` | `multipart/form-data`: `avatar` |

@@ -237,7 +237,7 @@ model SessionProfile {
   avatar      String?
   // Freeform display name the viewer can set for themselves — shown
   // next to their avatar wherever it appears (comments composer,
-  // checkout). Purely cosmetic; never used for auth or as a lookup key.
+  // upload). Purely cosmetic; never used for auth or as a lookup key.
   displayName String?
   // Public, unique, URL-safe slug (e.g. "rye-uploads") that makes this
   // otherwise-anonymous session discoverable at /u/:handle. Auto-
@@ -259,13 +259,19 @@ model SessionProfile {
   updatedAt   DateTime @updatedAt
 }
 
-// Links an anonymous browser session (the same X-Session-Id used by
-// UserVideoState) to an account on the external marketplace (reached
-// via the MARKETPLACE_API env var). The marketplace's own auth token
-// is stored server-side only — it is never sent to the frontend — so
-// the in-video checkout flow can tell whether the current viewer is
-// already logged in to the marketplace without re-authenticating on
-// every checkout.
+// DEPRECATED — no longer read or written by any code.
+//
+// This used to link an anonymous browser session to a piitrade.com
+// account so the in-video cart could place orders. piitrade.com is now
+// a classifieds marketplace (no cart, no orders), so Piitrade Videos
+// simply sends viewers to the listing on piitrade.com instead and
+// stores no marketplace credentials at all.
+//
+// The table is deliberately left in place so this change deploys
+// without deleting any data. Existing rows still hold marketplace
+// tokens, so it is worth dropping in a follow-up migration:
+//   DROP TABLE "MarketplaceLink";
+// (and removing this model) once you are happy nothing needs them.
 model MarketplaceLink {
   id                      String   @id @default(cuid())
   sessionId               String   @unique

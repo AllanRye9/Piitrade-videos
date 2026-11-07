@@ -6,6 +6,18 @@ Living tracking file for this app's feature work. Update this alongside the code
 
 ## Completed
 
+### Add audio to videos
+- Upload editor can add an audio file (MP3/M4A/AAC/WAV/OGG/Opus/FLAC, ≤50 MB) to a video: original-sound and added-audio volume sliders (Off replaces the original), a start point in the track, and a live preview of the mix (also inside the trim editor's loop)
+- Mixed server-side with ffmpeg and cut to the clip length, so the 30-second limit still holds; validated and cleaned up on every error path; covered by unit tests plus a real-ffmpeg test that checks the volume levels
+
+### Classifieds refocus, 30-second limit and UI redesign
+- piitrade.com is now a classifieds marketplace, so the in-video cart, checkout, marketplace login/registration and order placement were **removed**. Results are classifieds cards that open the listing on piitrade.com (with a "See all on piitrade.com" link, a safety line, and UTM attribution)
+- Videos limited to **30 seconds**, enforced on the server (before and after transcoding); longer uploads open a **trim editor** (looping preview, draggable window, keyboard support) and the server cuts the clip with ffmpeg
+- **Latest / Trending** moved out of the video into a solid header bar; account/notification/discover/settings controls consolidated into one account menu
+- Video action rail reduced from 7 buttons to 5 (Like, Comment, Share, Find, More); favorite/download/report moved into a More sheet; long-press and extra hint bubbles reduced; thin playback progress line added
+- Rebranded to piitrade.com's orange (`#F55906`)
+- `MarketplaceLink` table is deprecated and unused — **drop it in a follow-up migration** once you're happy nothing needs the stored tokens
+
 ### Foundation
 - UI overhaul — brand palette, Manrope typeface
 - Cloudflare Worker AI image identification (`POST /identify` → `{success, description, suggestedTitle}`)
@@ -67,8 +79,7 @@ Living tracking file for this app's feature work. Update this alongside the code
 Ordered roughly by priority, not by section — items already flagged as launch-blocking are listed first regardless of category.
 
 ### Launch-blocking
-- **Mobile money checkout (MTN MoMo / Airtel Money)** — nothing in the reviewed code confirms this exists; card-first checkout would lock out most of the addressable market in this app's target region
-- **Creator commission / take-rate** — no monetization engine defined; this is what gives creators a financial reason to post more shoppable video
+- **Creator commission / take-rate** — no monetization engine defined; this is what gives creators a financial reason to post more video that drives traffic to listings
 
 ### Product/UX
 - Reactions beyond like, duet/stitch
@@ -99,7 +110,6 @@ Ordered roughly by priority, not by section — items already flagged as launch-
 
 Brief, not exhaustive — enough to start from, not a full design doc for each.
 
-- **Mobile money checkout**: confirm first whether the underlying Piitrade/3R-Elite marketplace API already supports MTN MoMo/Airtel Money — if so this is a verification task, not a build. If not, it's the single highest-priority engineering item in this whole list.
 - **Creator commission**: don't invent a novel model — adapt TikTok Shop's actual structure (tiered ~10–25%, trending toward a hybrid flat-fee-plus-percentage) at a smaller scale. Needs the take-rate decided first, since commission is a slice of it.
 - **Push notifications**: the in-app `Notification` model already exists; adding Web Push only needs VAPID keys + a service-worker push handler, reusing the same trigger points (follow, comment) rather than building new ones.
 - **Third-party marketplace integration (Amazon/Noon/Dubizzle)**: confirmed not officially possible in the "pull their catalog in" direction on any of the three — this stays rejected. The only sanctioned versions are outbound affiliate links or becoming a seller who pushes Piitrade's own catalog *out* to those platforms, which is a business-development effort, not a code change.

@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { api } from './api';
 import type { Video } from './types';
 import VideoFeed from './components/VideoFeed';
-import TopBar from './components/TopBar';
+import TopBar, { FeedMode } from './components/TopBar';
 import UploadModal from './components/UploadModal';
 import ProfileSettings from './components/ProfileSettings';
 import NotificationsPanel from './components/NotificationsPanel';
@@ -30,7 +30,7 @@ export default function App() {
   // 'trending' is a capped, non-paginated top-50 list (see GET
   // /api/videos/trending) — a safe addition alongside the existing
   // cursor-paginated 'latest' feed rather than a replacement for it.
-  const [mode, setMode] = useState<'latest' | 'trending'>('latest');
+  const [mode, setMode] = useState<FeedMode>('latest');
   const profile = useSyncExternalStore(subscribeProfile, getProfileState);
 
   // Registered once, here, rather than per-VideoCard — it only needs
@@ -78,7 +78,7 @@ export default function App() {
       .finally(() => setLoading(false));
   }
 
-  function switchMode(next: 'latest' | 'trending') {
+  function switchMode(next: FeedMode) {
     setMode(next);
     if (next === 'trending') loadTrending();
     else loadAll();
@@ -125,78 +125,59 @@ export default function App() {
   }
 
   return (
-    // On phones this fills the whole viewport, same as before. From
-    // `sm` up (tablets, laptops, desktops) the feed is boxed into a
-    // fixed-width, phone-proportioned column centered on the screen —
+    // Layout: a slim solid header (TopBar) above a stage that holds
+    // the video — so the header's controls, including the
+    // Latest/Trending switcher, sit BESIDE the video, never on it.
+    // On phones the stage fills everything under the header. From `sm`
+    // up (tablets, laptops, desktops) the stage is a fixed-width,
+    // phone-proportioned column centered under a full-width header —
     // the same layout TikTok/Reels/Shorts use on the web — instead of
     // one video stretching edge-to-edge across a wide monitor.
-    <div className="h-dvh w-full bg-black sm:bg-neutral-950 flex items-center justify-center overflow-hidden">
-      <div className="relative h-full w-full sm:h-[94dvh] sm:max-h-[900px] sm:w-[420px] sm:rounded-2xl sm:overflow-hidden sm:shadow-2xl sm:shadow-black/60 bg-black">
-        <TopBar
-          onSearch={handleSearch}
-          onUploadClick={() => setShowUpload(true)}
-          onSettingsClick={() => setShowSettings(true)}
-          onNotificationsClick={() => setShowNotifications(true)}
-          unreadCount={unreadCount}
-        />
+    <div className="h-dvh w-full bg-neutral-950 flex flex-col overflow-hidden">
+      <TopBar
+        mode={mode}
+        onModeChange={switchMode}
+        onSearch={handleSearch}
+        onUploadClick={() => setShowUpload(true)}
+        onSettingsClick={() => setShowSettings(true)}
+        onNotificationsClick={() => setShowNotifications(true)}
+        unreadCount={unreadCount}
+      />
 
-        {!searching && (
-          // top offset matches TopBar's own bottom edge exactly (see the
-          // comment on VideoCard's mute button for the same calculation)
-          // — a bare `top-16` here used to land this switcher inside
-          // TopBar's own (safe-area-aware) height on any notched device.
-          <div
-            style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.25rem)' }}
-            className="absolute left-0 right-0 z-10 flex justify-center gap-1 px-3 py-1.5 pointer-events-none"
-          >
-            <div className="flex gap-1 bg-black/40 backdrop-blur rounded-full p-1 pointer-events-auto">
-              <button
-                type="button"
-                onClick={() => switchMode('latest')}
-                className={`px-3 py-1 rounded-full text-xs font-semibold ${mode === 'latest' ? 'bg-white text-black' : 'text-white/70'}`}
-              >
-                Latest
-              </button>
-              <button
-                type="button"
-                onClick={() => switchMode('trending')}
-                className={`px-3 py-1 rounded-full text-xs font-semibold ${mode === 'trending' ? 'bg-white text-black' : 'text-white/70'}`}
-              >
-                Trending
+      <main className="relative flex-1 min-h-0 w-full flex justify-center sm:py-3">
+        <div className="relative h-full w-full sm:max-w-[420px] bg-black sm:rounded-2xl sm:overflow-hidden sm:shadow-2xl sm:shadow-black/60 sm:ring-1 sm:ring-white/10">
+          {loading && (
+            <div className="h-full w-full flex items-center justify-center text-white/60 text-sm">Loading videos…</div>
+          )}
+          {!loading && error && (
+            <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
+              <p>{error}</p>
+              <button type="button" onClick={loadAll} className="text-brand-amber underline">
+                Retry
               </button>
             </div>
-          </div>
-        )}
+          )}
+          {!loading && !error && videos.length === 0 && (
+            <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
+              <p>{searching ? 'No videos match your search.' : 'No videos yet.'}</p>
+              {!searching && (
+                <button type="button" onClick={() => setShowUpload(true)} className="text-brand-amber underline">
+                  Upload the first one
+                </button>
+              )}
+            </div>
+          )}
+          {!loading && !error && videos.length > 0 && <VideoFeed videos={videos} onNearEnd={loadMore} />}
+        </div>
+      </main>
 
-        {loading && (
-          <div className="h-full w-full flex items-center justify-center text-white/60 text-sm">Loading videos…</div>
-        )}
-        {!loading && error && (
-          <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
-            <p>{error}</p>
-            <button type="button" onClick={loadAll} className="text-brand-cyan underline">
-              Retry
-            </button>
-          </div>
-        )}
-        {!loading && !error && videos.length === 0 && (
-          <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
-            <p>No videos yet.</p>
-            <button type="button" onClick={() => setShowUpload(true)} className="text-brand-cyan underline">
-              Upload the first one
-            </button>
-          </div>
-        )}
-        {!loading && !error && videos.length > 0 && <VideoFeed videos={videos} onNearEnd={loadMore} />}
-
-        {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />}
-        {showSettings && (
-          <ProfileSettings displayName={profile.displayName} handle={profile.handle} onClose={() => setShowSettings(false)} />
-        )}
-        {showNotifications && (
-          <NotificationsPanel onClose={() => setShowNotifications(false)} onRead={() => setUnreadCount(0)} />
-        )}
-      </div>
+      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />}
+      {showSettings && (
+        <ProfileSettings displayName={profile.displayName} handle={profile.handle} onClose={() => setShowSettings(false)} />
+      )}
+      {showNotifications && (
+        <NotificationsPanel onClose={() => setShowNotifications(false)} onRead={() => setUnreadCount(0)} />
+      )}
     </div>
   );
 }

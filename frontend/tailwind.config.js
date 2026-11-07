@@ -4,9 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Matches piitrade.com's own theme colour (#F55906) so the
+        // video companion reads as the same product as the
+        // marketplace it refers viewers to.
         brand: {
-          pink: '#fe2c55',
-          cyan: '#25f4ee',
+          orange: '#F55906',
+          amber: '#FFB347',
         },
       },
       // Loaded via index.html's Google Fonts link — previously declared

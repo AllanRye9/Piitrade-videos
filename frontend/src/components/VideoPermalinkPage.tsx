@@ -33,7 +33,7 @@ export default function VideoPermalinkPage() {
       {!loading && error && (
         <div className="text-center px-6">
           <p className="text-white/60 text-sm mb-4">{error}</p>
-          <Link to="/" className="text-brand-cyan text-sm font-semibold">
+          <Link to="/" className="text-brand-amber text-sm font-semibold">
             Go to the feed
           </Link>
         </div>

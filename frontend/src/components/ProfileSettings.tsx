@@ -4,14 +4,13 @@ import { api, getAccountEmail, setAccountEmail, resetSessionId } from '../api';
 import { setProfileDisplayName, setProfileHandle } from '../profileStore';
 import { getMuted, setMuted, subscribeMuted } from '../soundPreference';
 import { X, Volume2, VolumeX, Store, Loader2, Check, ExternalLink, KeyRound, LogOut } from 'lucide-react';
+import { piitradeUrl } from '../config';
 
 interface Props {
   displayName: string | null;
   handle?: string | null;
   onClose: () => void;
 }
-
-type LinkStatus = 'checking' | 'linked' | 'unlinked' | 'error';
 
 export default function ProfileSettings({ displayName, handle, onClose }: Props) {
   const [nameInput, setNameInput] = useState(displayName || '');
@@ -63,20 +62,6 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
     window.location.assign('/');
   }
 
-  const [linkStatus, setLinkStatus] = useState<LinkStatus>('checking');
-  const [unlinking, setUnlinking] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .marketplaceAccount()
-      .then((res) => !cancelled && setLinkStatus(res.linked ? 'linked' : 'unlinked'))
-      .catch(() => !cancelled && setLinkStatus('error'));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   async function saveName() {
     const trimmed = nameInput.trim();
     setSavingName(true);
@@ -110,18 +95,6 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
       setHandleError(err instanceof Error ? err.message : 'Could not save handle');
     } finally {
       setSavingHandle(false);
-    }
-  }
-
-  async function unlinkMarketplace() {
-    setUnlinking(true);
-    try {
-      await api.marketplaceUnlink();
-      setLinkStatus('unlinked');
-    } catch {
-      // Leave status as-is — the account is likely still linked if this failed.
-    } finally {
-      setUnlinking(false);
     }
   }
 
@@ -171,14 +144,14 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
                 type="button"
                 onClick={saveName}
                 disabled={savingName || nameInput.trim() === (displayName || '')}
-                className="tap-target shrink-0 h-10 px-4 rounded-lg bg-brand-pink text-white text-sm font-semibold disabled:opacity-40 flex items-center gap-1.5"
+                className="tap-target shrink-0 h-10 px-4 rounded-lg bg-brand-orange text-white text-sm font-semibold disabled:opacity-40 flex items-center gap-1.5"
               >
                 {savingName ? <Loader2 size={14} className="animate-spin" /> : nameSaved ? <Check size={14} /> : null}
                 {nameSaved ? 'Saved' : 'Save'}
               </button>
             </div>
             {nameError && <p className="text-red-400 text-xs">{nameError}</p>}
-            <p className="text-white/30 text-[11px]">Shown next to your picture in comments and checkout on this device.</p>
+            <p className="text-white/30 text-[11px]">Shown next to your picture in comments on this device.</p>
           </section>
 
           {/* Public handle */}
@@ -197,7 +170,7 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
                 type="button"
                 onClick={saveHandle}
                 disabled={savingHandle || !handleInput.trim() || handleInput.trim() === (handle || '')}
-                className="tap-target shrink-0 h-10 px-4 rounded-lg bg-brand-pink text-white text-sm font-semibold disabled:opacity-40 flex items-center gap-1.5"
+                className="tap-target shrink-0 h-10 px-4 rounded-lg bg-brand-orange text-white text-sm font-semibold disabled:opacity-40 flex items-center gap-1.5"
               >
                 {savingHandle ? <Loader2 size={14} className="animate-spin" /> : handleSaved ? <Check size={14} /> : null}
                 {handleSaved ? 'Saved' : 'Save'}
@@ -205,7 +178,7 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
             </div>
             {handleError && <p className="text-red-400 text-xs">{handleError}</p>}
             {handle ? (
-              <Link to={`/u/${handle}`} className="text-brand-cyan text-xs underline inline-flex items-center gap-1">
+              <Link to={`/u/${handle}`} className="text-brand-amber text-xs underline inline-flex items-center gap-1">
                 View your public profile <ExternalLink size={11} />
               </Link>
             ) : (
@@ -222,11 +195,11 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
               className="w-full flex items-center justify-between bg-white/5 rounded-lg px-3.5 py-3"
             >
               <span className="flex items-center gap-2.5 text-white text-sm">
-                {muted ? <VolumeX size={18} className="text-white/50" /> : <Volume2 size={18} className="text-brand-cyan" />}
+                {muted ? <VolumeX size={18} className="text-white/50" /> : <Volume2 size={18} className="text-brand-amber" />}
                 {muted ? 'Muted' : 'Sound on'}
               </span>
               <span
-                className={`relative w-11 h-6 rounded-full transition-colors ${muted ? 'bg-white/20' : 'bg-brand-pink'}`}
+                className={`relative w-11 h-6 rounded-full transition-colors ${muted ? 'bg-white/20' : 'bg-brand-orange'}`}
                 aria-hidden="true"
               >
                 <span
@@ -239,32 +212,27 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
             <p className="text-white/30 text-[11px]">Applies to every video in the feed on this device.</p>
           </section>
 
-          {/* Marketplace account */}
+          {/* piitrade.com — the classifieds marketplace this app refers viewers to.
+              Nothing is linked or stored here: contacting a seller, saving
+              listings and posting ads all happen on piitrade.com with its
+              own account. */}
           <section className="space-y-2">
-            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Marketplace account</label>
-            <div className="flex items-center justify-between bg-white/5 rounded-lg px-3.5 py-3">
-              <span className="flex items-center gap-2.5 text-white text-sm">
-                <Store size={18} className={linkStatus === 'linked' ? 'text-brand-cyan' : 'text-white/50'} />
-                {linkStatus === 'checking' && 'Checking…'}
-                {linkStatus === 'linked' && 'Linked'}
-                {linkStatus === 'unlinked' && 'Not linked'}
-                {linkStatus === 'error' && 'Could not check'}
+            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Piitrade marketplace</label>
+            <a
+              href={piitradeUrl('/')}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between bg-white/5 rounded-lg px-3.5 py-3 text-white text-sm"
+            >
+              <span className="flex items-center gap-2.5">
+                <Store size={18} className="text-brand-orange" />
+                Open piitrade.com
               </span>
-              {linkStatus === 'linked' && (
-                <button
-                  type="button"
-                  onClick={unlinkMarketplace}
-                  disabled={unlinking}
-                  className="text-white/50 text-xs underline disabled:opacity-40"
-                >
-                  {unlinking ? 'Unlinking…' : 'Unlink'}
-                </button>
-              )}
-            </div>
+              <ExternalLink size={16} className="text-white/40" />
+            </a>
             <p className="text-white/30 text-[11px]">
-              {linkStatus === 'unlinked'
-                ? "You'll be asked to log in or register the first time you check out from a video."
-                : 'Used to check out items you find while watching, without logging in every time.'}
+              Listings you find in videos open on piitrade.com, where you message sellers and save items with your
+              Piitrade account.
             </p>
           </section>
 

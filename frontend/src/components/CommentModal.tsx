@@ -51,7 +51,7 @@ function CommentRow({
           aria-label={liked ? 'Unlike comment' : 'Like comment'}
           className="tap-target shrink-0 flex flex-col items-center text-white/50 -mt-1"
         >
-          <Heart size={14} className={liked ? 'text-brand-pink' : ''} fill={liked ? 'currentColor' : 'none'} />
+          <Heart size={14} className={liked ? 'text-brand-orange' : ''} fill={liked ? 'currentColor' : 'none'} />
           {likes > 0 && <span className="text-[10px] mt-0.5">{likes}</span>}
         </button>
       </div>
@@ -197,7 +197,7 @@ export default function CommentModal({ videoId, onClose, onCommentPosted }: Prop
             onClick={submit}
             disabled={!text.trim() || posting}
             aria-label="Post comment"
-            className="tap-target text-brand-pink disabled:text-white/30 flex items-center justify-center"
+            className="tap-target text-brand-orange disabled:text-white/30 flex items-center justify-center"
           >
             {posting ? <Loader2 size={18} className="animate-spin" /> : <Send size={20} />}
           </button>

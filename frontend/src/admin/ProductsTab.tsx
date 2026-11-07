@@ -88,7 +88,7 @@ export default function ProductsTab() {
         <button
           type="submit"
           disabled={submitting}
-          className="bg-brand-pink disabled:opacity-50 text-white font-semibold text-sm rounded-lg px-4 py-2"
+          className="bg-brand-orange disabled:opacity-50 text-white font-semibold text-sm rounded-lg px-4 py-2"
         >
           {submitting ? 'Adding…' : 'Add product'}
         </button>

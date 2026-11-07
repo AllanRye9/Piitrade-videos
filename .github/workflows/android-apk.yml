@@ -1,0 +1,38 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: Install deps
+        run: npm ci
+      - name: Build web app and sync into Android project
+        env:
+          # Set this repository variable (Settings > Variables) to your backend URL
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npm run cap:sync
+      - name: Build debug APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: piitrade-videos-debug-apk
+          path: frontend/android/app/build/outputs/apk/debug/app-debug.apk

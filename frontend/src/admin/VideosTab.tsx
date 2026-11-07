@@ -68,7 +68,7 @@ export default function VideosTab() {
                   className="w-full bg-white/10 text-white text-xs rounded px-2 py-1 outline-none resize-none"
                 />
                 <div className="flex gap-2">
-                  <button onClick={() => saveEdit(v.id)} className="text-brand-cyan text-xs font-semibold">
+                  <button onClick={() => saveEdit(v.id)} className="text-brand-amber text-xs font-semibold">
                     Save
                   </button>
                   <button onClick={() => setEditingId(null)} className="text-white/50 text-xs">
@@ -88,7 +88,7 @@ export default function VideosTab() {
           </div>
           {editingId !== v.id && (
             <div className="flex flex-col gap-2 shrink-0">
-              <button onClick={() => startEdit(v)} className="text-brand-cyan text-xs font-semibold">
+              <button onClick={() => startEdit(v)} className="text-brand-amber text-xs font-semibold">
                 Edit
               </button>
               <button onClick={() => handleDelete(v.id)} className="text-red-400 text-xs font-semibold">

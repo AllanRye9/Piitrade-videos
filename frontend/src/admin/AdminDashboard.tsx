@@ -36,7 +36,7 @@ export default function AdminDashboard() {
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap ${
-              tab === t.id ? 'bg-brand-pink text-white' : 'text-white/60 bg-white/5'
+              tab === t.id ? 'bg-brand-orange text-white' : 'text-white/60 bg-white/5'
             }`}
           >
             {t.label}

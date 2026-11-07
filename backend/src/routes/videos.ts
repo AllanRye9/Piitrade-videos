@@ -3,9 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { prisma } from '../db';
-import { uploadVideo } from '../middleware/upload';
-import { extractPoster, getVideoDuration } from '../lib/thumbnail';
-import { transcodeToMp4 } from '../lib/videoTranscode';
+import { uploadVideoWithAudio } from '../middleware/upload';
+import { extractPoster, getVideoDuration, hasAudioStream } from '../lib/thumbnail';
+import { transcodeToMp4, TranscodeOptions } from '../lib/videoTranscode';
+import { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit, TrimWindow } from '../lib/videoLimits';
+import { MAX_AUDIO_BYTES, resolveAudioMix } from '../lib/audioMix';
 import { uploadToStore } from '../lib/imagekit';
 import { VIDEOS_DIR, POSTERS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
@@ -15,9 +17,9 @@ import { extractHashtags } from '../lib/hashtags';
 
 const router = Router();
 
-// Enforced server-side (in addition to the instant client-side check)
+// The 30-second cap (MAX_VIDEO_SECONDS, see lib/videoLimits.ts) is
+// enforced server-side in addition to the instant client-side check,
 // since the client can't be trusted — never rely on it alone.
-const MAX_DURATION_SECONDS = 60;
 
 type VideoRecord = {
   id: string;
@@ -265,10 +267,38 @@ router.get('/:id', async (req: Request, res: Response) => {
   res.json({ video: serialize(updated, stateMap.get(video.id), updated.uploaderSessionId ? uploaderMap.get(updated.uploaderSessionId) : null) });
 });
 
-// POST /api/videos  (multipart: video, title, description)
-router.post('/', uploadLimiter, uploadVideo.single('video'), async (req: Request, res: Response) => {
-  const file = req.file;
-  if (!file) throw new HttpError(400, 'No video file uploaded');
+// POST /api/videos  (multipart: video, title, description, trimStart?,
+//                    trimEnd?, audio?, videoVolume?, audioVolume?, audioStart?)
+//
+// Videos are capped at MAX_VIDEO_SECONDS (30s). A longer source is
+// rejected with code VIDEO_TOO_LONG unless the uploader supplies a
+// trim window (trimStart/trimEnd, in seconds, from the editor in the
+// upload dialog) that brings it to 30s or less — the cut itself is
+// done here with ffmpeg while the file is being normalized, so it
+// works for every accepted format, including ones a browser can't
+// decode and therefore can't trim locally.
+//
+// The editor can also add an audio track (`audio`): it is mixed with the
+// video's own sound at the volumes given (`videoVolume`/`audioVolume`,
+// 0–1; original sound at 0 replaces it), starting `audioStart` seconds
+// into the audio, and cut to the clip's length.
+router.post('/', uploadLimiter, uploadVideoWithAudio, async (req: Request, res: Response) => {
+  const files = (req.files || {}) as { [field: string]: Express.Multer.File[] };
+  const file = files.video?.[0];
+  const audioFile = files.audio?.[0];
+
+  // Every exit path below must delete whichever temporary uploads still
+  // exist — never leave an unmixed original lying in the uploads dir.
+  const cleanup = () => {
+    for (const f of [file, audioFile]) {
+      if (f && fs.existsSync(f.path)) fs.unlinkSync(f.path);
+    }
+  };
+
+  if (!file) {
+    cleanup();
+    throw new HttpError(400, 'No video file uploaded');
+  }
 
   const sessionId = getSessionId(req);
   const title = String(req.body.title || 'Untitled').slice(0, 200);
@@ -280,14 +310,46 @@ router.post('/', uploadLimiter, uploadVideo.single('video'), async (req: Request
   // we're about to delete anyway. ffprobe reads this straight from the
   // container regardless of format, so this works for every format
   // middleware/upload.ts accepts, not just mp4.
-  const duration = await getVideoDuration(file.path);
-  if (duration === null) {
-    fs.unlinkSync(file.path);
+  const sourceDuration = await getVideoDuration(file.path);
+  if (sourceDuration === null) {
+    cleanup();
     throw new HttpError(422, 'Could not read this video — please upload a valid video file');
   }
-  if (duration > MAX_DURATION_SECONDS) {
-    fs.unlinkSync(file.path);
-    throw new HttpError(400, `Videos must be ${MAX_DURATION_SECONDS} seconds or less (this one is ${Math.round(duration)}s)`);
+
+  let keep: TrimWindow;
+  try {
+    keep = resolveTrimWindow(sourceDuration, req.body.trimStart, req.body.trimEnd);
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+
+  // Added audio: validate the file and the mix settings before spending
+  // an ffmpeg pass on anything.
+  let audio: TranscodeOptions['audio'];
+  if (audioFile) {
+    if (audioFile.size > MAX_AUDIO_BYTES) {
+      cleanup();
+      throw new HttpError(400, `The audio file is too large (max ${Math.round(MAX_AUDIO_BYTES / (1024 * 1024))}MB)`, { code: 'INVALID_AUDIO' });
+    }
+    const audioDuration = await getVideoDuration(audioFile.path);
+    if (audioDuration === null) {
+      cleanup();
+      throw new HttpError(422, 'Could not read this audio file — please choose a valid audio file', { code: 'INVALID_AUDIO' });
+    }
+    try {
+      const mix = resolveAudioMix(req.body, audioDuration);
+      audio = {
+        path: audioFile.path,
+        startSeconds: mix.audioStart,
+        audioVolume: mix.audioVolume,
+        videoVolume: mix.videoVolume,
+        hasSourceAudio: await hasAudioStream(file.path),
+      };
+    } catch (err) {
+      cleanup();
+      throw err;
+    }
   }
 
   // Normalize every upload to H.264/AAC MP4, whatever format it
@@ -296,17 +358,37 @@ router.post('/', uploadLimiter, uploadVideo.single('video'), async (req: Request
   // preserved (never re-encoded with -an) — see lib/videoTranscode.ts.
   const transcodedFilename = `${uuid()}.mp4`;
   const transcodedPath = path.join(VIDEOS_DIR, transcodedFilename);
+  const transcodeOptions: TranscodeOptions = {};
+  if (keep.trimmed || audio) {
+    // With added audio the output length must always be bounded: the
+    // padded audio would otherwise never end.
+    transcodeOptions.startSeconds = keep.start;
+    transcodeOptions.durationSeconds = keep.length;
+  }
+  if (audio) transcodeOptions.audio = audio;
   try {
-    await transcodeToMp4(file.path, transcodedPath);
+    await transcodeToMp4(file.path, transcodedPath, transcodeOptions);
   } catch (err) {
-    fs.unlinkSync(file.path);
     if (fs.existsSync(transcodedPath)) fs.unlinkSync(transcodedPath);
     console.error('Video transcode failed:', (err as Error).message);
-    throw new HttpError(422, 'Could not process this video — please upload a valid video file');
+    throw new HttpError(422, audio ? 'Could not add this audio to the video — try a different audio file' : 'Could not process this video — please upload a valid video file');
   } finally {
-    // The original upload (whatever format it was) is never served —
+    // The originals (whatever format they were) are never served —
     // only the normalized transcodedPath is, from here on.
-    if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    cleanup();
+  }
+
+  // Defense in depth: measure what was actually produced rather than
+  // trusting the requested window, so nothing over the cap can ever
+  // be stored even if an encoder overshoots or a trim was mis-sent.
+  const duration = (await getVideoDuration(transcodedPath)) ?? keep.length;
+  if (!withinLimit(duration)) {
+    fs.unlinkSync(transcodedPath);
+    throw new HttpError(
+      400,
+      `Videos can be at most ${MAX_VIDEO_SECONDS} seconds (this one came out at ${Math.round(duration)}s). Trim it and try again.`,
+      { code: 'VIDEO_TOO_LONG', details: { duration, maxSeconds: MAX_VIDEO_SECONDS } }
+    );
   }
 
   let posterFilename: string | null = null;

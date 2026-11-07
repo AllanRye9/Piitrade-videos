@@ -6,11 +6,7 @@ import type {
   AdminVideo,
   AdminProduct,
   AdminStats,
-  MarketplaceAccountStatus,
-  MarketplaceRegistrationResult,
-  MarketplaceCheckoutResponse,
-  MarketplaceCountry,
-  CartItem,
+  MarketplaceSearchResponse,
   AccountSummary,
   AppNotification,
   TrendingHashtag,
@@ -108,6 +104,39 @@ export function setAdminToken(token: string | null) {
   else localStorage.removeItem(ADMIN_TOKEN_KEY);
 }
 
+/** An error from the backend, carrying its machine-readable `code` when it
+ *  sent one (e.g. VIDEO_TOO_LONG, which opens the trim editor) and the
+ *  real duration it measured. */
+export class ApiError extends Error {
+  code?: string;
+  duration?: number;
+  maxSeconds?: number;
+  constructor(message: string, extra: { code?: string; duration?: number; maxSeconds?: number } = {}) {
+    super(message);
+    this.code = extra.code;
+    this.duration = extra.duration;
+    this.maxSeconds = extra.maxSeconds;
+  }
+}
+
+/** An audio file to add to a video, and how it's mixed in. Volumes are 0–1. */
+export interface AudioUpload {
+  file: File;
+  /** Volume of the video's own sound (0 replaces it with the added audio). */
+  videoVolume: number;
+  /** Volume of the added audio. */
+  audioVolume: number;
+  /** Where in the added audio to start, in seconds. */
+  audioStart: number;
+}
+
+/** Where in the source video to keep, in seconds. Sent to the backend,
+ *  which does the actual cut (so it works for every accepted format). */
+export interface TrimRange {
+  start: number;
+  end: number;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -168,12 +197,24 @@ export const api = {
 
   getVideo: (id: string) => request<{ video: Video }>(`/api/videos/${id}`),
 
-  uploadVideo: (file: File, title: string, description: string, onProgress?: (pct: number) => void) => {
+  uploadVideo: (file: File, title: string, description: string, onProgress?: (pct: number) => void, trim?: TrimRange | null, audio?: AudioUpload | null) => {
     return new Promise<{ video: Video }>((resolve, reject) => {
       const form = new FormData();
       form.append('video', file);
       form.append('title', title);
       form.append('description', description);
+      if (trim) {
+        // Fixed to millisecond precision so the server never sees a
+        // float like 12.300000000000001.
+        form.append('trimStart', trim.start.toFixed(3));
+        form.append('trimEnd', trim.end.toFixed(3));
+      }
+      if (audio) {
+        form.append('videoVolume', String(audio.videoVolume));
+        form.append('audioVolume', String(audio.audioVolume));
+        form.append('audioStart', audio.audioStart.toFixed(3));
+        form.append('audio', audio.file);
+      }
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE}/api/videos`);
@@ -186,9 +227,10 @@ export const api = {
           resolve(JSON.parse(xhr.responseText));
         } else {
           try {
-            reject(new Error(JSON.parse(xhr.responseText).error || 'Upload failed'));
+            const body = JSON.parse(xhr.responseText);
+            reject(new ApiError(body.error || 'Upload failed', { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds }));
           } catch {
-            reject(new Error('Upload failed'));
+            reject(new ApiError('Upload failed'));
           }
         }
       };
@@ -217,7 +259,7 @@ export const api = {
     form.append('image', imageBlob, 'crop.jpg');
     console.log(`[VisualSearch] POST /api/visual-search — sending ${imageBlob.size} byte ${imageBlob.type || 'image/jpeg'} selection`);
     const startedAt = Date.now();
-    return request<{ results: VisualSearchResult[]; identification?: string; matchedQuery?: string | null }>('/api/visual-search', {
+    return request<MarketplaceSearchResponse>('/api/visual-search', {
       method: 'POST',
       body: form,
     })
@@ -235,17 +277,13 @@ export const api = {
       });
   },
 
-  marketplaceAccount: () => request<MarketplaceAccountStatus>('/api/marketplace/account'),
-
   // Manual, user-typed search — independent of the AI-identify pipeline.
   // Lets a viewer type their own words and verify directly whether the
   // marketplace carries something (or refine a poor AI identification).
   marketplaceSearch: (query: string) => {
     console.log(`[MarketplaceSearch] GET /api/marketplace/search?q=${query}`);
     const startedAt = Date.now();
-    return request<{ results: VisualSearchResult[]; matchedQuery: string | null }>(
-      `/api/marketplace/search?q=${encodeURIComponent(query)}`
-    )
+    return request<MarketplaceSearchResponse>(`/api/marketplace/search?q=${encodeURIComponent(query)}`)
       .then((res) => {
         console.log(
           `[MarketplaceSearch] got ${res.results.length} result(s) in ${Date.now() - startedAt}ms` +
@@ -258,33 +296,6 @@ export const api = {
         throw err;
       });
   },
-
-  marketplaceUnlink: () => request<void>('/api/marketplace/account', { method: 'DELETE' }),
-
-  marketplaceLogin: (email: string, password: string) =>
-    request<MarketplaceAccountStatus>('/api/marketplace/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    }),
-
-  // The marketplace requires email verification before login, so this
-  // never returns a linked session — see MarketplaceRegistrationResult.
-  marketplaceRegister: (email: string, password: string, name: string, country: MarketplaceCountry) =>
-    request<MarketplaceRegistrationResult>('/api/marketplace/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name, country }),
-    }),
-
-  marketplaceCheckout: (items: CartItem[]) =>
-    request<MarketplaceCheckoutResponse>('/api/marketplace/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, sellerId: i.sellerId })),
-      }),
-    }),
 
   getProfile: () =>
     request<{ avatar: string | null; displayName: string | null; handle: string | null; bio: string | null }>('/api/profile'),

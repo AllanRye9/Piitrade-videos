@@ -34,7 +34,7 @@ export default function PrivacyPage() {
       <ul>
         <li>To operate core features: the video feed, uploads, comments, follows, and notifications;</li>
         <li>To let you recover access to your account (password reset) and keep your handle/videos across devices;</li>
-        <li>To connect you to the Piitrade Marketplace when you choose to make a purchase;</li>
+        <li>To show you matching listings from the Piitrade Marketplace when you search from a video;</li>
         <li>To review content reported through the in-app report feature;</li>
         <li>To maintain the security and reliability of the Service, including rate-limiting abuse.</li>
       </ul>
@@ -43,8 +43,9 @@ export default function PrivacyPage() {
       <p>We don't sell your personal information. We share limited data with:</p>
       <ul>
         <li>
-          <strong>The Piitrade Marketplace</strong> — only if and when you choose to make a purchase, at which point
-          the Marketplace's own privacy policy governs the information you provide it directly;
+          <strong>The Piitrade Marketplace</strong> — the text of a search you run from a video is sent to it to find
+          listings, and when you open a listing you leave this app and the Marketplace's own privacy policy governs
+          what you do there;
         </li>
         <li>
           <strong>Service providers</strong> who help us operate the Service (for example, media storage/CDN, email

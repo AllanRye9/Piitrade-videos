@@ -110,11 +110,11 @@ export default function AuthGate({ onAuthenticated }: Props) {
     <div className="h-dvh w-full bg-black flex items-center justify-center px-5">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center gap-2 mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-pink to-brand-cyan flex items-center justify-center text-white font-extrabold text-2xl">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-orange to-brand-amber flex items-center justify-center text-white font-extrabold text-2xl">
             P
           </div>
           <h1 className="text-white text-xl font-bold">{title}</h1>
-          {mode === 'login' && <p className="text-white/50 text-sm text-center">Shop what you see — log in to continue.</p>}
+          {mode === 'login' && <p className="text-white/50 text-sm text-center">Watch, then find it on Piitrade — log in to continue.</p>}
         </div>
 
         {error && <p className="text-red-400 text-sm text-center mb-4">{error}</p>}
@@ -144,14 +144,14 @@ export default function AuthGate({ onAuthenticated }: Props) {
                 setError(null);
                 setMode('forgot');
               }}
-              className="text-brand-cyan text-xs"
+              className="text-brand-amber text-xs"
             >
               Forgot password?
             </button>
             <button
               type="submit"
               disabled={busy}
-              className="w-full h-12 rounded-lg bg-brand-pink text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
+              className="w-full h-12 rounded-lg bg-brand-orange text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
               {busy ? <Loader2 size={16} className="animate-spin" /> : <LogIn size={16} />}
               Log in
@@ -164,7 +164,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
                   setError(null);
                   setMode('signup');
                 }}
-                className="text-brand-cyan font-semibold"
+                className="text-brand-amber font-semibold"
               >
                 Create an account
               </button>
@@ -206,7 +206,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
             <button
               type="submit"
               disabled={busy}
-              className="w-full h-12 rounded-lg bg-brand-pink text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
+              className="w-full h-12 rounded-lg bg-brand-orange text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
               {busy ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
               Create account
@@ -230,7 +230,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
                   setError(null);
                   setMode('login');
                 }}
-                className="text-brand-cyan font-semibold"
+                className="text-brand-amber font-semibold"
               >
                 Log in
               </button>
@@ -252,7 +252,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
             <button
               type="submit"
               disabled={busy}
-              className="w-full h-12 rounded-lg bg-brand-pink text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
+              className="w-full h-12 rounded-lg bg-brand-orange text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
               {busy && <Loader2 size={16} className="animate-spin" />}
               Send reset link
@@ -273,7 +273,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
         {mode === 'forgot-sent' && (
           <div className="text-center space-y-4">
             <p className="text-white/70 text-sm">If an account exists for that email or username, a reset link is on its way. Check your inbox.</p>
-            <button type="button" onClick={() => setMode('login')} className="text-brand-cyan text-sm font-semibold">
+            <button type="button" onClick={() => setMode('login')} className="text-brand-amber text-sm font-semibold">
               Back to log in
             </button>
           </div>
@@ -305,7 +305,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
             <button
               type="submit"
               disabled={busy || !resetToken}
-              className="w-full h-12 rounded-lg bg-brand-pink text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
+              className="w-full h-12 rounded-lg bg-brand-orange text-white text-sm font-semibold disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
               {busy && <Loader2 size={16} className="animate-spin" />}
               Reset password
@@ -323,7 +323,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
                 setConfirmPassword('');
                 setMode('login');
               }}
-              className="text-brand-cyan text-sm font-semibold"
+              className="text-brand-amber text-sm font-semibold"
             >
               Back to log in
             </button>

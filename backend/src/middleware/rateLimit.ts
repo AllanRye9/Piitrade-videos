@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 // Identity here is whatever X-Session-Id the caller sends, not IP —
 // this app is anonymous-by-default (see SessionProfile), so limiting
@@ -7,7 +7,9 @@ import rateLimit from 'express-rate-limit';
 // (common on mobile networks in the app's target market). Falls back
 // to IP only for requests with no session header at all.
 function keyBySession(req: { header(name: string): string | undefined; ip?: string }): string {
-  return req.header('x-session-id')?.trim() || req.ip || 'unknown';
+  // ipKeyGenerator groups an IPv6 client's whole /56 together, so rotating
+  // addresses inside one allocation can't be used to dodge the limit.
+  return req.header('x-session-id')?.trim() || (req.ip ? ipKeyGenerator(req.ip) : 'unknown');
 }
 
 // Video uploads: expensive (transcode + storage) and the clearest
@@ -40,6 +42,6 @@ export const authLimiter = rateLimit({
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip || 'unknown',
+  keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
   message: { error: 'Too many attempts — please try again later.' },
 });

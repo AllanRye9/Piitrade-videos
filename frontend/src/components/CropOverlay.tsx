@@ -183,7 +183,7 @@ export default function CropOverlay({ videoEl, onCancel, onCropped, onManualSear
 
       ctx.save();
       tracePath(ctx, sel);
-      ctx.strokeStyle = '#25f4ee';
+      ctx.strokeStyle = '#FFB347';
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.restore();
@@ -469,7 +469,7 @@ export default function CropOverlay({ videoEl, onCancel, onCropped, onManualSear
           type="button"
           onClick={confirmSelection}
           disabled={!canSearch}
-          className="tap-target px-2 text-sm font-semibold text-brand-cyan disabled:text-white/30"
+          className="tap-target px-2 text-sm font-semibold text-brand-amber disabled:text-white/30"
         >
           Search
         </button>
@@ -484,7 +484,7 @@ export default function CropOverlay({ videoEl, onCancel, onCropped, onManualSear
             aria-label={label}
             aria-pressed={tool === id}
             className={`tap-target flex flex-col items-center justify-center rounded-lg px-3 py-1.5 text-xs gap-1 ${
-              tool === id ? 'bg-brand-cyan text-black' : 'bg-white/10 text-white/70'
+              tool === id ? 'bg-brand-amber text-black' : 'bg-white/10 text-white/70'
             }`}
           >
             <Icon size={18} />

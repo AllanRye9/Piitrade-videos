@@ -1,104 +1,68 @@
 import { HttpError } from './httpError';
+import { listingUrl, searchUrl } from './piitrade';
 
 /**
- * Client for the real Piitrade marketplace's backend API. Set
- * MARKETPLACE_API to that backend's own base URL — NOT the
- * piitrade.com frontend's URL. Confirmed directly by inspecting what
- * piitrade.com's Next.js frontend itself calls: its listing images
- * are served from a separate Railway-hosted backend
- * (https://backend-production-a662.up.railway.app/api/images/...),
- * and https://piitrade.com/listings itself returns the full rendered
- * HTML marketing/browse page, NOT JSON — pointing MARKETPLACE_API at
- * piitrade.com directly will fail every search with a JSON-parse
- * error. Point it at the backend host instead, e.g.
- * https://backend-production-a662.up.railway.app (confirm the exact
- * current backend URL, since Railway hostnames can change on
- * redeploy — see .env.example).
+ * Client for the Piitrade classifieds marketplace's backend API, used
+ * to turn "what's in this video frame" (or a typed search) into real
+ * listings the viewer can open on piitrade.com.
  *
- * Endpoints used:
+ * piitrade.com is a CLASSIFIEDS marketplace: there is no cart, stock
+ * count, checkout or order for Piitrade Videos to place. An earlier
+ * version of this file logged viewers into the marketplace and
+ * created orders (POST /api/orders); all of that was removed on
+ * purpose. This module is read-only — it searches listings, and every
+ * result carries a `listingUrl` that opens the listing on piitrade.com,
+ * where the viewer contacts the seller through the marketplace's own
+ * messaging, subject to its own terms and safety rules.
  *
- *   GET  /api/listings?q=<text>&sort=relevance&limit=12&country=<COUNTRY>
+ * Set MARKETPLACE_API to the marketplace's BACKEND base URL — NOT the
+ * piitrade.com frontend. Verified against the live site: the website
+ * loads listing images from a separate Railway-hosted backend
+ * (https://backend-production-a662.up.railway.app/api/images/...), and
+ * https://piitrade.com/listings returns an HTML page, not JSON, so
+ * pointing MARKETPLACE_API at piitrade.com fails every search with a
+ * JSON-parse error. Railway hostnames can change on redeploy — see
+ * .env.example for how to re-derive the current one.
+ *
+ * Endpoint used:
+ *
+ *   GET /api/listings?q=<text>&sort=relevance&limit=12&country=<COUNTRY>
  *     -> 200 { listings: Listing[], pagination: {...} }
- *     Confirmed directly against this route's source
- *     (backend/src/routes/listings.ts): q, sort, limit, and country
- *     are all real supported query params on this exact path.
- *     `country` is sent only when MARKETPLACE_COUNTRY is set.
+ *     q, sort, limit and country are real supported params on this
+ *     path. `country` is only sent when MARKETPLACE_COUNTRY is set.
  *
- *   POST /api/auth/register   { email, password, name, country }
- *     -> 201 { message, user }   -- NOTE: no tokens. The marketplace
- *        requires email verification before login (except ADMIN
- *        accounts), so registering does NOT immediately produce a
- *        usable session — see registerAccount()'s return type.
- *
- *   POST /api/auth/login      { email, password }
- *     -> 200 { user, accessToken }, plus a Set-Cookie: refreshToken=...
- *        (httpOnly, scoped to /api/auth). Since this is a
- *        server-to-server call (not a browser), the refresh token is
- *        extracted from that Set-Cookie header by hand and stored
- *        alongside the access token — see extractRefreshToken().
- *
- *   POST /api/auth/refresh    (Cookie: refreshToken=<token>)
- *     -> 200 { accessToken }, plus a rotated Set-Cookie: refreshToken=...
- *        Access tokens expire in ~1h (JWT_EXPIRES_IN); this is used to
- *        get a fresh one without asking the viewer to log in again.
- *
- *   POST /api/orders          (Authorization: Bearer <accessToken>)
- *     { items: [{ listingId, quantity }] }
- *     -> 201 { order }
- *     IMPORTANT business rule enforced by the marketplace itself: every
- *     item in one order must belong to the same seller. Callers of
- *     checkout() must already have grouped items by seller — see
- *     routes/marketplace.ts, which does this grouping and calls
- *     checkout() once per seller.
+ * The only listing fields this relies on are id, title, price, and an
+ * image (productImages[].cdnUrl, or the legacy images[0]). Everything
+ * else shown on a result card (location, condition, seller/store
+ * name, verified badge, original price) is OPTIONAL enrichment, read
+ * defensively from the field names below, and simply omitted when the
+ * API doesn't return it — see toResult().
  *
  * Error responses from this backend use `{ message: string }` (not
  * `{ error }`) — see its errorHandler.ts.
  */
 
 const REQUEST_TIMEOUT_MS = 15_000;
-const REFRESH_COOKIE_NAME = 'refreshToken';
-const VALID_COUNTRIES = ['UAE', 'UGANDA', 'KENYA', 'CHINA'] as const;
-export type MarketplaceCountry = (typeof VALID_COUNTRIES)[number];
+const DEFAULT_CURRENCY = process.env.MARKETPLACE_DEFAULT_CURRENCY || 'UGX';
 
-export function isValidMarketplaceCountry(value: unknown): value is MarketplaceCountry {
-  return typeof value === 'string' && (VALID_COUNTRIES as readonly string[]).includes(value);
-}
-
+/** A listing from piitrade.com as shown on a result card in the video feed. */
 export interface MarketplaceProduct {
   id: string;
   name: string;
+  /** Display price, e.g. "UGX 800,000". */
   price: string;
-  currency?: string;
+  /** Display original price when the seller has reduced it, e.g. "UGX 900,000". */
+  originalPrice?: string;
   image: string;
   description: string;
-  url?: string;
-  inStock?: boolean;
-  /** The listing's seller (Listing.userId) — required to group cart items into
-   *  same-seller orders at checkout time (see the business rule above). */
-  sellerId: string;
-}
-
-export interface MarketplaceAuthResult {
-  accessToken: string;
-  refreshToken: string;
-  userId: string;
-}
-
-/** Result of a registration attempt — never includes tokens (see above). */
-export interface MarketplaceRegistrationResult {
-  message: string;
-}
-
-export interface MarketplaceCheckoutItem {
-  productId: string; // maps to the marketplace's listingId
-  quantity: number;
-}
-
-export interface MarketplaceCheckoutResult {
-  orderId: string;
-  orderNumber?: string;
-  status: string;
-  redirectUrl?: string;
+  /** Where to open this listing on piitrade.com. */
+  listingUrl: string;
+  location?: string;
+  condition?: string;
+  sellerName?: string;
+  storeName?: string;
+  verifiedSeller?: boolean;
+  featured?: boolean;
 }
 
 function baseUrl(): string {
@@ -107,46 +71,17 @@ function baseUrl(): string {
   return url.replace(/\/+$/, '');
 }
 
-function jsonHeaders(token?: string): Record<string, string> {
-  const h: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) h['Authorization'] = `Bearer ${token}`;
-  return h;
-}
-
-/**
- * Node's fetch (undici) exposes multiple Set-Cookie headers via
- * `headers.getSetCookie()` on Node 18.15+/20+. That's relied on here
- * rather than `headers.get('set-cookie')`, which — per the Fetch spec
- * — combines multiple Set-Cookie headers into one comma-joined string
- * that can't be reliably split back apart (cookie attributes like
- * `Expires=Wed, 09 Jun 2027...` themselves contain commas).
- */
-function extractRefreshToken(res: Response): string | null {
-  const headers = res.headers as Response['headers'] & { getSetCookie?: () => string[] };
-  const rawCookies = typeof headers.getSetCookie === 'function' ? headers.getSetCookie() : [];
-  for (const raw of rawCookies) {
-    const match = raw.match(new RegExp(`^${REFRESH_COOKIE_NAME}=([^;]+)`));
-    if (match) {
-      try {
-        return decodeURIComponent(match[1]);
-      } catch {
-        return match[1];
-      }
-    }
-  }
-  return null;
-}
-
 async function request(path: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
     return await fetch(`${baseUrl()}${path}`, { ...init, signal: controller.signal });
   } catch (err) {
+    if (err instanceof HttpError) throw err;
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new HttpError(504, 'Marketplace service timed out');
+      throw new HttpError(504, 'Piitrade marketplace timed out');
     }
-    throw new HttpError(502, 'Could not reach the marketplace service');
+    throw new HttpError(502, 'Could not reach the Piitrade marketplace');
   } finally {
     clearTimeout(timeout);
   }
@@ -160,16 +95,14 @@ async function readError(res: Response): Promise<string | undefined> {
 }
 
 /**
- * `productImages[].cdnUrl` is confirmed to already be an absolute URL
- * (see the file-level comment above). The legacy `images[0]` fallback
- * is NOT — it's a path relative to the marketplace's OWN backend
- * (MARKETPLACE_API), not to this app's backend. Left unresolved, the
- * frontend's mediaUrl() would prefix it with this app's own API_BASE
- * instead, pointing at the wrong host entirely and rendering as a
- * broken image on every listing that falls into that fallback. This
- * is the one place that decides what ends up in a listing's `image`
- * field, so every caller (search, manual search) gets a URL that
- * actually loads.
+ * `productImages[].cdnUrl` is confirmed to already be an absolute URL.
+ * The legacy `images[0]` fallback is NOT — it's a path relative to the
+ * marketplace's OWN backend (MARKETPLACE_API), not to this app's
+ * backend. Left unresolved, the frontend's mediaUrl() would prefix it
+ * with this app's own API_BASE instead, pointing at the wrong host
+ * entirely and rendering as a broken image on every listing that falls
+ * into that fallback. This is the one place that decides what ends up
+ * in a listing's `image` field.
  */
 export function resolveMarketplaceImageUrl(raw: string | null | undefined): string {
   if (!raw) return '';
@@ -179,17 +112,95 @@ export function resolveMarketplaceImageUrl(raw: string | null | undefined): stri
   return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
 }
 
+/** "UGX 800,000" — the same "<CURRENCY> <grouped number>" form piitrade.com itself shows. */
+export function formatPrice(price: unknown, currency?: string | null): string {
+  const value = typeof price === 'number' ? price : Number(price);
+  const code = (currency || DEFAULT_CURRENCY).toUpperCase();
+  if (!Number.isFinite(value)) return code;
+  return `${code} ${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}`;
+}
+
+/** First non-empty string among the given values. */
+function firstString(...values: unknown[]): string | undefined {
+  for (const v of values) {
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const v of values) {
+    const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN;
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function titleCase(s: string): string {
+  const spaced = s.replace(/[_-]+/g, ' ').toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+interface RawListing {
+  id: string;
+  title: string;
+  description?: string;
+  price: number;
+  currency?: string;
+  status?: string;
+  images?: string[];
+  productImages?: Array<{ cdnUrl: string | null }>;
+  // Optional enrichment — names are best-effort, absence is fine.
+  location?: unknown;
+  city?: unknown;
+  condition?: unknown;
+  originalPrice?: unknown;
+  compareAtPrice?: unknown;
+  isFeatured?: unknown;
+  featured?: unknown;
+  user?: { id?: string; name?: unknown; isVerified?: unknown; verified?: unknown; kycVerified?: unknown };
+  store?: { name?: unknown };
+  storeName?: unknown;
+}
+
+function toResult(l: RawListing): MarketplaceProduct {
+  const originalPrice = firstNumber(l.originalPrice, l.compareAtPrice);
+  const condition = firstString(l.condition);
+  return {
+    id: l.id,
+    name: l.title,
+    price: formatPrice(l.price, l.currency),
+    originalPrice: originalPrice !== undefined && originalPrice > l.price ? formatPrice(originalPrice, l.currency) : undefined,
+    image: resolveMarketplaceImageUrl(l.productImages?.find((img) => img.cdnUrl)?.cdnUrl || l.images?.[0]),
+    description: l.description || '',
+    listingUrl: listingUrl(l.id),
+    location: firstString(l.location, l.city),
+    condition: condition ? titleCase(condition) : undefined,
+    sellerName: firstString(l.user?.name),
+    storeName: firstString(l.store?.name, l.storeName),
+    verifiedSeller: l.user ? Boolean(l.user.isVerified ?? l.user.verified ?? l.user.kycVerified) : undefined,
+    featured: Boolean(l.isFeatured ?? l.featured) || undefined,
+  };
+}
+
 export interface MarketplaceSearchResultDto {
   id: string;
   name: string;
   price: string;
+  originalPrice?: string;
   category: string;
   image: string;
   description?: string;
-  productUrl?: string;
-  inStock?: boolean;
-  sellerId?: string;
-  match: number;
+  /** Opens this listing (or, for the local demo catalog, a piitrade.com search) on piitrade.com. */
+  listingUrl: string;
+  location?: string;
+  condition?: string;
+  sellerName?: string;
+  storeName?: string;
+  verifiedSeller?: boolean;
+  featured?: boolean;
+  /** Only set by the local perceptual-hash fallback, where it is a real similarity score. */
+  match?: number;
 }
 
 /** Shared shape mapper used by every route that turns a MarketplaceProduct
@@ -200,14 +211,23 @@ export function toSearchResultDto(p: MarketplaceProduct, category: string): Mark
     id: p.id,
     name: p.name,
     price: p.price,
+    originalPrice: p.originalPrice,
     category,
     image: p.image,
     description: p.description,
-    productUrl: p.url,
-    inStock: p.inStock ?? true,
-    sellerId: p.sellerId,
-    match: 100,
+    listingUrl: p.listingUrl,
+    location: p.location,
+    condition: p.condition,
+    sellerName: p.sellerName,
+    storeName: p.storeName,
+    verifiedSeller: p.verifiedSeller,
+    featured: p.featured,
   };
+}
+
+/** Link to the full result set for `query` on piitrade.com ("See all on Piitrade"). */
+export function browseUrlFor(query: string): string {
+  return searchUrl(query);
 }
 
 export async function searchProducts(query: string): Promise<MarketplaceProduct[]> {
@@ -219,7 +239,7 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
 
   const res = await request(path, {
     method: 'GET',
-    headers: jsonHeaders(),
+    headers: { 'Content-Type': 'application/json' },
   });
   console.log(`[Marketplace] responded ${res.status} in ${Date.now() - startedAt}ms`);
 
@@ -228,40 +248,19 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
     console.error(`[Marketplace] search failed: ${message}`);
     throw new HttpError(res.status === 401 || res.status === 403 ? res.status : 502, message);
   }
-  interface RawListing {
-    id: string;
-    title: string;
-    description: string;
-    price: number;
-    currency?: string;
-    stock?: number;
-    status?: string;
-    images?: string[];
-    productImages?: Array<{ cdnUrl: string | null }>;
-    user?: { id: string };
-  }
+
   const data = (await res.json()) as { listings?: RawListing[] };
   const listings = Array.isArray(data.listings) ? data.listings : [];
-  const withoutSeller = listings.filter((l) => !l.user?.id).length;
-  if (withoutSeller > 0) {
-    console.warn(`[Marketplace] skipping ${withoutSeller} of ${listings.length} listing(s) with no resolvable seller`);
-  }
 
-  const results = listings
-    .filter((l) => l.user?.id) // a listing without a resolvable seller can't be checked out — skip rather than crash
-    .map((l) => ({
-      id: l.id,
-      name: l.title,
-      price: l.currency ? `${l.price} ${l.currency}` : String(l.price),
-      currency: l.currency,
-      image: resolveMarketplaceImageUrl(l.productImages?.find((img) => img.cdnUrl)?.cdnUrl || l.images?.[0]),
-      description: l.description,
-      inStock: l.status ? l.status === 'ACTIVE' && (l.stock ?? 1) > 0 : (l.stock ?? 1) > 0,
-      sellerId: l.user!.id,
-    }));
+  // A sold/expired/removed ad is a dead end for someone who just
+  // watched a video of it — only surface listings that are live. A
+  // listing with no status field at all is assumed live (the search
+  // endpoint is itself expected to return active ads).
+  const live = listings.filter((l) => !l.status || l.status === 'ACTIVE');
+  const results = live.map(toResult);
 
   console.log(
-    `[Marketplace] ${results.length} usable listing(s) for "${query}"` +
+    `[Marketplace] ${results.length} live listing(s) for "${query}"` +
       (results.length > 0 ? `: ${results.slice(0, 5).map((r) => `"${r.name}" (${r.id})`).join(', ')}${results.length > 5 ? ', …' : ''}` : '')
   );
   return results;
@@ -358,80 +357,4 @@ export async function searchProductsWithFallback(rawQuery: string): Promise<Mark
       attempts.map((a) => `"${a.query}"`).join(', ')
   );
   return { results: [], matchedQuery: null, attempts };
-}
-
-export async function registerAccount(
-  email: string,
-  password: string,
-  name: string,
-  country: MarketplaceCountry
-): Promise<MarketplaceRegistrationResult> {
-  const res = await request('/api/auth/register', {
-    method: 'POST',
-    headers: jsonHeaders(),
-    body: JSON.stringify({ email, password, name, country }),
-  });
-  if (!res.ok) {
-    const status = res.status === 409 ? 409 : res.status === 400 ? 400 : 502;
-    throw new HttpError(status, (await readError(res)) || `Registration failed (${res.status})`);
-  }
-  const data = (await res.json()) as { message?: string };
-  return { message: data.message || 'Registration successful. Please verify your email before logging in.' };
-}
-
-export async function login(email: string, password: string): Promise<MarketplaceAuthResult> {
-  const res = await request('/api/auth/login', {
-    method: 'POST',
-    headers: jsonHeaders(),
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) {
-    const status = res.status === 401 || res.status === 403 ? res.status : 502;
-    throw new HttpError(status, (await readError(res)) || `Login failed (${res.status})`);
-  }
-  const data = (await res.json()) as { user?: { id: string }; accessToken?: string };
-  const refreshToken = extractRefreshToken(res);
-  if (!data.accessToken || !data.user?.id || !refreshToken) {
-    throw new HttpError(502, 'Marketplace login response was missing required fields');
-  }
-  return { accessToken: data.accessToken, refreshToken, userId: data.user.id };
-}
-
-/** Exchanges a stored refresh token for a fresh access token (and a rotated refresh token). */
-export async function refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
-  const res = await request('/api/auth/refresh', {
-    method: 'POST',
-    headers: { Cookie: `${REFRESH_COOKIE_NAME}=${encodeURIComponent(refreshToken)}` },
-  });
-  if (!res.ok) {
-    throw new HttpError(401, (await readError(res)) || 'Marketplace session expired — please log in again');
-  }
-  const data = (await res.json()) as { accessToken?: string };
-  const newRefreshToken = extractRefreshToken(res);
-  if (!data.accessToken || !newRefreshToken) {
-    throw new HttpError(502, 'Marketplace refresh response was missing required fields');
-  }
-  return { accessToken: data.accessToken, refreshToken: newRefreshToken };
-}
-
-/**
- * Places one order for a single seller's items. Callers MUST have
- * already grouped items by seller (see routes/marketplace.ts) — the
- * marketplace itself rejects a mixed-seller order with a 400.
- */
-export async function checkout(accessToken: string, items: MarketplaceCheckoutItem[]): Promise<MarketplaceCheckoutResult> {
-  const res = await request('/api/orders', {
-    method: 'POST',
-    headers: jsonHeaders(accessToken),
-    body: JSON.stringify({ items: items.map((i) => ({ listingId: i.productId, quantity: i.quantity })) }),
-  });
-  if (!res.ok) {
-    const status = res.status === 401 || res.status === 403 ? res.status : res.status === 400 ? 400 : 502;
-    throw new HttpError(status, (await readError(res)) || `Checkout failed (${res.status})`);
-  }
-  const data = (await res.json()) as { order?: { id: string; orderNumber?: string; status?: string } };
-  if (!data.order?.id) {
-    throw new HttpError(502, 'Marketplace order response was missing required fields');
-  }
-  return { orderId: data.order.id, orderNumber: data.order.orderNumber, status: data.order.status || 'PENDING' };
 }

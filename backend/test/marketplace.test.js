@@ -80,6 +80,31 @@ const FAKE_CATALOG = [
     productImages: [],
     user: { id: 'seller-5' },
   },
+  {
+    // A sold ad — must never be shown as a lead from a video.
+    id: '5',
+    title: 'Sold Leather Sofa',
+    description: 'Three seater',
+    price: 900000,
+    currency: 'UGX',
+    status: 'SOLD',
+    productImages: [],
+    user: { id: 'seller-6' },
+  },
+  {
+    // Exercises the optional enrichment fields and a price drop.
+    id: '6',
+    title: 'Trek Mountain Bike',
+    description: 'Barely used',
+    price: 700000,
+    originalPrice: 900000,
+    currency: 'UGX',
+    status: 'ACTIVE',
+    condition: 'LIKE_NEW',
+    location: 'Kampala',
+    productImages: [],
+    user: { id: 'seller-7', name: 'Amina K', isVerified: true },
+  },
 ];
 
 // Fakes the real marketplace's confirmed search behavior: verbatim
@@ -151,6 +176,32 @@ test('prefers a precise multi-word match over a noisier single-word one when bot
   assert.equal(outcome.matchedQuery, 'Wooden Dining Chair');
 });
 
+test('sold/inactive listings are never returned', async () => {
+  const outcome = await searchProductsWithFallback('Leather Sofa');
+  assert.equal(outcome.results.length, 0);
+});
+
+test('optional listing details are mapped when present and a price drop shows the original price', async () => {
+  const outcome = await searchProductsWithFallback('Mountain Bike');
+  assert.equal(outcome.results.length, 1);
+  const r = outcome.results[0];
+  assert.equal(r.price, 'UGX 700,000');
+  assert.equal(r.originalPrice, 'UGX 900,000');
+  assert.equal(r.condition, 'Like new');
+  assert.equal(r.location, 'Kampala');
+  assert.equal(r.sellerName, 'Amina K');
+  assert.equal(r.verifiedSeller, true);
+});
+
+test('a listing with none of the optional fields still maps cleanly', async () => {
+  const outcome = await searchProductsWithFallback('Office Chair');
+  const r = outcome.results[0];
+  assert.equal(r.location, undefined);
+  assert.equal(r.condition, undefined);
+  assert.equal(r.originalPrice, undefined);
+  assert.equal(r.price, 'UGX 80,000');
+});
+
 test('bare stopwords are never tried as their own candidate', async () => {
   const outcome = await searchProductsWithFallback('a chair with the legs');
   const triedBareStopword = outcome.attempts.some((a) => ['a', 'with', 'the'].includes(a.query.toLowerCase()));
@@ -208,8 +259,12 @@ test('GET /api/marketplace/search with a matching (but shortened-needed) query r
   assert.equal(body.results.length, 1);
   assert.equal(body.results[0].id, '3');
   assert.equal(body.results[0].name, 'Samsung Galaxy Charger');
-  assert.equal(body.results[0].price, '35000 UGX');
-  assert.equal(typeof body.results[0].match, 'number');
+  assert.equal(body.results[0].price, 'UGX 35,000');
+  // piitrade.com is a classifieds site: every result must open the
+  // listing there (no cart/checkout), and carry the "see all" link.
+  assert.match(body.results[0].listingUrl, /^https:\/\/piitrade\.com\/listings\/3\?/);
+  assert.match(body.results[0].listingUrl, /utm_source=piitrade_videos/);
+  assert.match(body.browseUrl, /^https:\/\/piitrade\.com\/listings\?q=/);
   assert.notEqual(body.matchedQuery, 'Genuine Samsung Galaxy Charger Adapter Brand New');
 });
 
@@ -219,6 +274,19 @@ test('GET /api/marketplace/search with a true miss returns HTTP 200 with empty r
   assert.equal(res.status, 200);
   assert.deepEqual(body.results, []);
   assert.equal(body.matchedQuery, null);
+});
+
+test('the old cart/checkout/account routes no longer exist (piitrade.com is a classifieds site)', async () => {
+  for (const [method, route] of [
+    ['POST', '/api/marketplace/checkout'],
+    ['POST', '/api/marketplace/login'],
+    ['POST', '/api/marketplace/register'],
+    ['GET', '/api/marketplace/account'],
+    ['DELETE', '/api/marketplace/account'],
+  ]) {
+    const res = await realFetch(`${base}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: method === 'GET' || method === 'DELETE' ? undefined : '{}' });
+    assert.equal(res.status, 404, `${method} ${route} should be gone`);
+  }
 });
 
 test('an unknown path under the marketplace router returns HTTP 404', async () => {

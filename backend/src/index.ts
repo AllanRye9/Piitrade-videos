@@ -61,7 +61,7 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
     return;
   }
   if (err instanceof HttpError) {
-    res.status(err.status).json({ error: err.message });
+    res.status(err.status).json({ error: err.message, ...(err.code ? { code: err.code } : {}), ...(err.details || {}) });
     return;
   }
   console.error(err);

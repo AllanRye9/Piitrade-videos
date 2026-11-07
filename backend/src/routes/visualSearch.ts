@@ -3,7 +3,7 @@ import { prisma } from '../db';
 import { uploadImage } from '../middleware/upload';
 import { computeImageHash, hammingDistance, similarityScore } from '../lib/phash';
 import { identifyImage } from '../lib/aiSearch';
-import { searchProductsWithFallback, toSearchResultDto } from '../lib/marketplace';
+import { searchProductsWithFallback, toSearchResultDto, browseUrlFor } from '../lib/marketplace';
 
 const router = Router();
 
@@ -43,7 +43,12 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
       `[VisualSearch] returning ${results.length} result(s) for "${identification.text}"` +
         (outcome.matchedQuery && outcome.matchedQuery !== identification.text ? ` (matched on shortened query "${outcome.matchedQuery}")` : '')
     );
-    res.json({ results, identification: identification.text, matchedQuery: outcome.matchedQuery });
+    res.json({
+      results,
+      identification: identification.text,
+      matchedQuery: outcome.matchedQuery,
+      browseUrl: browseUrlFor(outcome.matchedQuery || identification.text),
+    });
     return;
   }
 
@@ -74,6 +79,10 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
         price: p.price,
         category: p.category,
         image: `/uploads/products/${p.imageFilename}`,
+        // The demo catalog isn't real piitrade.com inventory, so there
+        // is no listing to open — send the viewer to a piitrade.com
+        // search for the closest-matching product's name instead.
+        listingUrl: browseUrlFor(p.name),
         match: similarityScore(distance),
         distance,
       };
@@ -85,7 +94,8 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
   console.log(
     `[VisualSearch] phash: top match ${ranked[0] ? `"${ranked[0].name}" (${ranked[0].match}% similar)` : 'none'}, returning ${ranked.length} result(s)`
   );
-  res.json({ results: ranked });
+  const topName = typeof ranked[0]?.name === 'string' ? ranked[0].name : '';
+  res.json({ results: ranked, browseUrl: browseUrlFor(topName) });
 });
 
 export default router;

@@ -4,7 +4,7 @@ import { api } from './api';
  * Shared session profile (avatar + display name), following the same
  * external-store pattern as soundPreference.ts. Without this, each
  * component that wants to show "your" avatar (TopBar, CommentModal,
- * CheckoutModal, ProfilePage) would need its own fetch + local state,
+ * ProfilePage) would need its own fetch + local state,
  * and changing your avatar/name in one place wouldn't update any of
  * the others until they happened to re-mount. This way every consumer
  * reads the same state and re-renders the moment it changes.

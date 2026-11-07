@@ -23,7 +23,7 @@ export default function LegalLayout({ title, lastUpdated, children }: Props) {
           <p className="text-white/40 text-xs">Last updated {lastUpdated}</p>
         </div>
       </div>
-      <div className="max-w-2xl mx-auto px-5 py-6 pb-16 text-white/80 text-sm leading-relaxed space-y-5 [&_h2]:text-white [&_h2]:font-semibold [&_h2]:text-base [&_h2]:pt-3 [&_h2]:mb-2 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_a]:text-brand-cyan [&_a]:underline">
+      <div className="max-w-2xl mx-auto px-5 py-6 pb-16 text-white/80 text-sm leading-relaxed space-y-5 [&_h2]:text-white [&_h2]:font-semibold [&_h2]:text-base [&_h2]:pt-3 [&_h2]:mb-2 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_a]:text-brand-amber [&_a]:underline">
         {children}
       </div>
     </div>

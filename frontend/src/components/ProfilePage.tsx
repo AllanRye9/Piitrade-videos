@@ -232,7 +232,7 @@ export default function ProfilePage() {
             onClick={() => setTab(id)}
             aria-pressed={tab === id}
             className={`shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
-              tab === id ? 'bg-brand-pink text-white' : 'text-white/60 hover:text-white/90'
+              tab === id ? 'bg-brand-orange text-white' : 'text-white/60 hover:text-white/90'
             }`}
           >
             <Icon size={16} />

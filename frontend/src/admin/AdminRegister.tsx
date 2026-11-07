@@ -70,14 +70,14 @@ export default function AdminRegister() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-brand-pink disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5"
+          className="w-full bg-brand-orange disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5"
         >
           {loading ? 'Creating…' : 'Create account'}
         </button>
 
         <p className="text-white/50 text-xs text-center">
           Already have an account?{' '}
-          <Link to="/admin/login" className="text-brand-cyan">
+          <Link to="/admin/login" className="text-brand-amber">
             Sign in
           </Link>
         </p>

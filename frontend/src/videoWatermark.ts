@@ -69,7 +69,7 @@ function drawWatermarkFrame(ctx: CanvasRenderingContext2D, width: number, height
   ctx.fill();
 
   // Animated dot — orbits a tiny bit to read as "alive" rather than a
-  // static logo, echoing the brand-pink/cyan palette used elsewhere.
+  // static logo, echoing the brand orange/amber palette used elsewhere.
   const dotCx = x + paddingX + fontSize * 0.55;
   const dotCy = y + boxHeight / 2;
   const orbit = fontSize * 0.18;
@@ -77,8 +77,8 @@ function drawWatermarkFrame(ctx: CanvasRenderingContext2D, width: number, height
   const dy = Math.sin(t * 3) * orbit * 0.5;
   ctx.globalAlpha = 1;
   const dotGradient = ctx.createLinearGradient(dotCx - orbit, dotCy, dotCx + orbit, dotCy);
-  dotGradient.addColorStop(0, '#ff2d78');
-  dotGradient.addColorStop(1, '#22d3ee');
+  dotGradient.addColorStop(0, '#F55906');
+  dotGradient.addColorStop(1, '#FFB347');
   ctx.fillStyle = dotGradient;
   ctx.beginPath();
   ctx.arc(dotCx + dx, dotCy + dy, fontSize * 0.16, 0, Math.PI * 2);

@@ -6,7 +6,7 @@
 // caching strategy /uploads already has server-side (see index.ts's
 // `maxAge: '7d', immutable`), not this service worker.
 
-const CACHE_NAME = 'piitrade-shell-v1';
+const CACHE_NAME = 'piitrade-shell-v2';
 const SHELL_URLS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', (event) => {

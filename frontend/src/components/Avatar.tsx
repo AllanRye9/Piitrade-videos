@@ -12,7 +12,7 @@ interface Props {
 
 /**
  * The one place that decides what "your picture" looks like, so every
- * spot it appears (TopBar, CommentModal, CheckoutModal, ProfilePage)
+ * spot it appears (TopBar, CommentModal, ProfilePage)
  * renders identically and falls back the same way when no avatar is
  * set yet, instead of each usage reimplementing its own circle+icon.
  */

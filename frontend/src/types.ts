@@ -55,63 +55,40 @@ export interface Comment {
   replyCount?: number;
 }
 
+/** One result card in the "Find on Piitrade" sheet — a classifieds
+ *  listing from piitrade.com (or, for the local demo-catalog fallback,
+ *  a stand-in that links to a piitrade.com search). There is nothing
+ *  to add to a cart or check out: piitrade.com is a classifieds site,
+ *  so the card just opens the listing there. */
 export interface VisualSearchResult {
   id: string;
   name: string;
+  /** Display price, e.g. "UGX 800,000". */
   price: string;
+  /** Display original price when the seller has reduced it. */
+  originalPrice?: string;
   category: string;
   image: string;
-  match: number;
-  // Present when the result came from the AI-identify + marketplace
-  // pipeline (see backend AI_SEARCH/MARKETPLACE_API); absent for the
-  // local phash-catalog fallback.
   description?: string;
-  productUrl?: string;
-  inStock?: boolean;
-  /** The marketplace seller this listing belongs to — carried through
-   *  to checkout so items can be grouped into same-seller orders
-   *  (the marketplace requires every item in one order to share a
-   *  seller). Absent for local phash-catalog results. */
-  sellerId?: string;
+  /** Opens this listing on piitrade.com. */
+  listingUrl: string;
+  location?: string;
+  condition?: string;
+  sellerName?: string;
+  storeName?: string;
+  verifiedSeller?: boolean;
+  featured?: boolean;
+  /** Only present for the local perceptual-hash fallback, where it's a real similarity score. */
+  match?: number;
 }
 
-/** One item the viewer has added to the in-video shopping cart. */
-export interface CartItem {
-  productId: string;
-  name: string;
-  price: string;
-  image: string;
-  quantity: number;
-  sellerId?: string;
-}
-
-export interface MarketplaceAccountStatus {
-  linked: boolean;
-}
-
-/** Countries the marketplace accepts at registration. */
-export type MarketplaceCountry = 'UAE' | 'UGANDA' | 'KENYA' | 'CHINA';
-
-/** Registering never returns a usable session — the marketplace
- *  requires email verification before login. */
-export interface MarketplaceRegistrationResult {
-  linked: false;
-  verificationRequired: true;
-  message: string;
-}
-
-export interface MarketplaceCheckoutResult {
-  orderId: string;
-  orderNumber?: string;
-  status: string;
-  redirectUrl?: string;
-}
-
-/** One order per seller group — checkout can produce more than one
- *  order when the cart contains items from different sellers. */
-export interface MarketplaceCheckoutResponse {
-  orders: MarketplaceCheckoutResult[];
-  failed?: Array<{ items: Array<{ productId: string; quantity: number }>; error: string }>;
+/** Response of both visual search and typed marketplace search. */
+export interface MarketplaceSearchResponse {
+  results: VisualSearchResult[];
+  identification?: string;
+  matchedQuery?: string | null;
+  /** "See all results" on piitrade.com. */
+  browseUrl?: string;
 }
 
 export interface AdminUser {

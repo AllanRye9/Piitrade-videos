@@ -55,14 +55,14 @@ export default function AdminLogin() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-brand-pink disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5"
+          className="w-full bg-brand-orange disabled:opacity-50 text-white font-semibold text-sm rounded-lg py-2.5"
         >
           {loading ? 'Signing in…' : 'Sign in'}
         </button>
 
         <p className="text-white/50 text-xs text-center">
           No admin account yet?{' '}
-          <Link to="/admin/register" className="text-brand-cyan">
+          <Link to="/admin/register" className="text-brand-amber">
             Register
           </Link>
         </p>

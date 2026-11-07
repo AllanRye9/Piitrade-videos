@@ -23,7 +23,11 @@ import './styles/index.css';
 // scope (shell only, never /api or /uploads) so it can't ever serve
 // stale video data. Guarded for browsers without SW support rather
 // than assumed, since the app must keep working there too.
-if ('serviceWorker' in navigator) {
+// Inside the Capacitor Android app assets are bundled locally, so the
+// app-shell service worker is unnecessary there.
+const isNativeApp = !!(window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
+
+if ('serviceWorker' in navigator && !isNativeApp) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {
       // Non-fatal — the app works fully without offline/installable

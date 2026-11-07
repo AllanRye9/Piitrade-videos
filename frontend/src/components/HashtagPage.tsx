@@ -86,7 +86,7 @@ export default function HashtagPage() {
           <ArrowLeft size={22} />
         </Link>
         <h1 className="text-white font-semibold text-base truncate flex items-center gap-1">
-          <Hash size={16} className="text-brand-cyan" />
+          <Hash size={16} className="text-brand-amber" />
           {tag}
         </h1>
       </div>

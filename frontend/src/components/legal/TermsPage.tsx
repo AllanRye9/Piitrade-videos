@@ -43,13 +43,14 @@ export default function TermsPage() {
         <a href="/legal/dmca">Copyright &amp; DMCA Policy</a> for copyright-specific takedowns.
       </p>
 
-      <h2>4. Shopping through the Service</h2>
+      <h2>4. Finding items on Piitrade</h2>
       <p>
-        Piitrade Videos lets you discover products shown in videos and complete a purchase through the Piitrade
-        Marketplace. Placing an order requires a separate Piitrade Marketplace account and is subject to the
-        Marketplace's own terms, pricing, payment, shipping, and returns policies. Piitrade Videos is not the seller
-        of record for marketplace purchases and is not responsible for order fulfillment, except as the Marketplace's
-        own policies provide.
+        Piitrade Videos is the short-video companion of the Piitrade classifieds marketplace (piitrade.com). It helps
+        you find listings related to what you see in a video and then opens the listing on piitrade.com. Piitrade
+        Videos does not sell items, take payments, or process orders. Any contact with a seller, price negotiation,
+        payment, and handover happens between you and the seller through piitrade.com and is subject to the
+        Marketplace's own terms and safety guidance. Piitrade Videos is not a party to those transactions and is not
+        responsible for the listings, sellers, or items.
       </p>
 
       <h2>5. Termination</h2>

@@ -122,7 +122,7 @@ export default function AccountPage() {
                   onClick={toggleFollow}
                   disabled={followBusy}
                   className={`tap-target mt-1 px-6 py-2 rounded-full text-sm font-semibold flex items-center gap-1.5 disabled:opacity-60 ${
-                    account.isFollowing ? 'bg-white/10 text-white border border-white/20' : 'bg-brand-pink text-white'
+                    account.isFollowing ? 'bg-white/10 text-white border border-white/20' : 'bg-brand-orange text-white'
                   }`}
                 >
                   {followBusy && <Loader2 size={14} className="animate-spin" />}

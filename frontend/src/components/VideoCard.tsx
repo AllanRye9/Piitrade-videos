@@ -5,13 +5,12 @@ import { api } from '../api';
 import { mediaUrl } from '../config';
 import CropOverlay from './CropOverlay';
 import SearchResultsPanel from './SearchResultsPanel';
-import CartBar from './CartBar';
-import CheckoutModal from './CheckoutModal';
+import VideoMoreSheet from './VideoMoreSheet';
 import CommentModal from './CommentModal';
-import type { VisualSearchResult, CartItem } from '../types';
+import type { VisualSearchResult } from '../types';
 import { getMuted, setMuted as setSharedMuted, subscribeMuted } from '../soundPreference';
 import { renderWatermarkedVideo, triggerBlobDownload } from '../videoWatermark';
-import { Heart, MessageCircle, Bookmark, Search, Download, Volume2, VolumeX, Play, Flag, Share2 } from 'lucide-react';
+import { Heart, MessageCircle, Search, Download, Volume2, VolumeX, Play, Share2, MoreHorizontal } from 'lucide-react';
 
 interface Props {
   video: Video;
@@ -46,7 +45,7 @@ function linkifyHashtags(text: string): React.ReactNode[] {
         key={key++}
         to={`/tag/${match[1].toLowerCase()}`}
         onClick={(e) => e.stopPropagation()}
-        className="text-brand-cyan font-medium hover:underline"
+        className="text-brand-amber font-medium hover:underline"
       >
         #{match[1]}
       </Link>
@@ -74,13 +73,15 @@ export default function VideoCard({ video, active }: Props) {
   const [showCrop, setShowCrop] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [showComments, setShowComments] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [progress, setProgress] = useState(0); // 0–1 playback position
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<VisualSearchResult[] | null>(null);
   const [identification, setIdentification] = useState<string | null>(null);
   const [matchedQuery, setMatchedQuery] = useState<string | null>(null);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [browseUrl, setBrowseUrl] = useState<string | null>(null);
 
   // Long-press-to-download control: holding the video for
   // LONG_PRESS_MS shows a filling ring, then triggers the same
@@ -90,7 +91,6 @@ export default function VideoCard({ video, active }: Props) {
   const [downloadProgress, setDownloadProgress] = useState(0); // 0–1 while rendering the watermark
   const [downloadFlash, setDownloadFlash] = useState(false); // brief branded confirmation
 
-  const [showReportMenu, setShowReportMenu] = useState(false);
   const [reported, setReported] = useState(false);
   const [reportBusy, setReportBusy] = useState(false);
 
@@ -99,7 +99,6 @@ export default function VideoCard({ video, active }: Props) {
     try {
       await api.reportVideo(video.id, reason);
       setReported(true);
-      setShowReportMenu(false);
     } catch {
       // Reporting failing silently is preferable to blocking the rest
       // of the viewing experience over it — the button just stays
@@ -132,8 +131,8 @@ export default function VideoCard({ video, active }: Props) {
     }
   }, [muted, showSoundHint]);
 
-  // Shown once, ever, until the viewer taps Search for the first
-  // time — crop-to-shop has no real-world equivalent for someone who's
+  // Shown once, ever, until the viewer taps Find for the first
+  // time — crop-to-find has no real-world equivalent for someone who's
   // never seen it before, unlike the mute icon (a near-universal
   // symbol), so it needs an explicit one-line explanation rather than
   // relying on the icon alone. Same one-flag-in-localStorage pattern
@@ -151,49 +150,16 @@ export default function VideoCard({ video, active }: Props) {
     }
   }
 
-  // Auto-hides after a few seconds rather than lingering indefinitely —
-  // this also gives the long-press hint below its turn, since that one
-  // is staggered to wait until this one is gone (see its own effect).
+  // Auto-hides after a few seconds rather than lingering indefinitely.
   // Not marked "seen" by the timer itself, only by actually using
-  // Search — so it still shows again on a future visit if they haven't.
+  // Find — so it still shows again on a future visit if they haven't.
+  // (Holding the video to download used to have its own hint bubble;
+  // it's explained in the More sheet instead, to keep the video clear.)
   useEffect(() => {
     if (!active || !showSearchHint) return;
     const t = setTimeout(() => setShowSearchHint(false), 4000);
     return () => clearTimeout(t);
   }, [active, showSearchHint]);
-
-  // Same reasoning and pattern as the search hint above — holding the
-  // video for 3 seconds to download it has no discoverability
-  // affordance otherwise (nothing about the Download button's icon
-  // suggests the video itself is also a trigger), so a first-time
-  // viewer has no way to learn this control exists without being told
-  // once. Dismissed the first time a download actually happens,
-  // whether triggered by the button or by the hold itself.
-  const [showLongPressHint, setShowLongPressHint] = useState(
-    () => typeof localStorage === 'undefined' || localStorage.getItem('piitrade_longpress_hint_seen') !== 'true'
-  );
-
-  function dismissLongPressHint() {
-    setShowLongPressHint(false);
-    try {
-      localStorage.setItem('piitrade_longpress_hint_seen', 'true');
-    } catch {
-      // ignore
-    }
-  }
-
-  // Staggered behind the search hint above — both are anchored to
-  // adjacent buttons with less vertical gap between them than either
-  // hint pill is tall, so showing both at once (a real scenario for a
-  // genuinely first-time viewer) would visually collide. Waiting for
-  // showSearchHint to be false first — whether from its own timeout or
-  // from being dismissed by tapping Search — guarantees the two can
-  // never render simultaneously.
-  useEffect(() => {
-    if (!active || !showLongPressHint || showSearchHint) return;
-    const t = setTimeout(() => setShowLongPressHint(false), 4000);
-    return () => clearTimeout(t);
-  }, [active, showLongPressHint, showSearchHint]);
 
   const wasPlayingRef = useRef(false);
 
@@ -242,8 +208,8 @@ export default function VideoCard({ video, active }: Props) {
 
   // "Favorite" — saving a video to a personal favorites shelf. Kept
   // distinct from "Download" (below), which saves the file itself.
-  async function handleFavorite(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleFavorite(e?: React.MouseEvent) {
+    e?.stopPropagation();
     setFavorited((f) => !f);
     try {
       const res = await api.favorite(video.id);
@@ -262,7 +228,7 @@ export default function VideoCard({ video, active }: Props) {
   async function handleShare(e: React.MouseEvent) {
     e.stopPropagation();
     const url = `${window.location.origin}/v/${video.id}`;
-    const shareData = { title: video.title || 'Piitrade video', text: 'Shop what you see on Piitrade', url };
+    const shareData = { title: video.title || 'Piitrade video', text: 'Watch this on Piitrade Videos', url };
 
     try {
       if (navigator.share) {
@@ -299,7 +265,6 @@ export default function VideoCard({ video, active }: Props) {
   // tap button below and the long-press control on the video itself.
   async function downloadWithWatermark() {
     if (downloading) return;
-    dismissLongPressHint();
     setDownloading(true);
     setDownloadProgress(0);
     const src = mediaUrl(video.url) || video.url;
@@ -334,12 +299,7 @@ export default function VideoCard({ video, active }: Props) {
     }
   }
 
-  function handleDownload(e: React.MouseEvent) {
-    e.stopPropagation();
-    downloadWithWatermark();
-  }
-
-  // Long-press-to-download: pointerdown starts a rAF loop that tracks
+    // Long-press-to-download: pointerdown starts a rAF loop that tracks
   // how long the video has been held, driving the ring UI below; at
   // LONG_PRESS_MS it fires the same watermarked download as the
   // button. longPressFiredRef suppresses the togglePlay() the
@@ -387,9 +347,8 @@ export default function VideoCard({ video, active }: Props) {
     dismissSearchHint();
     const el = videoRef.current;
     if (!el) return;
-    // Pause for the whole visual-search → cart → checkout flow. Only
-    // resumed again by resumeWatching(), on cancel or completion —
-    // never permanently, per the in-video shopping flow's design.
+    // Pause for the whole find-on-Piitrade flow. Only resumed again
+    // by resumeWatching(), on cancel or close — never permanently.
     wasPlayingRef.current = !el.paused;
     el.pause();
     setPlaying(false);
@@ -400,7 +359,6 @@ export default function VideoCard({ video, active }: Props) {
     const el = videoRef.current;
     setShowCrop(false);
     setShowResults(false);
-    setShowCheckout(false);
     if (el && wasPlayingRef.current) {
       el.play().catch(() => setPlaying(false));
       setPlaying(true);
@@ -415,11 +373,13 @@ export default function VideoCard({ video, active }: Props) {
     setSearchResults(null);
     setIdentification(null);
     setMatchedQuery(null);
+    setBrowseUrl(null);
     try {
       const res = await api.visualSearch(blob);
       setSearchResults(res.results);
       setIdentification(res.identification ?? null);
       setMatchedQuery(res.matchedQuery ?? null);
+      setBrowseUrl(res.browseUrl ?? null);
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -438,10 +398,12 @@ export default function VideoCard({ video, active }: Props) {
     setSearchResults(null);
     setIdentification(query);
     setMatchedQuery(null);
+    setBrowseUrl(null);
     try {
       const res = await api.marketplaceSearch(query);
       setSearchResults(res.results);
-      setMatchedQuery(res.matchedQuery);
+      setMatchedQuery(res.matchedQuery ?? null);
+      setBrowseUrl(res.browseUrl ?? null);
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -462,24 +424,11 @@ export default function VideoCard({ video, active }: Props) {
     setMatchedQuery(null);
   }
 
-  function addToCart(result: VisualSearchResult) {
-    setCart((prev) => {
-      if (prev.some((i) => i.productId === result.id)) return prev;
-      return [
-        ...prev,
-        { productId: result.id, name: result.name, price: result.price, image: result.image, quantity: 1, sellerId: result.sellerId },
-      ];
-    });
-  }
-
-  function handleCheckoutComplete(remainingProductIds: string[]) {
-    setCart((prev) => prev.filter((i) => remainingProductIds.includes(i.productId)));
-    resumeWatching();
-  }
-
   useEffect(() => {
     return () => cancelAnimationFrame(holdRafRef.current);
   }, []);
+
+  const hasLongDescription = Boolean(video.description) && video.description.length > 70;
 
   return (
     <div className="relative h-full w-full snap-start flex items-center justify-center bg-black">
@@ -496,18 +445,17 @@ export default function VideoCard({ video, active }: Props) {
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onTimeUpdate={(e) => {
+          const el = e.currentTarget;
+          if (el.duration > 0) setProgress(el.currentTime / el.duration);
+        }}
         className="h-full w-full object-contain"
       />
 
-      {/* Persistent contrast backing for the caption and action-button
-          column below — without this, those icons/text are plain white
-          directly on top of whatever the video itself shows, and
-          against a bright or light-colored frame they can become
-          nearly illegible. The caption text has its own drop-shadow as
-          a second layer of insurance, but the action icons had neither
-          before this — just white-on-video and hoping the video was
-          dark enough. */}
-      <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/70 via-black/25 to-transparent pointer-events-none" />
+      {/* Soft bottom shade so the caption and action icons stay legible
+          on bright frames. Shorter than before — the video is the
+          point, so the shade only covers the caption area. */}
+      <div className="absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/70 via-black/20 to-transparent pointer-events-none" />
 
       {!playing && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -538,8 +486,8 @@ export default function VideoCard({ video, active }: Props) {
             />
             <defs>
               <linearGradient id="piitradeHoldGradient" x1="0" y1="0" x2="72" y2="72">
-                <stop offset="0%" stopColor="#ff2d78" />
-                <stop offset="100%" stopColor="#22d3ee" />
+                <stop offset="0%" stopColor="#F55906" />
+                <stop offset="100%" stopColor="#FFB347" />
               </linearGradient>
             </defs>
             <foreignObject x="6" y="6" width="60" height="60">
@@ -558,7 +506,7 @@ export default function VideoCard({ video, active }: Props) {
           <span className="text-white text-xs font-semibold tracking-wide">Processing download…</span>
           <div className="w-40 h-1.5 rounded-full bg-white/20 overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-brand-pink to-brand-cyan transition-all"
+              className="h-full bg-gradient-to-r from-brand-orange to-brand-amber transition-all"
               style={{ width: `${Math.round(downloadProgress * 100)}%` }}
             />
           </div>
@@ -569,7 +517,7 @@ export default function VideoCard({ video, active }: Props) {
       {downloadFlash && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="animate-pulse bg-black/60 rounded-full px-4 py-2 flex items-center gap-2 text-white text-xs font-semibold">
-            <Download size={14} className="text-brand-cyan" /> Saved with piitrade.com watermark
+            <Download size={14} className="text-brand-amber" /> Saved with piitrade.com watermark
           </div>
         </div>
       )}
@@ -577,61 +525,67 @@ export default function VideoCard({ video, active }: Props) {
       {shareFlash && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="bg-black/60 rounded-full px-4 py-2 flex items-center gap-2 text-white text-xs font-semibold">
-            <Share2 size={14} className="text-brand-cyan" /> {shareFlash === 'copied' ? 'Link copied' : 'Shared'}
+            <Share2 size={14} className="text-brand-amber" /> {shareFlash === 'copied' ? 'Link copied' : 'Shared'}
           </div>
         </div>
       )}
 
-      {/* top offset clears TopBar's own height (12px top/bottom padding +
-          44px of h-11 content = 68px) PLUS the safe-area inset TopBar
-          itself adds via its `safe-top` class — without matching that,
-          this sits at a bare pixel offset that lands directly under
-          TopBar's Settings/Avatar icons (same z-30-vs-unset-z-index
-          problem the tab switcher below has to account for too). */}
+      {/* The header now sits OUTSIDE the video stage (see App.tsx), so the
+          mute button can live in the video's own top corner instead of
+          being pushed down to clear overlaid controls. */}
       <button
         type="button"
         onClick={toggleMute}
         aria-label={muted ? 'Unmute video' : 'Mute video'}
-        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.75rem)' }}
-        className="tap-target safe-right absolute right-4 text-white bg-black/30 rounded-full flex items-center justify-center"
+        className="tap-target absolute top-3 right-3 text-white bg-black/35 rounded-full flex items-center justify-center"
       >
         {muted ? <VolumeX size={20} /> : <Volume2 size={20} />}
       </button>
 
       {active && showSoundHint && (
-        <div
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 4.75rem)' }}
-          className="safe-right absolute right-16 sm:right-20 flex items-center pointer-events-none animate-pulse"
-          aria-hidden="true"
-        >
+        <div className="absolute top-3 right-16 flex items-center pointer-events-none animate-pulse" aria-hidden="true">
           <span className="bg-black/60 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap">
-            Tap anywhere for sound 🔊
+            Tap for sound 🔊
           </span>
         </div>
       )}
 
-      <div className="safe-left safe-bottom absolute left-3 right-16 sm:right-20 bottom-4 text-white">
+      {/* Caption: creator, title, and the description only on demand. */}
+      <div className="safe-left safe-bottom absolute left-3 right-16 bottom-4 text-white">
         {video.uploader && (
           <Link
             to={`/u/${video.uploader.handle}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-block text-xs font-semibold text-white/90 drop-shadow mb-1 hover:underline"
+            className="inline-block text-sm font-semibold text-white drop-shadow mb-0.5 hover:underline"
           >
             @{video.uploader.displayName || video.uploader.handle}
           </Link>
         )}
-        <p className="font-semibold text-sm drop-shadow break-words">{linkifyHashtags(video.title)}</p>
+        <p className="text-sm drop-shadow break-words line-clamp-2">{linkifyHashtags(video.title)}</p>
         {video.description && (
-          <p className="text-xs text-white/80 mt-1 line-clamp-2 drop-shadow">{linkifyHashtags(video.description)}</p>
+          <>
+            <p className={`text-xs text-white/80 mt-1 drop-shadow ${expanded ? '' : 'line-clamp-1'}`}>
+              {linkifyHashtags(video.description)}
+            </p>
+            {(hasLongDescription || expanded) && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded((v) => !v);
+                }}
+                className="text-[11px] font-semibold text-white/70 mt-0.5"
+              >
+                {expanded ? 'less' : 'more'}
+              </button>
+            )}
+          </>
         )}
       </div>
 
-      {/* drop-shadow on the container applies to every icon/label inside
-          it as one filter — belt-and-suspenders alongside the new
-          persistent bottom gradient above, rather than relying on
-          either alone to keep these legible against arbitrary video
-          content. */}
-      <div className="safe-right safe-bottom absolute right-2 sm:right-3 bottom-4 flex flex-col items-center gap-3 sm:gap-5 drop-shadow-md">
+      {/* Action rail — down from seven stacked buttons to five. Favorite,
+          Download and Report moved into the More sheet. */}
+      <div className="safe-right safe-bottom absolute right-2 bottom-4 flex flex-col items-center gap-3 drop-shadow-md">
         <button
           type="button"
           onClick={handleLike}
@@ -641,11 +595,11 @@ export default function VideoCard({ video, active }: Props) {
         >
           <Heart
             size={26}
-            className={`transition-transform ${liked ? 'scale-110 text-brand-pink' : ''}`}
+            className={`transition-transform ${liked ? 'scale-110 text-brand-orange' : ''}`}
             fill={liked ? 'currentColor' : 'none'}
             strokeWidth={liked ? 0 : 2}
           />
-          <span className="text-xs mt-1">{formatCount(likes)}</span>
+          <span className="text-[11px] mt-0.5">{formatCount(likes)}</span>
         </button>
         <button
           type="button"
@@ -657,7 +611,7 @@ export default function VideoCard({ video, active }: Props) {
           className="tap-target flex flex-col items-center justify-center text-white"
         >
           <MessageCircle size={26} />
-          <span className="text-xs mt-1">{formatCount(commentCount)}</span>
+          <span className="text-[11px] mt-0.5">{formatCount(commentCount)}</span>
         </button>
         <button
           type="button"
@@ -666,94 +620,60 @@ export default function VideoCard({ video, active }: Props) {
           className="tap-target flex flex-col items-center justify-center text-white"
         >
           <Share2 size={26} />
-          <span className="text-xs mt-1">{formatCount(shareCount)}</span>
-        </button>
-        <button
-          type="button"
-          onClick={handleFavorite}
-          aria-label={favorited ? 'Remove from favorites' : 'Favorite'}
-          aria-pressed={favorited}
-          className="tap-target flex flex-col items-center justify-center text-white"
-        >
-          <Bookmark
-            size={26}
-            className={favorited ? 'text-brand-cyan' : ''}
-            fill={favorited ? 'currentColor' : 'none'}
-            strokeWidth={favorited ? 0 : 2}
-          />
-          <span className="text-xs mt-1">Favorite</span>
+          <span className="text-[11px] mt-0.5">{formatCount(shareCount)}</span>
         </button>
         <button
           type="button"
           onClick={openCrop}
-          aria-label="Search similar products in this frame"
-          className="tap-target flex flex-col items-center justify-center text-white relative"
+          aria-label="Find what you see on Piitrade"
+          className="flex flex-col items-center justify-center text-white relative"
         >
-          <Search size={26} />
-          <span className="text-xs mt-1">Search</span>
-          {active && showSearchHint && (
-            <span
-              className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 bg-black/70 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap animate-pulse pointer-events-none"
-              aria-hidden="true"
-            >
-              Tap to shop what you see 🛍️
-            </span>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={handleDownload}
-          aria-label="Download video"
-          aria-pressed={saved}
-          className="tap-target flex flex-col items-center justify-center text-white relative"
-        >
-          <Download size={26} className={saved ? 'text-brand-cyan' : ''} />
-          <span className="text-xs mt-1">Download</span>
-          {active && showLongPressHint && !showSearchHint && (
-            <span
-              className="absolute right-full mr-2.5 top-1/2 -translate-y-1/2 bg-black/70 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap animate-pulse pointer-events-none"
-              aria-hidden="true"
-            >
-              Hold video to download 📥
-            </span>
-          )}
+          <span className="w-11 h-11 rounded-full bg-brand-orange flex items-center justify-center shadow-lg shadow-black/30">
+            <Search size={22} />
+          </span>
+          <span className="text-[11px] mt-0.5 font-semibold">Find</span>
         </button>
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            if (!reported) setShowReportMenu((v) => !v);
+            setShowMore(true);
           }}
-          aria-label={reported ? 'Reported' : 'Report video'}
-          aria-pressed={reported}
-          disabled={reported}
-          className="tap-target flex flex-col items-center justify-center text-white disabled:opacity-60"
+          aria-label="More actions"
+          className="tap-target flex items-center justify-center text-white"
         >
-          <Flag size={24} className={reported ? 'text-brand-pink' : ''} fill={reported ? 'currentColor' : 'none'} />
-          <span className="text-xs mt-1">{reported ? 'Reported' : 'Report'}</span>
+          <MoreHorizontal size={26} />
         </button>
+
+        {/* One-time hint, shown ABOVE the whole rail (clear video, nothing
+            to cover) rather than beside Find, where it landed on the caption
+            or on the Share count depending on screen size. */}
+        {active && showSearchHint && (
+          <span
+            className="absolute bottom-full right-0 mb-3 bg-black/70 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap animate-pulse pointer-events-none"
+            aria-hidden="true"
+          >
+            Tap Find to see it on Piitrade ↓
+          </span>
+        )}
       </div>
 
-      {/* Report reason popover — a handful of fixed reasons rather than
-          free text, so a flag is triage-able at a glance in the admin
-          queue without needing to read prose per report. */}
-      {showReportMenu && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="safe-right absolute right-2 sm:right-3 bottom-24 z-10 bg-neutral-900 border border-white/10 rounded-xl overflow-hidden shadow-xl w-40"
-        >
-          {(['spam', 'inappropriate', 'copyright', 'other'] as const).map((reason) => (
-            <button
-              key={reason}
-              type="button"
-              disabled={reportBusy}
-              onClick={() => submitReport(reason)}
-              className="block w-full text-left px-3 py-2.5 text-white text-sm capitalize hover:bg-white/10 disabled:opacity-50"
-            >
-              {reason}
-            </button>
-          ))}
-        </div>
+      {/* Thin playback line along the bottom edge — useful for a
+          30-second clip, and takes almost no room. */}
+      <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/20 pointer-events-none">
+        <div className="h-full bg-brand-orange" style={{ width: `${progress * 100}%` }} />
+      </div>
+
+      {showMore && (
+        <VideoMoreSheet
+          favorited={favorited}
+          reported={reported}
+          reportBusy={reportBusy}
+          onFavorite={() => handleFavorite()}
+          onDownload={downloadWithWatermark}
+          onReport={submitReport}
+          onClose={() => setShowMore(false)}
+        />
       )}
 
       {showCrop && videoRef.current && (
@@ -765,23 +685,16 @@ export default function VideoCard({ video, active }: Props) {
         />
       )}
       {showResults && (
-        <>
-          <SearchResultsPanel
-            loading={searchLoading}
-            error={searchError}
-            results={searchResults}
-            identification={identification}
-            matchedQuery={matchedQuery}
-            cartProductIds={new Set(cart.map((c) => c.productId))}
-            onAddToCart={addToCart}
-            onManualSearch={handleManualSearch}
-            onClose={resumeWatching}
-          />
-          <CartBar items={cart} onCheckout={() => setShowCheckout(true)} />
-        </>
-      )}
-      {showCheckout && (
-        <CheckoutModal items={cart} onCancel={resumeWatching} onComplete={handleCheckoutComplete} />
+        <SearchResultsPanel
+          loading={searchLoading}
+          error={searchError}
+          results={searchResults}
+          identification={identification}
+          matchedQuery={matchedQuery}
+          browseUrl={browseUrl}
+          onManualSearch={handleManualSearch}
+          onClose={resumeWatching}
+        />
       )}
       {showComments && (
         <CommentModal videoId={video.id} onClose={() => setShowComments(false)} onCommentPosted={setCommentCount} />

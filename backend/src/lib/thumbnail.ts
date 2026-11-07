@@ -34,6 +34,17 @@ export function getVideoDuration(videoPath: string): Promise<number | null> {
   });
 }
 
+/** True if the file has at least one audio stream (a silent screen
+ *  recording, for example, doesn't) — decides whether an added audio
+ *  track is mixed with the original sound or simply becomes the sound. */
+export function hasAudioStream(filePath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      resolve(!err && Boolean(metadata?.streams?.some((s) => s.codec_type === 'audio')));
+    });
+  });
+}
+
 export function posterPath(outDir: string, outFilename: string): string {
   return path.join(outDir, outFilename);
 }
