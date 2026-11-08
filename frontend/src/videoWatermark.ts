@@ -1,5 +1,5 @@
 /**
- * Burns an animated "yotweek.com" watermark into a copy of a video,
+ * Burns an animated "piitrade.com" watermark into a copy of a video,
  * entirely client-side, for the Download control (both the tap button
  * and the long-press control in VideoCard.tsx).
  *
@@ -37,10 +37,10 @@ function pickMimeType(): string {
 }
 
 /** Draws one frame of the animated brand mark — a small pulsing dot
- *  next to "yotweek.com", plus a soft diagonal sweep across the
+ *  next to "piitrade.com", plus a soft diagonal sweep across the
  *  wordmark — onto the given canvas context. `t` is elapsed seconds. */
 function drawWatermarkFrame(ctx: CanvasRenderingContext2D, width: number, height: number, t: number) {
-  const label = 'yotweek.com';
+  const label = 'piitrade.com';
   const fontSize = Math.max(14, Math.round(width * 0.032));
   ctx.save();
   ctx.font = `700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;

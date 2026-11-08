@@ -3,9 +3,9 @@
 The frontend (React + Vite) is wrapped with **Capacitor 6**. The `frontend/android/` folder is a complete native Android project (app id `com.piitrade.videos`) that bundles the built web app. The backend is **not** inside the APK – it must be deployed on a public HTTPS URL.
 
 ## 1. Before you build
-1. Deploy the backend (see main README / docker-compose) on HTTPS, e.g. `https://yotweek.com`.
+1. Deploy the backend (see main README / docker-compose) on HTTPS, e.g. `https://piitrade.com`.
 2. Allow the app's WebView origin on the backend. In `.env` set:
-   `ALLOWED_ORIGIN=https://yotweek.com,https://localhost`
+   `ALLOWED_ORIGIN=https://piitrade.com,https://localhost`
    (`https://localhost` is the origin Android Capacitor apps use. If `ALLOWED_ORIGIN` is unset, all origins are allowed.)
 3. `cd frontend && cp .env.production.example .env.production` and set `VITE_API_BASE_URL` to the backend URL.
 

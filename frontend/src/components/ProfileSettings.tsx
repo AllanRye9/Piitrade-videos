@@ -158,7 +158,7 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
           <section className="space-y-2">
             <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Public handle</label>
             <div className="flex items-center gap-2">
-              <span className="text-white/40 text-sm shrink-0">yotweek.com/u/</span>
+              <span className="text-white/40 text-sm shrink-0">piitrade.com/u/</span>
               <input
                 value={handleInput}
                 onChange={(e) => setHandleInput(e.target.value.toLowerCase())}
@@ -212,9 +212,9 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
             <p className="text-white/30 text-[11px]">Applies to every video in the feed on this device.</p>
           </section>
 
-          {/* yotweek.com — the classifieds marketplace this app refers viewers to.
+          {/* piitrade.com — the classifieds marketplace this app refers viewers to.
               Nothing is linked or stored here: contacting a seller, saving
-              listings and posting ads all happen on yotweek.com with its
+              listings and posting ads all happen on piitrade.com with its
               own account. */}
           <section className="space-y-2">
             <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Piitrade marketplace</label>
@@ -226,12 +226,12 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
             >
               <span className="flex items-center gap-2.5">
                 <Store size={18} className="text-brand-orange" />
-                Open yotweek.com
+                Open piitrade.com
               </span>
               <ExternalLink size={16} className="text-white/40" />
             </a>
             <p className="text-white/30 text-[11px]">
-              Listings you find in videos open on yotweek.com, where you message sellers and save items with your
+              Listings you find in videos open on piitrade.com, where you message sellers and save items with your
               Piitrade account.
             </p>
           </section>

@@ -12,7 +12,7 @@ interface Props {
    *  originally identified/typed (the marketplace's search shortens a
    *  multi-word phrase until something matches — see backend/src/lib/marketplace.ts). */
   matchedQuery?: string | null;
-  /** "See all results" on yotweek.com. */
+  /** "See all results" on piitrade.com. */
   browseUrl?: string | null;
   /** Manual, user-typed search — independent of the AI crop-to-identify flow.
    *  Doubles as a way to directly verify whether an item exists on the
@@ -38,9 +38,9 @@ function ListingImage({ src, alt }: { src: string | undefined; alt: string }) {
 
 /**
  * "Found on Piitrade" — bottom sheet of classifieds listings matching
- * what the viewer marked in the video (or typed). yotweek.com is a
+ * what the viewer marked in the video (or typed). piitrade.com is a
  * classifieds marketplace, so there's no cart: each card simply opens
- * the listing on yotweek.com, where the viewer contacts the seller.
+ * the listing on piitrade.com, where the viewer contacts the seller.
  * It's a sheet, not a full screen, so the paused video stays visible
  * above it.
  */
@@ -79,7 +79,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
             <input
               value={manualQuery}
               onChange={(e) => setManualQuery(e.target.value)}
-              placeholder="Search yotweek.com…"
+              placeholder="Search piitrade.com…"
               className="flex-1 bg-transparent text-white text-sm outline-none focus-visible:outline-none placeholder:text-white/40 min-w-0"
             />
           </div>
@@ -161,7 +161,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
             rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 w-full rounded-full border border-brand-orange text-brand-orange text-sm font-semibold py-2.5 hover:bg-brand-orange/10"
           >
-            See all on yotweek.com <ExternalLink size={14} />
+            See all on piitrade.com <ExternalLink size={14} />
           </a>
           <p className="flex items-center justify-center gap-1 text-[11px] text-white/35">
             <ShieldCheck size={12} /> Meet in public and inspect before paying.

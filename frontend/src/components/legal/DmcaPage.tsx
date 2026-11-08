@@ -24,7 +24,7 @@ export default function DmcaPage() {
       <ul>
         <li>your physical or electronic signature;</li>
         <li>identification of the copyrighted work you claim is infringed;</li>
-        <li>the specific video URL (e.g. <code>yotweek.com/v/...</code>) or other location of the material;</li>
+        <li>the specific video URL (e.g. <code>piitrade.com/v/...</code>) or other location of the material;</li>
         <li>your contact information (address, phone number, email);</li>
         <li>
           a statement that you have a good-faith belief the use is not authorized by the copyright owner, its agent,

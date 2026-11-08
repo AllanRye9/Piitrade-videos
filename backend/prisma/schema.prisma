@@ -261,10 +261,10 @@ model SessionProfile {
 
 // DEPRECATED — no longer read or written by any code.
 //
-// This used to link an anonymous browser session to a yotweek.com
-// account so the in-video cart could place orders. yotweek.com is now
+// This used to link an anonymous browser session to a piitrade.com
+// account so the in-video cart could place orders. piitrade.com is now
 // a classifieds marketplace (no cart, no orders), so Piitrade Videos
-// simply sends viewers to the listing on yotweek.com instead and
+// simply sends viewers to the listing on piitrade.com instead and
 // stores no marketplace credentials at all.
 //
 // The table is deliberately left in place so this change deploys

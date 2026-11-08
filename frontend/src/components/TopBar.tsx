@@ -41,7 +41,7 @@ const TABS: Array<{ id: FeedMode; label: string }> = [
  * used to float over the video), search, upload, and one account menu
  * that now holds everything that used to be its own icon button
  * (notifications, discover, settings, profile) plus the shortcuts to
- * yotweek.com.
+ * piitrade.com.
  */
 export default function TopBar({ mode, onModeChange, onSearch, onUploadClick, onSettingsClick, onNotificationsClick, unreadCount }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -235,7 +235,7 @@ export default function TopBar({ mode, onModeChange, onSearch, onUploadClick, on
                   </button>
 
                   <div className="my-1.5 border-t border-white/10" />
-                  <p className="px-4 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-white/35">On yotweek.com</p>
+                  <p className="px-4 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-white/35">On piitrade.com</p>
                   <a role="menuitem" href={piitradeUrl('/listings')} target="_blank" rel="noopener noreferrer" className={menuItem}>
                     <Store size={18} className="text-brand-orange" />
                     <span className="flex-1">Browse listings</span>
