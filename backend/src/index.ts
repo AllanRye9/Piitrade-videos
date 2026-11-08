@@ -24,7 +24,12 @@ for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR]) {
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
 const allowedOrigins = process.env.ALLOWED_ORIGIN
-  ? [...process.env.ALLOWED_ORIGIN.split(',').map((origin) => origin.trim()), 'https://localhost', 'https://piitrade.com']
+  ? [
+      ...process.env.ALLOWED_ORIGIN.split(',').map((origin) => origin.trim()),
+      'https://localhost',
+      'https://piitrade.com',
+      'https://yotweek.com',
+    ]
   : true;
 
 // Security headers. Cross-origin resource policy is relaxed for
