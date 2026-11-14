@@ -8,10 +8,22 @@ import { computeImageHash } from '../lib/phash';
 import { HttpError } from '../lib/httpError';
 import { extractHashtags } from '../lib/hashtags';
 import { PRODUCTS_DIR, VIDEOS_DIR, POSTERS_DIR } from '../paths';
+import { deleteFromR2ByUrl } from '../lib/r2';
+import { resolveAssetUrl } from './videos';
 import { v4 as uuid } from 'uuid';
 
 const router = Router();
 router.use(requireAdmin);
+
+/** Deletes a stored video/poster from R2 (when the DB holds an R2 URL) or from local disk (when it holds a filename). Legacy ImageKit URLs are left alone. */
+async function removeStoredFile(value: string, localDir: string): Promise<void> {
+  if (/^https?:\/\//i.test(value)) {
+    await deleteFromR2ByUrl(value);
+    return;
+  }
+  const file = path.join(localDir, path.basename(value));
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+}
 
 // GET /api/admin/stats
 router.get('/stats', async (_req: Request, res: Response) => {
@@ -38,8 +50,8 @@ router.get('/videos', async (_req: Request, res: Response) => {
       id: v.id,
       title: v.title,
       description: v.description,
-      url: `/uploads/videos/${v.filename}`,
-      poster: v.posterFilename ? `/uploads/posters/${v.posterFilename}` : null,
+      url: resolveAssetUrl(v.filename, 'videos'),
+      poster: v.posterFilename ? resolveAssetUrl(v.posterFilename, 'posters') : null,
       likes: v.likes,
       views: v.views,
       comments: v.comments,
@@ -76,12 +88,8 @@ router.delete('/videos/:id', async (req: Request, res: Response) => {
   if (!video) throw new HttpError(404, 'Video not found');
 
   await prisma.video.delete({ where: { id: video.id } });
-  const videoFile = path.join(VIDEOS_DIR, video.filename);
-  if (fs.existsSync(videoFile)) fs.unlinkSync(videoFile);
-  if (video.posterFilename) {
-    const posterFile = path.join(POSTERS_DIR, video.posterFilename);
-    if (fs.existsSync(posterFile)) fs.unlinkSync(posterFile);
-  }
+  await removeStoredFile(video.filename, VIDEOS_DIR);
+  if (video.posterFilename) await removeStoredFile(video.posterFilename, POSTERS_DIR);
   res.status(204).send();
 });
 

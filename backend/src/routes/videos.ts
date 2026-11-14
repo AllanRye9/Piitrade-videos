@@ -8,7 +8,7 @@ import { extractPoster, getVideoDuration, hasAudioStream } from '../lib/thumbnai
 import { transcodeToMp4, TranscodeOptions } from '../lib/videoTranscode';
 import { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit, TrimWindow } from '../lib/videoLimits';
 import { MAX_AUDIO_BYTES, resolveAudioMix } from '../lib/audioMix';
-import { uploadToStore } from '../lib/imagekit';
+import { uploadToR2 } from '../lib/r2';
 import { VIDEOS_DIR, POSTERS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
 import { ensureHandle, resolveAvatarUrl } from './profile';
@@ -49,8 +49,9 @@ export function getSessionId(req: Request): string {
 }
 
 // A stored filename is either a local disk filename (served from
-// /uploads/...) or, when VIDEO_STORE is configured, the full ImageKit
-// URL returned at upload time. Both are valid values of the same
+// /uploads/...) or, when Cloudflare R2 is configured, the full public
+// R2 URL returned at upload time (older rows may still hold a legacy
+// ImageKit URL until `npm run storage:migrate` has been run). Both are valid values of the same
 // `filename`/`posterFilename` DB columns — this just decides how to
 // turn whichever one is stored into a URL the frontend can use as-is.
 export function resolveAssetUrl(value: string, localDir: 'videos' | 'posters'): string {
@@ -408,36 +409,35 @@ router.post('/', uploadLimiter, uploadVideoWithAudio, async (req: Request, res: 
   const transcodedSize = fs.statSync(transcodedPath).size;
 
   // Both `filename` and `posterFilename` end up holding either a local
-  // disk filename or a full ImageKit URL — see serialize()'s
-  // resolveAssetUrl(), which handles either transparently. When
-  // VIDEO_STORE is configured, upload succeeds, and local copies are
-  // removed since ImageKit is now the source of truth; on any failure
-  // (not configured, or the upload call itself fails) the local files
-  // stay in place and are served locally instead, so a misconfigured
-  // or briefly-down ImageKit account never blocks a video posting.
+  // disk filename or a full public URL — see serialize()'s
+  // resolveAssetUrl(), which handles either transparently. When R2 is
+  // configured and the upload succeeds, the local copies are removed
+  // since R2 is the source of truth; on any failure (not configured,
+  // or the upload call itself fails) the local files stay in place and
+  // are served locally instead, so a misconfigured or briefly-down
+  // bucket never blocks a video posting.
   let finalVideoFilename: string = transcodedFilename;
   let finalPosterFilename: string | null = posterFilename;
   try {
-    const videoBuffer = fs.readFileSync(transcodedPath);
-    const uploaded = await uploadToStore('VIDEO_STORE', videoBuffer, transcodedFilename, 'videos');
+    const uploaded = await uploadToR2({ filePath: transcodedPath }, transcodedFilename, 'videos');
     if (uploaded) {
       finalVideoFilename = uploaded.url;
       fs.unlinkSync(transcodedPath);
 
       if (posterFilename) {
-        const posterBuffer = fs.readFileSync(path.join(POSTERS_DIR, posterFilename));
-        const uploadedPoster = await uploadToStore('VIDEO_STORE', posterBuffer, posterFilename, 'posters');
+        const posterPathOnDisk = path.join(POSTERS_DIR, posterFilename);
+        const uploadedPoster = await uploadToR2({ filePath: posterPathOnDisk }, posterFilename, 'posters');
         if (uploadedPoster) {
           finalPosterFilename = uploadedPoster.url;
-          fs.unlinkSync(path.join(POSTERS_DIR, posterFilename));
+          fs.unlinkSync(posterPathOnDisk);
         }
       }
     }
   } catch (err) {
-    // VIDEO_STORE is configured but the upload itself failed (network,
-    // auth, quota, etc). Fall back to the local copies already on disk
+    // R2 is configured but the upload itself failed (network, auth,
+    // quota, etc). Fall back to the local copies already on disk
     // rather than losing the upload the viewer just waited for.
-    console.warn('VIDEO_STORE upload failed, keeping local copy:', err instanceof Error ? err.message : err);
+    console.warn('R2 upload failed, keeping local copy:', err instanceof Error ? err.message : err);
   }
 
   // Real sessions ('anonymous' means no X-Session-Id header at all,

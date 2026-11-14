@@ -1,10 +1,7 @@
 name: CI
 
 # Runs typecheck + build (+ tests, for the backend) on every push and
-# pull request — there was no CI configuration in this repo before
-# this file, so nothing ran automatically on any change. This does
-# NOT deploy anything; it only verifies the code compiles and the
-# existing test suite passes.
+# pull request. This does NOT deploy anything.
 on:
   push:
     branches: [main]
@@ -25,15 +22,13 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      # Generates the real Prisma Client (this runner has full network
-      # access, unlike some sandboxed dev environments — see the
-      # comment in test/marketplace.test.js) so typecheck/build below
-      # catch real Prisma-schema mismatches, not just plain TS errors.
       - run: npx prisma generate
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
 
+  # The web app now only serves the admin dashboard, legal pages and
+  # password-reset links; the consumer app is the React Native app below.
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -49,3 +44,22 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      # Proves the JS bundles for both platforms (no native toolchain needed).
+      - run: npx expo export --platform android --platform ios --output-dir /tmp/export
+        env:
+          EXPO_PUBLIC_API_BASE_URL: https://example.com

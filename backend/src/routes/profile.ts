@@ -4,7 +4,7 @@ import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { prisma } from '../db';
 import { uploadImage } from '../middleware/upload';
-import { uploadToStore } from '../lib/imagekit';
+import { uploadToR2, deleteFromR2ByUrl } from '../lib/r2';
 import { AVATARS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
 import { writeLimiter } from '../middleware/rateLimit';
@@ -18,11 +18,21 @@ function getSessionId(req: Request): string {
 }
 
 // A stored avatar value is either a local disk filename (served from
-// /uploads/avatars/...) or, when IMAGES_POINT is configured, a full
-// ImageKit URL — same pattern as Video.filename in routes/videos.ts.
+// /uploads/avatars/...) or, when R2 is configured, a full
+// R2 URL — same pattern as Video.filename in routes/videos.ts.
 export function resolveAvatarUrl(value: string): string {
   if (/^https?:\/\//i.test(value)) return value;
   return `/uploads/avatars/${value}`;
+}
+
+/** Removes a stored avatar from wherever it lives: R2 (by URL), or local disk (by filename). Legacy ImageKit URLs are left alone. */
+async function removeAvatarFile(value: string): Promise<void> {
+  if (/^https?:\/\//i.test(value)) {
+    await deleteFromR2ByUrl(value);
+    return;
+  }
+  const oldPath = path.join(AVATARS_DIR, path.basename(value));
+  if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
 }
 
 const MAX_DISPLAY_NAME_LENGTH = 40;
@@ -146,16 +156,16 @@ router.post('/avatar', uploadImage.single('avatar'), async (req: Request, res: R
   const filename = `${uuid()}.jpg`;
   const existing = await prisma.sessionProfile.findUnique({ where: { sessionId } });
 
-  // Same resilience posture as VIDEO_STORE in routes/videos.ts: if
-  // IMAGES_POINT is configured but the upload call itself fails
-  // (network, auth, quota), fall back to local disk rather than
-  // failing the whole avatar update over a storage hiccup.
+  // Same resilience posture as the video upload: if R2 is configured
+  // but the upload call itself fails (network, auth, quota), fall back
+  // to local disk rather than failing the whole avatar update over a
+  // storage hiccup.
   let storedValue = filename;
-  let uploaded: Awaited<ReturnType<typeof uploadToStore>> = null;
+  let uploaded: Awaited<ReturnType<typeof uploadToR2>> = null;
   try {
-    uploaded = await uploadToStore('IMAGES_POINT', buffer, filename, 'avatars');
+    uploaded = await uploadToR2(buffer, filename, 'avatars');
   } catch (err) {
-    console.warn('IMAGES_POINT upload failed, keeping local copy:', err instanceof Error ? err.message : err);
+    console.warn('R2 upload failed, keeping local copy:', err instanceof Error ? err.message : err);
   }
   if (uploaded) {
     storedValue = uploaded.url;
@@ -165,17 +175,7 @@ router.post('/avatar', uploadImage.single('avatar'), async (req: Request, res: R
 
   // Clean up the previous avatar, whichever store it lived in, now
   // that the new one has been saved successfully.
-  if (existing?.avatar) {
-    if (/^https?:\/\//i.test(existing.avatar)) {
-      // Best-effort: we don't keep ImageKit fileIds around, so a
-      // previous remote avatar is simply orphaned rather than deleted.
-      // Acceptable for a small per-session avatar; revisit if this
-      // needs to scale to storing fileIds for cleanup.
-    } else {
-      const oldPath = path.join(AVATARS_DIR, existing.avatar);
-      if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-    }
-  }
+  if (existing?.avatar) await removeAvatarFile(existing.avatar);
 
   await prisma.sessionProfile.upsert({
     where: { sessionId },
@@ -190,10 +190,7 @@ router.post('/avatar', uploadImage.single('avatar'), async (req: Request, res: R
 router.delete('/avatar', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const existing = await prisma.sessionProfile.findUnique({ where: { sessionId } });
-  if (existing?.avatar && !/^https?:\/\//i.test(existing.avatar)) {
-    const oldPath = path.join(AVATARS_DIR, existing.avatar);
-    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-  }
+  if (existing?.avatar) await removeAvatarFile(existing.avatar);
   await prisma.sessionProfile.updateMany({ where: { sessionId }, data: { avatar: null } });
   res.status(204).end();
 });
