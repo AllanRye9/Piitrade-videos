@@ -54,7 +54,7 @@ if [ "$need_apply" = true ]; then
   echo ""
   echo "Reapplying stashed local changes..."
 
-  if git stash list | grep -q .; then
+  if [ -n "$(git stash list)" ]; then
     git stash pop --index
 
     if [[ -n "$(git ls-files -u)" ]]; then
