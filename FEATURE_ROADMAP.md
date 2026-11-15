@@ -24,7 +24,7 @@ Living tracking file for this app's feature work. Update this alongside the code
 - Marketplace search: fuzzy two-stage matcher (2-char minimum, stopword filter)
 - Video upload: 9 formats supported, ffmpeg transcoding to a single delivery format
 - Shared, localStorage-persisted mute/sound state (replaced per-card state)
-- ImageKit CDN integration (dual env vars)
+- Cloudflare R2 media storage for videos, posters and avatars
 - Two production incidents diagnosed and fixed — both were undeployed Prisma migrations (`npx prisma migrate deploy` missing from the deploy step)
 - Marketplace listing-image bug — a fallback image path was being resolved against the wrong backend host
 

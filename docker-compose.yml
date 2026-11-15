@@ -37,12 +37,14 @@ services:
       MARKETPLACE_COUNTRY: ${MARKETPLACE_COUNTRY:-UGANDA}
       MARKETPLACE_DEFAULT_CURRENCY: ${MARKETPLACE_DEFAULT_CURRENCY:-UGX}
       PIITRADE_SITE_URL: ${PIITRADE_SITE_URL:-https://piitrade.com}
-      # Optional ImageKit-backed storage — see .env.example. Local disk
-      # is used for whichever of these is left unset.
-      VIDEO_STORE: ${VIDEO_STORE:-}
-      IMAGES_POINT: ${IMAGES_POINT:-}
-      IMAGEKIT_PUBLIC_KEY: ${IMAGEKIT_PUBLIC_KEY:-}
-      IMAGEKIT_PRIVATE_KEY: ${IMAGEKIT_PRIVATE_KEY:-}
+      # Optional Cloudflare R2 storage — all required values must be set;
+      # otherwise media is stored on local disk.
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
     volumes:
       - uploads:/app/uploads
     ports:
