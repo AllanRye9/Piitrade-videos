@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ApiError } from '../api';
 import type { TrimRange } from '../api';
+import { isUploadBusy, startUpload } from '../uploadManager';
 import { useAudioSync } from '../useAudioSync';
 import type { AudioPreview } from '../useAudioSync';
-import type { Video } from '../types';
 import { MAX_VIDEO_SECONDS } from '../config';
 import VideoTrimmer from './VideoTrimmer';
 import AudioPanel from './AudioPanel';
 import type { AudioSelection } from './AudioPanel';
-import { X, Plus, Scissors } from 'lucide-react';
+import { X, Plus, Scissors, UploadCloud } from 'lucide-react';
 
 interface Props {
   onClose: () => void;
-  onUploaded: (video: Video) => void;
 }
 
 // Matches the tolerance the backend applies (lib/videoLimits.ts) so a
@@ -42,12 +40,11 @@ function hasSupportedExtension(f: File): boolean {
   return SUPPORTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
-export default function UploadModal({ onClose, onUploaded }: Props) {
+export default function UploadModal({ onClose }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -122,7 +119,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
 
   function requireTrim(duration: number) {
     setSourceDuration(duration);
-    // Start with the first 30 seconds selected; the uploader adjusts from there.
+    // Start with the first 60 seconds selected; the uploader adjusts from there.
     setTrim({ start: 0, end: Math.min(duration, MAX_VIDEO_SECONDS) });
   }
 
@@ -162,7 +159,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
     // since it only reads the header, not the actual frames.
     //
     // A clip longer than MAX_VIDEO_SECONDS is NOT rejected: it opens
-    // the trim editor so the uploader can pick up to 30 seconds of it.
+    // the trim editor so the uploader can pick up to 60 seconds of it.
     //
     // This only works for formats the BROWSER can decode (MP4/MOV/WebM
     // in most browsers; M4V/3GP inconsistently; AVI/MKV/WMV/FLV
@@ -191,7 +188,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
     probe.src = url;
   }
 
-  async function submit() {
+  function submit() {
     if (!file) {
       setError('Choose a video first.');
       return;
@@ -200,37 +197,29 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
       setError(`Choose a section between 1 and ${MAX_VIDEO_SECONDS} seconds.`);
       return;
     }
-    setProgress(0);
-    setError(null);
-    try {
-      const res = await api.uploadVideo(
-        file,
-        title || 'Untitled',
-        description,
-        setProgress,
-        needsTrim ? trim : null,
-        audio
-          ? {
-              file: audio.file,
-              videoVolume: audio.videoVolume,
-              audioVolume: audio.audioVolume,
-              // never ask to start past the end of a track we could measure
-              audioStart: audio.duration !== null ? Math.min(audio.start, Math.max(0, audio.duration - 1)) : audio.start,
-            }
-          : null
-      );
-      onUploaded(res.video);
-    } catch (err) {
-      setProgress(null);
-      if (err instanceof ApiError && err.code === 'VIDEO_TOO_LONG' && err.duration) {
-        // The browser couldn't read this format, so the server measured
-        // it for us — hand over to the trim editor with the real length.
-        requireTrim(err.duration);
-        setError(`This video is ${Math.round(err.duration)}s — the limit is ${MAX_VIDEO_SECONDS}s. Choose which part to post.`);
-        return;
-      }
-      setError(err instanceof Error ? err.message : 'Upload failed');
+    if (isUploadBusy()) {
+      setError('Another video is still uploading — wait for it to finish.');
+      return;
     }
+    setError(null);
+    // Hand the file to the background upload manager and get out of the
+    // way: progress shows in the floating <UploadStatus /> card.
+    startUpload({
+      file,
+      title: title || 'Untitled',
+      description,
+      trim: needsTrim ? trim : null,
+      audio: audio
+        ? {
+            file: audio.file,
+            videoVolume: audio.videoVolume,
+            audioVolume: audio.audioVolume,
+            // never ask to start past the end of a track we could measure
+            audioStart: audio.duration !== null ? Math.min(audio.start, Math.max(0, audio.duration - 1)) : audio.start,
+          }
+        : null,
+    });
+    onClose();
   }
 
   // Dropping a file works over the whole modal, not just the dropzone
@@ -264,7 +253,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
     if (dropped) handleFile(dropped);
   }
 
-  const uploading = progress !== null;
+  const uploading = false; // uploads run in the background once Post is tapped
   const clipLength = needsTrim ? trimLength : probedDuration;
   const audioPreview: AudioPreview | null = audio
     ? { url: audio.url, start: audio.start, videoVolume: audio.videoVolume, audioVolume: audio.audioVolume }
@@ -363,49 +352,48 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
             />
           )}
 
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Title"
-            maxLength={200}
-            className="w-full bg-white/10 text-white text-sm rounded-lg px-3 py-2 outline-none placeholder:text-white/40"
-          />
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description (mention what you're selling or showing)"
-            rows={3}
-            maxLength={1000}
-            className="w-full bg-white/10 text-white text-sm rounded-lg px-3 py-2 outline-none placeholder:text-white/40 resize-none"
-          />
+          <div className="space-y-1">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Title"
+              maxLength={200}
+              className="w-full rounded-xl bg-white/10 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-transparent placeholder:text-white/40 focus:ring-brand-orange/60"
+            />
+            <p className="text-right text-[11px] text-white/30">{title.length}/200</p>
+          </div>
+          <div className="space-y-1">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Description (mention what you're selling or showing) — add #hashtags so people can find it"
+              rows={3}
+              maxLength={1000}
+              className="w-full resize-none rounded-xl bg-white/10 px-3 py-2.5 text-sm text-white outline-none ring-1 ring-transparent placeholder:text-white/40 focus:ring-brand-orange/60"
+            />
+            <p className="text-right text-[11px] text-white/30">{description.length}/1000</p>
+          </div>
 
-          {error && <p className="text-red-400 text-sm">{error}</p>}
-
-          {uploading ? (
-            <div>
-              <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-brand-orange transition-all" style={{ width: `${progress}%` }} />
-              </div>
-              <p className="text-white/50 text-xs mt-1">
-                {progress < 100
-                  ? `Uploading… ${progress}%`
-                  : audio
-                    ? 'Adding audio & processing…'
-                    : needsTrim
-                      ? 'Trimming & processing…'
-                      : 'Processing…'}
-              </p>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!file || checking || !trimValid}
-              className="w-full bg-brand-orange disabled:bg-white/10 disabled:text-white/40 text-white font-semibold text-sm rounded-lg py-2.5"
-            >
-              {needsTrim ? `Post ${Math.round(trimLength * 10) / 10}s clip` : 'Post'}
-            </button>
+          {error && (
+            <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+              {error}
+            </p>
           )}
+        </div>
+
+        {/* Sticky footer: the primary action is always reachable, even when
+            the trimmer and audio panel make the dialog scroll. */}
+        <div className="sticky bottom-0 border-t border-white/10 bg-neutral-900/95 px-4 py-3 backdrop-blur">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!file || checking || !trimValid}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-orange to-brand-amber py-3 text-sm font-semibold text-white shadow-lg shadow-brand-orange/20 transition-opacity disabled:bg-none disabled:bg-white/10 disabled:text-white/40 disabled:shadow-none"
+          >
+            <UploadCloud size={18} />
+            {needsTrim ? `Post ${Math.round(trimLength * 10) / 10}s clip` : 'Post video'}
+          </button>
+          <p className="mt-1.5 text-center text-[11px] text-white/40">You can keep browsing while it uploads.</p>
         </div>
       </div>
     </div>

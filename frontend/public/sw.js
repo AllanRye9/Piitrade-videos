@@ -6,7 +6,7 @@
 // caching strategy /uploads already has server-side (see index.ts's
 // `maxAge: '7d', immutable`), not this service worker.
 
-const CACHE_NAME = 'piitrade-shell-v2';
+const CACHE_NAME = 'piitrade-shell-v3';
 const SHELL_URLS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -28,22 +28,34 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
+  const request = event.request;
+  const url = new URL(request.url);
 
-  // Never intercept API calls or uploaded media — those need to hit
-  // the network for correctness (fresh data) or are already
-  // efficiently cached by the browser's HTTP cache via the server's
-  // own Cache-Control headers.
+  // This worker only ever handles the app shell: same-origin GETs.
+  //  - Cross-origin requests (R2 video/poster files on r2.dev or a media
+  //    domain, fonts, analytics…) are left to the browser. Re-fetching
+  //    them from here turned plain media loads into CORS-checked fetches
+  //    that the bucket doesn't answer, and broke playback.
+  //  - Range requests (how <video> streams) get 206 partial responses,
+  //    which the Cache API refuses to store — and must reach the network
+  //    untouched anyway.
+  //  - API calls and /uploads media always need the network.
+  if (request.method !== 'GET') return;
+  if (url.origin !== self.location.origin) return;
+  if (request.headers.has('range')) return;
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/uploads/')) return;
-  if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
+    caches.match(request).then((cached) => {
+      const network = fetch(request)
         .then((response) => {
-          if (response.ok) {
+          // Only complete, successful, same-origin responses are cacheable.
+          if (response.ok && response.status === 200 && response.type === 'basic') {
             const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+            caches
+              .open(CACHE_NAME)
+              .then((cache) => cache.put(request, clone))
+              .catch(() => {});
           }
           return response;
         })

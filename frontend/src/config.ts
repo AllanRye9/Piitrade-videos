@@ -39,4 +39,4 @@ export function piitradeUrl(path: string): string {
 }
 
 /** The longest video that can be published, in seconds — keep in sync with MAX_VIDEO_SECONDS in backend/src/lib/videoLimits.ts. */
-export const MAX_VIDEO_SECONDS = 30;
+export const MAX_VIDEO_SECONDS = 60;

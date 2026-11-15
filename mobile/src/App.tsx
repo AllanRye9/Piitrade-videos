@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import GuestNudge from './components/GuestNudge';
+import UploadStatus from './components/UploadStatus';
 import FeedScreen from './screens/FeedScreen';
 import PageHost from './screens/Pages';
 import AuthSheet from './sheets/AuthSheet';
@@ -21,7 +22,7 @@ function SheetHost() {
   if (!sheet) return null;
   switch (sheet.type) {
     case 'auth': return <AuthSheet reason={sheet.reason} />;
-    case 'upload': return <UploadSheet />;
+    case 'upload': return <UploadSheet draft={sheet.draft} />;
     case 'profile': return <ProfileSheet />;
     case 'settings': return <SettingsSheet />;
     case 'notifications': return <NotificationsSheet />;
@@ -46,6 +47,7 @@ function Shell() {
       <FeedScreen />
       <PageHost />
       <GuestNudge />
+      <UploadStatus />
       <SheetHost />
     </View>
   );

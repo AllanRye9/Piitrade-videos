@@ -18,7 +18,7 @@ import { requireAccount } from '../middleware/requireAccount';
 
 const router = Router();
 
-// The 30-second cap (MAX_VIDEO_SECONDS, see lib/videoLimits.ts) is
+// The 60-second cap (MAX_VIDEO_SECONDS, see lib/videoLimits.ts) is
 // enforced server-side in addition to the instant client-side check,
 // since the client can't be trusted — never rely on it alone.
 
@@ -272,10 +272,10 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST /api/videos  (multipart: video, title, description, trimStart?,
 //                    trimEnd?, audio?, videoVolume?, audioVolume?, audioStart?)
 //
-// Videos are capped at MAX_VIDEO_SECONDS (30s). A longer source is
+// Videos are capped at MAX_VIDEO_SECONDS (60s). A longer source is
 // rejected with code VIDEO_TOO_LONG unless the uploader supplies a
 // trim window (trimStart/trimEnd, in seconds, from the editor in the
-// upload dialog) that brings it to 30s or less — the cut itself is
+// upload dialog) that brings it to 60s or less — the cut itself is
 // done here with ffmpeg while the file is being normalized, so it
 // works for every accepted format, including ones a browser can't
 // decode and therefore can't trim locally.

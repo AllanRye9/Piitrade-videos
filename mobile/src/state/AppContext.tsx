@@ -5,12 +5,13 @@ import { api, setSignInRequiredHandler } from '../api';
 import type { Video } from '../types';
 import { NUDGE } from '../config';
 import { bootstrapSession, getAccountEmail, setAccountEmail, setSessionId, resetSessionId } from '../lib/session';
+import type { UploadDraft } from './uploads';
 import { clearProfile, ensureProfileLoaded, hydrateMuted, profileStore } from './stores';
 
 // ----------------------------------------------------------------- sheets
 export type SheetDescriptor =
   | { type: 'auth'; reason?: string }
-  | { type: 'upload' }
+  | { type: 'upload'; draft?: UploadDraft }
   | { type: 'profile' }
   | { type: 'settings' }
   | { type: 'notifications' }

@@ -1,6 +1,6 @@
 import { HttpError } from './httpError';
 
-/** Largest audio file accepted for adding to a video. A 30-second clip
+/** Largest audio file accepted for adding to a video. A 60-second clip
  *  never needs more; this stops a full album being uploaded as a "track". */
 export const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 

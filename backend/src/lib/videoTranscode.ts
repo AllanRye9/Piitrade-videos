@@ -41,7 +41,7 @@ export interface TranscodeOptions {
  *      so playback can begin before the whole file has downloaded
  *      (otherwise large uploads have to fully load before frame 1).
  *   4. Optionally cuts the clip to a start/length window — this is how
- *      the 30-second cap is met when an uploader trims a longer video
+ *      the 60-second cap is met when an uploader trims a longer video
  *      (see lib/videoLimits.ts). Because the file is re-encoded
  *      anyway, ffmpeg's input-side seek is frame-accurate here, and
  *      timestamps restart at 0 so the stored clip has no leading gap.

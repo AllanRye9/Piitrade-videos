@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigins": ["https://yotweek.com", "https://www.yotweek.com", "http://localhost:5173"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["Range", "Content-Type"],
+    "ExposeHeaders": ["Content-Length", "Content-Range", "Accept-Ranges", "ETag"],
+    "MaxAgeSeconds": 86400
+  }
+]

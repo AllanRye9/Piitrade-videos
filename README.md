@@ -37,6 +37,12 @@ R2 API token with Object Read & Write, then set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_
 `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`. Existing ImageKit files keep working until you run
 `npm run storage:migrate -- --dry` and then `npm run storage:migrate` in `backend/`.
 
+### R2 CORS (required for the web app)
+The web player loads videos with `crossOrigin="anonymous"` (needed for the watermarked-download canvas), so the
+bucket must send CORS headers or the browser blocks playback. Cloudflare dashboard → R2 → your bucket →
+**Settings → CORS policy → Add** and paste `backend/r2-cors.json` (edit the origins to your site). The mobile app
+does not need CORS. Serving the bucket from a custom domain also lets Cloudflare cache the videos.
+
 ## Sign-in rules
 * **Anyone can watch** — feeds, search, hashtags, creator pages, comments (read) and `/v/:id` share links need no account.
 * **Writes need an account, enforced on the server** (`backend/src/middleware/requireAccount.ts`): like, save,

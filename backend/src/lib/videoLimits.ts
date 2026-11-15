@@ -6,7 +6,7 @@ import { HttpError } from './httpError';
  * clips are meant to show an item or a seller in a few seconds, not
  * replace a listing's own photos/description.
  */
-export const MAX_VIDEO_SECONDS = 30;
+export const MAX_VIDEO_SECONDS = 60;
 
 /** Shortest clip we'll publish — below this the poster frame (taken at
  *  ~1s) and playback loop stop making sense. */
@@ -42,7 +42,7 @@ function parseSeconds(raw: unknown): number | null {
  *  - Trim supplied → validated against the real duration. An end past
  *    the end of the source is clamped to it (the client can't always
  *    know the duration — e.g. .mkv/.avi can't be previewed in a
- *    browser — so it asks for "30s from here" and the server fits it).
+ *    browser — so it asks for "60s from here" and the server fits it).
  *    A window that is still longer than the cap is rejected: the cap
  *    is never silently applied on the uploader's behalf.
  */

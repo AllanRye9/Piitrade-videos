@@ -11,7 +11,7 @@ export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || API_BASE || 'https://
 export const PIITRADE_SITE_URL = (process.env.EXPO_PUBLIC_PIITRADE_SITE_URL || 'https://piitrade.com').replace(/\/$/, '');
 
 /** Keep in sync with MAX_VIDEO_SECONDS in backend/src/lib/videoLimits.ts. */
-export const MAX_VIDEO_SECONDS = 30;
+export const MAX_VIDEO_SECONDS = 60;
 
 /** Resolves a backend-relative path (e.g. `/uploads/videos/x.mp4`) against API_BASE; absolute URLs (R2) pass through. */
 export function mediaUrl(path: string | null | undefined): string | undefined {

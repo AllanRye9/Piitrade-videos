@@ -3,13 +3,13 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import * as DocumentPicker from 'expo-document-picker';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { ApiError, LocalFile, api } from '../api';
-import type { Video } from '../types';
+import type { LocalFile } from '../api';
 import Sheet from '../components/Sheet';
 import { Button, ErrorText, Icon, SectionLabel, TextField } from '../components/ui';
 import { MAX_VIDEO_SECONDS } from '../config';
 import { PickedVideo, pickVideo } from '../lib/pickers';
 import { useApp } from '../state/AppContext';
+import { UploadDraft, isUploadBusy, startUpload } from '../state/uploads';
 import { colors, radius, space } from '../theme';
 
 const AUDIO_EXT = ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'oga', 'opus', 'flac', 'weba'];
@@ -25,32 +25,42 @@ function Preview({ uri }: { uri: string }) {
   return <VideoView player={player} style={styles.preview} contentFit="contain" nativeControls />;
 }
 
-/** Upload popup: pick → (trim to 30s) → caption → optional music → post. */
-export default function UploadSheet({ onUploaded }: { onUploaded?: (v: Video) => void }) {
-  const { closeSheet, pushPage } = useApp();
-  const [picked, setPicked] = useState<PickedVideo | null>(null);
-  const [sourceDuration, setSourceDuration] = useState<number | null>(null);
+function Tune({ label, value, min, max, step, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (n: number) => void }) {
+  return (
+    <>
+      <Text style={styles.small}>{label}</Text>
+      <Slider minimumValue={min} maximumValue={max} step={step} value={value} onValueChange={onChange} minimumTrackTintColor={colors.brand} maximumTrackTintColor={colors.surfaceHigh} thumbTintColor={colors.brandSoft} />
+    </>
+  );
+}
+
+/** Upload popup: pick → (trim to 60s) → caption → optional music → Post. Closes on Post; progress continues in <UploadStatus />. */
+export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
+  const { closeSheet } = useApp();
+  const [picked, setPicked] = useState<PickedVideo | null>(draft ? { file: draft.file, uri: draft.uri, duration: draft.duration } : null);
+  const [sourceDuration, setSourceDuration] = useState<number | null>(draft?.duration ?? null);
   const [trimStart, setTrimStart] = useState(0);
   const [trimLength, setTrimLength] = useState(MAX_VIDEO_SECONDS);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(draft?.title ?? '');
+  const [description, setDescription] = useState(draft?.description ?? '');
 
   const [audio, setAudio] = useState<LocalFile | null>(null);
   const [videoVol, setVideoVol] = useState(1);
   const [audioVol, setAudioVol] = useState(0.7);
   const [audioStart, setAudioStart] = useState(0);
-
-  const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
 
-  const uploading = progress !== null && !done;
   const needsTrim = sourceDuration !== null && sourceDuration > MAX_VIDEO_SECONDS + 0.05;
   const maxLen = needsTrim ? Math.min(MAX_VIDEO_SECONDS, (sourceDuration as number) - trimStart) : MAX_VIDEO_SECONDS;
 
   useEffect(() => {
     if (needsTrim && trimLength > maxLen) setTrimLength(Math.max(1, maxLen));
   }, [needsTrim, maxLen, trimLength]);
+
+  // Reopened after a "too long" rejection: start with a full-length window.
+  useEffect(() => {
+    if (draft?.duration) setTrimLength(Math.min(draft.duration, MAX_VIDEO_SECONDS));
+  }, [draft]);
 
   async function choose() {
     setError(null);
@@ -61,6 +71,7 @@ export default function UploadSheet({ onUploaded }: { onUploaded?: (v: Video) =>
       setSourceDuration(v.duration);
       setTrimStart(0);
       setTrimLength(Math.min(v.duration ?? MAX_VIDEO_SECONDS, MAX_VIDEO_SECONDS));
+      if (!title) setTitle(v.file.name.replace(/\.[^/.]+$/, ''));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open that video');
     }
@@ -82,146 +93,142 @@ export default function UploadSheet({ onUploaded }: { onUploaded?: (v: Video) =>
     }
   }
 
-  async function submit() {
+  function post() {
     if (!picked) return;
-    setError(null);
-    setProgress(0);
-    try {
-      const res = await api.uploadVideo(
-        picked.file,
-        title.trim(),
-        description.trim(),
-        setProgress,
-        needsTrim ? { start: trimStart, end: trimStart + trimLength } : null,
-        audio ? { file: audio, videoVolume: videoVol, audioVolume: audioVol, audioStart } : null
-      );
-      setDone(true);
-      onUploaded?.(res.video);
-      setTimeout(() => {
-        closeSheet();
-        pushPage({ name: 'viewer', videos: [res.video], index: 0, title: 'Your new video' });
-      }, 900);
-    } catch (e) {
-      setProgress(null);
-      // The server measured a longer clip than the phone could — switch to the trim editor.
-      if (e instanceof ApiError && e.code === 'VIDEO_TOO_LONG' && e.duration) {
-        setSourceDuration(e.duration);
-        setTrimLength(MAX_VIDEO_SECONDS);
-        setError(`This video is ${Math.round(e.duration)}s long. Choose up to ${MAX_VIDEO_SECONDS}s to keep.`);
-        return;
-      }
-      setError(e instanceof Error ? e.message : 'Upload failed');
+    if (isUploadBusy()) {
+      setError('Another video is still uploading — wait for it to finish.');
+      return;
     }
+    // Hand off and get out of the way; <UploadStatus /> shows the progress.
+    startUpload({
+      file: picked.file,
+      title: title.trim() || 'Untitled',
+      description: description.trim(),
+      trim: needsTrim ? { start: trimStart, end: trimStart + trimLength } : null,
+      audio: audio ? { file: audio, videoVolume: videoVol, audioVolume: audioVol, audioStart } : null,
+      draft: { file: picked.file, uri: picked.uri, duration: sourceDuration, title, description },
+    });
+    closeSheet();
   }
 
+  const startPct = needsTrim ? (trimStart / (sourceDuration as number)) * 100 : 0;
+  const lenPct = needsTrim ? (trimLength / (sourceDuration as number)) * 100 : 100;
+
   return (
-    <Sheet title="New video" onClose={uploading ? () => {} : closeSheet} maxHeight={0.94}>
-      <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+    <Sheet title={needsTrim ? 'Trim your video' : 'New video'} onClose={closeSheet} maxHeight={0.94} fill>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         {!picked ? (
           <Pressable onPress={choose} style={styles.drop} accessibilityRole="button" accessibilityLabel="Choose a video">
             <View style={styles.dropIcon}>
-              <Icon name="videocam" size={30} color={colors.brandSoft} />
+              <Icon name="videocam" size={32} color={colors.brandSoft} />
             </View>
             <Text style={styles.dropTitle}>Choose a video</Text>
             <Text style={styles.dropSub}>Up to {MAX_VIDEO_SECONDS} seconds · longer clips can be trimmed</Text>
           </Pressable>
         ) : (
           <>
-            <Preview uri={picked.uri} />
+            <View>
+              <Preview uri={picked.uri} />
+              {sourceDuration ? (
+                <View style={styles.durBadge}>
+                  <Text style={styles.durText}>{fmt(sourceDuration)}</Text>
+                </View>
+              ) : null}
+            </View>
             <View style={styles.fileRow}>
               <Text style={styles.fileName} numberOfLines={1}>
                 {picked.file.name}
-                {sourceDuration ? ` · ${fmt(sourceDuration)}` : ''}
               </Text>
-              {!uploading && (
-                <Pressable onPress={choose} hitSlop={8}>
-                  <Text style={styles.link}>Change</Text>
-                </Pressable>
-              )}
+              <Pressable onPress={choose} hitSlop={8}>
+                <Text style={styles.link}>Change</Text>
+              </Pressable>
             </View>
 
             {needsTrim && (
               <View style={styles.card}>
-                <SectionLabel>{`Trim to ${MAX_VIDEO_SECONDS}s or less`}</SectionLabel>
+                <View style={styles.cardHead}>
+                  <Icon name="cut-outline" size={16} color={colors.brandSoft} />
+                  <SectionLabel>{`Keep up to ${MAX_VIDEO_SECONDS}s`}</SectionLabel>
+                </View>
+                {/* Timeline: the lit segment is the part that gets posted */}
+                <View style={styles.timeline}>
+                  <View style={[styles.window, { left: `${startPct}%`, width: `${lenPct}%` }]} />
+                </View>
                 <Text style={styles.value}>
                   {fmt(trimStart)} → {fmt(trimStart + trimLength)} · {Math.round(trimLength)}s
                 </Text>
-                <Text style={styles.small}>Start</Text>
-                <Slider minimumValue={0} maximumValue={Math.max(0, (sourceDuration as number) - 1)} value={trimStart} onValueChange={setTrimStart} minimumTrackTintColor={colors.brand} maximumTrackTintColor={colors.surfaceHigh} thumbTintColor={colors.brandSoft} disabled={uploading} />
-                <Text style={styles.small}>Length</Text>
-                <Slider minimumValue={1} maximumValue={Math.max(1, maxLen)} value={trimLength} onValueChange={setTrimLength} minimumTrackTintColor={colors.brand} maximumTrackTintColor={colors.surfaceHigh} thumbTintColor={colors.brandSoft} disabled={uploading} />
+                <Tune label="Start" value={trimStart} min={0} max={Math.max(0, (sourceDuration as number) - 1)} onChange={setTrimStart} />
+                <Tune label="Length" value={trimLength} min={1} max={Math.max(1, maxLen)} onChange={setTrimLength} />
               </View>
             )}
 
-            <TextField label="Title" value={title} onChangeText={setTitle} maxLength={100} placeholder="Give it a title" editable={!uploading} />
-            <TextField label="Description" value={description} onChangeText={setDescription} multiline maxLength={500} placeholder="Add details and #hashtags" editable={!uploading} />
+            <View style={{ gap: 4 }}>
+              <TextField label="Title" value={title} onChangeText={setTitle} maxLength={100} placeholder="Give it a title" />
+              <Text style={styles.counter}>{title.length}/100</Text>
+            </View>
+            <View style={{ gap: 4 }}>
+              <TextField label="Description" value={description} onChangeText={setDescription} multiline maxLength={500} placeholder="Add details and #hashtags so people can find it" />
+              <Text style={styles.counter}>{description.length}/500</Text>
+            </View>
 
             <View style={styles.card}>
-              <SectionLabel>Music (optional)</SectionLabel>
+              <View style={styles.cardHead}>
+                <Icon name="musical-notes-outline" size={16} color={colors.brandSoft} />
+                <SectionLabel>Music (optional)</SectionLabel>
+              </View>
               {audio ? (
                 <>
                   <View style={styles.fileRow}>
-                    <Icon name="musical-notes" size={18} color={colors.brandSoft} />
                     <Text style={[styles.fileName, { flex: 1 }]} numberOfLines={1}>
                       {audio.name}
                     </Text>
-                    {!uploading && (
-                      <Pressable onPress={() => setAudio(null)} hitSlop={8}>
-                        <Text style={[styles.link, { color: colors.danger }]}>Remove</Text>
-                      </Pressable>
-                    )}
+                    <Pressable onPress={() => setAudio(null)} hitSlop={8}>
+                      <Text style={[styles.link, { color: colors.danger }]}>Remove</Text>
+                    </Pressable>
                   </View>
-                  <Text style={styles.small}>Original sound · {Math.round(videoVol * 100)}%</Text>
-                  <Slider minimumValue={0} maximumValue={1} value={videoVol} onValueChange={setVideoVol} minimumTrackTintColor={colors.brand} maximumTrackTintColor={colors.surfaceHigh} thumbTintColor={colors.brandSoft} disabled={uploading} />
-                  <Text style={styles.small}>Music · {Math.round(audioVol * 100)}%</Text>
-                  <Slider minimumValue={0} maximumValue={1} value={audioVol} onValueChange={setAudioVol} minimumTrackTintColor={colors.brand} maximumTrackTintColor={colors.surfaceHigh} thumbTintColor={colors.brandSoft} disabled={uploading} />
-                  <Text style={styles.small}>Start music at · {fmt(audioStart)}</Text>
-                  <Slider minimumValue={0} maximumValue={300} step={1} value={audioStart} onValueChange={setAudioStart} minimumTrackTintColor={colors.brand} maximumTrackTintColor={colors.surfaceHigh} thumbTintColor={colors.brandSoft} disabled={uploading} />
+                  <Tune label={`Original sound · ${Math.round(videoVol * 100)}%`} value={videoVol} min={0} max={1} onChange={setVideoVol} />
+                  <Tune label={`Music · ${Math.round(audioVol * 100)}%`} value={audioVol} min={0} max={1} onChange={setAudioVol} />
+                  <Tune label={`Start music at · ${fmt(audioStart)}`} value={audioStart} min={0} max={300} step={1} onChange={setAudioStart} />
                 </>
               ) : (
-                <Button title="Add music" variant="secondary" icon="musical-notes-outline" onPress={chooseAudio} disabled={uploading} />
+                <Button title="Add music" variant="secondary" icon="add" onPress={chooseAudio} />
               )}
             </View>
-
-            <ErrorText>{error}</ErrorText>
-
-            {uploading ? (
-              <View style={{ gap: space.sm }}>
-                <View style={styles.track}>
-                  <View style={[styles.fill, { width: `${progress}%` }]} />
-                </View>
-                <Text style={styles.small}>{progress === 100 ? 'Processing on the server…' : `Uploading… ${progress}%`}</Text>
-              </View>
-            ) : done ? (
-              <View style={styles.doneRow}>
-                <Icon name="checkmark-circle" size={22} color={colors.success} />
-                <Text style={styles.value}>Posted!</Text>
-              </View>
-            ) : (
-              <Button title="Post video" icon="cloud-upload-outline" onPress={submit} disabled={!title.trim()} />
-            )}
           </>
         )}
-        {!picked && <ErrorText>{error}</ErrorText>}
+        <ErrorText>{error}</ErrorText>
       </ScrollView>
+
+      {/* Sticky action bar — always reachable, however long the form gets */}
+      {picked && (
+        <View style={styles.footer}>
+          <Button title={needsTrim ? `Post ${Math.round(trimLength)}s clip` : 'Post video'} icon="cloud-upload-outline" onPress={post} />
+          <Text style={styles.hint}>You can keep watching while it uploads.</Text>
+        </View>
+      )}
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
   body: { padding: space.xl, paddingTop: space.sm, gap: space.lg },
-  drop: { alignItems: 'center', gap: space.sm, paddingVertical: 48, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.18)', backgroundColor: colors.surfaceRaised },
-  dropIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,179,71,0.14)', alignItems: 'center', justifyContent: 'center' },
+  drop: { alignItems: 'center', gap: space.sm, paddingVertical: 56, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.18)', backgroundColor: colors.surfaceRaised },
+  dropIcon: { width: 68, height: 68, borderRadius: 34, backgroundColor: 'rgba(255,179,71,0.14)', alignItems: 'center', justifyContent: 'center' },
   dropTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
-  dropSub: { color: colors.textMuted, fontSize: 13 },
+  dropSub: { color: colors.textMuted, fontSize: 13, textAlign: 'center', paddingHorizontal: space.xl },
   preview: { width: '100%', aspectRatio: 16 / 10, borderRadius: radius.lg, backgroundColor: '#000' },
+  durBadge: { position: 'absolute', right: 10, bottom: 10, backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  durText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   fileRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, justifyContent: 'space-between' },
   fileName: { color: colors.textMuted, fontSize: 13, flexShrink: 1 },
   link: { color: colors.brandSoft, fontWeight: '700', fontSize: 14 },
   card: { backgroundColor: colors.surfaceRaised, borderRadius: radius.lg, padding: space.lg, gap: space.sm },
+  cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  timeline: { height: 10, borderRadius: 5, backgroundColor: colors.surfaceHigh, overflow: 'hidden' },
+  window: { position: 'absolute', top: 0, bottom: 0, backgroundColor: colors.brand, borderRadius: 5 },
   value: { color: colors.text, fontSize: 15, fontWeight: '700' },
   small: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
-  track: { height: 8, borderRadius: 4, backgroundColor: colors.surfaceHigh, overflow: 'hidden' },
-  fill: { height: 8, backgroundColor: colors.brand },
-  doneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm, height: 50 },
+  counter: { color: colors.textFaint, fontSize: 11, textAlign: 'right' },
+  footer: { paddingHorizontal: space.xl, paddingTop: space.md, gap: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.surface },
+  hint: { color: colors.textFaint, fontSize: 11, textAlign: 'center' },
 });

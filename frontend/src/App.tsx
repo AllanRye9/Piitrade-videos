@@ -4,6 +4,8 @@ import type { Video } from './types';
 import VideoFeed from './components/VideoFeed';
 import TopBar, { FeedMode } from './components/TopBar';
 import UploadModal from './components/UploadModal';
+import UploadStatus from './components/UploadStatus';
+import { setUploadedHandler } from './uploadManager';
 import ProfileSettings from './components/ProfileSettings';
 import NotificationsPanel from './components/NotificationsPanel';
 import { registerFirstInteractionAutoUnmute } from './soundPreference';
@@ -119,10 +121,12 @@ export default function App() {
       .finally(() => setLoading(false));
   }
 
-  function handleUploaded(video: Video) {
-    setShowUpload(false);
-    setVideos((prev) => [video, ...prev]);
-  }
+  // Uploads run in the background (see uploadManager.ts): the dialog closes
+  // as soon as the person taps Post, and the finished video lands here.
+  useEffect(() => {
+    setUploadedHandler((video: Video) => setVideos((prev) => [video, ...prev]));
+    return () => setUploadedHandler(null);
+  }, []);
 
   return (
     // Layout: a slim solid header (TopBar) above a stage that holds
@@ -171,7 +175,8 @@ export default function App() {
         </div>
       </main>
 
-      {showUpload && <UploadModal onClose={() => setShowUpload(false)} onUploaded={handleUploaded} />}
+      {showUpload && <UploadModal onClose={() => setShowUpload(false)} />}
+      <UploadStatus onUploadAgain={() => setShowUpload(true)} />
       {showSettings && (
         <ProfileSettings displayName={profile.displayName} handle={profile.handle} onClose={() => setShowSettings(false)} />
       )}

@@ -659,7 +659,7 @@ export default function VideoCard({ video, active }: Props) {
       </div>
 
       {/* Thin playback line along the bottom edge — useful for a
-          30-second clip, and takes almost no room. */}
+          60-second clip, and takes almost no room. */}
       <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/20 pointer-events-none">
         <div className="h-full bg-brand-orange" style={{ width: `${progress * 100}%` }} />
       </div>

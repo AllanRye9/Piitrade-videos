@@ -42,7 +42,7 @@ function formatTime(seconds: number): string {
 
 /**
  * Trim editor shown in the upload dialog when a video is longer than
- * the 30-second limit. The uploader drags a window over a timeline of
+ * the 60-second limit. The uploader drags a window over a timeline of
  * the whole video — by either end to resize it, or by the middle to
  * slide it — and the window can never be longer than `maxSeconds`.
  * The preview loops just the selected part, so what they see is what
