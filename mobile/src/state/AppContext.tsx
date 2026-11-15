@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BackHandler } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from '../api';
+import { api, setSignInRequiredHandler } from '../api';
 import type { Video } from '../types';
 import { NUDGE } from '../config';
 import { bootstrapSession, getAccountEmail, setAccountEmail, setSessionId, resetSessionId } from '../lib/session';
@@ -130,6 +130,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSheets([]);
     setPages([]);
     setUnreadCount(0);
+  }, []);
+
+  // The server is the source of truth: if it says this session isn't a signed-in account
+  // (e.g. a stale login), drop the local "signed in" flag and ask the person to log in again.
+  useEffect(() => {
+    setSignInRequiredHandler(() => {
+      setAccountEmail(null);
+      setEmail(null);
+      setSheets((cur) => (cur.some((s) => s.type === 'auth') ? cur : [...cur, { type: 'auth', reason: 'Please log in to continue.' }]));
+    });
+    return () => setSignInRequiredHandler(null);
   }, []);
 
   const openSheet = useCallback((s: SheetDescriptor) => setSheets((cur) => [...cur, s]), []);

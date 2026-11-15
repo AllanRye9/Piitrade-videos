@@ -35,6 +35,12 @@ export interface TrimRange {
 
 type AuthResult = { sessionId: string; email: string; handle: string | null; displayName: string | null; avatar: string | null; bio: string | null };
 
+let onSignInRequired: (() => void) | null = null;
+/** The app registers a handler that opens the sign-in popup when the server says a write needs an account. */
+export function setSignInRequiredHandler(fn: (() => void) | null) {
+  onSignInRequired = fn;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -42,6 +48,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
+    if (res.status === 401 && body.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
     throw new Error(body.error || `Request failed: ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
@@ -106,6 +113,7 @@ export const api = {
         }
         try {
           const body = JSON.parse(xhr.responseText);
+          if (xhr.status === 401 && body.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
           reject(new ApiError(body.error || 'Upload failed', { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds }));
         } catch {
           reject(new ApiError('Upload failed'));

@@ -8,6 +8,7 @@ import { uploadToR2, deleteFromR2ByUrl } from '../lib/r2';
 import { AVATARS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
 import { writeLimiter } from '../middleware/rateLimit';
+import { requireAccount } from '../middleware/requireAccount';
 
 const router = Router();
 
@@ -95,7 +96,7 @@ router.get('/', async (req: Request, res: Response) => {
 
 // PUT /api/profile  { displayName?, bio? }  — each omitted key is left
 // untouched; passing null (or '') for a given key clears it.
-router.put('/', async (req: Request, res: Response) => {
+router.put('/', requireAccount, async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const { displayName, bio } = req.body || {};
   if (displayName !== undefined && displayName !== null && typeof displayName !== 'string') {
@@ -119,7 +120,7 @@ router.put('/', async (req: Request, res: Response) => {
 });
 
 // PUT /api/profile/handle  { handle: string }
-router.put('/handle', writeLimiter, async (req: Request, res: Response) => {
+router.put('/handle', requireAccount, writeLimiter, async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const handle = String(req.body?.handle || '').trim().toLowerCase();
   if (!HANDLE_PATTERN.test(handle)) {
@@ -139,7 +140,7 @@ router.put('/handle', writeLimiter, async (req: Request, res: Response) => {
 });
 
 // POST /api/profile/avatar  (multipart: avatar)
-router.post('/avatar', uploadImage.single('avatar'), async (req: Request, res: Response) => {
+router.post('/avatar', requireAccount, uploadImage.single('avatar'), async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const file = req.file;
   if (!file) throw new HttpError(400, 'An avatar image is required');
@@ -187,7 +188,7 @@ router.post('/avatar', uploadImage.single('avatar'), async (req: Request, res: R
 });
 
 // DELETE /api/profile/avatar — remove this session's avatar
-router.delete('/avatar', async (req: Request, res: Response) => {
+router.delete('/avatar', requireAccount, async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const existing = await prisma.sessionProfile.findUnique({ where: { sessionId } });
   if (existing?.avatar) await removeAvatarFile(existing.avatar);

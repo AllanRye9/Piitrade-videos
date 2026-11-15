@@ -3,6 +3,7 @@ import { prisma } from '../db';
 import { resolveAvatarUrl } from './profile';
 import { resolveAssetUrl, getSessionId } from './videos';
 import { writeLimiter } from '../middleware/rateLimit';
+import { requireAccount } from '../middleware/requireAccount';
 
 const router = Router();
 
@@ -96,7 +97,7 @@ router.get('/', async (req: Request, res: Response) => {
 // rather than tracking per-item read state from the frontend, which
 // matches how most notification centers actually behave (open the
 // list = you've seen it) and keeps the client simple.
-router.post('/read-all', writeLimiter, async (req: Request, res: Response) => {
+router.post('/read-all', requireAccount, writeLimiter, async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   await prisma.notification.updateMany({ where: { recipientSessionId: sessionId, read: false }, data: { read: true } });
   res.json({ ok: true });

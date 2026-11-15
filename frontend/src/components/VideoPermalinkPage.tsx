@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Video } from '../types';
-import { api } from '../api';
+import { api, getAccountEmail } from '../api';
 import VideoCard from './VideoCard';
 import { ArrowLeft } from 'lucide-react';
 
@@ -15,6 +15,7 @@ export default function VideoPermalinkPage() {
   const [video, setVideo] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const signedIn = !!getAccountEmail();
 
   useEffect(() => {
     if (!id) return;
@@ -41,6 +42,14 @@ export default function VideoPermalinkPage() {
       {!loading && !error && video && (
         <div className="relative h-full w-full sm:h-[94dvh] sm:max-h-[900px] sm:w-[420px] sm:rounded-2xl sm:overflow-hidden bg-black">
           <VideoCard video={video} active />
+          {!signedIn && (
+            <Link
+              to="/"
+              className="safe-top absolute top-4 right-3 z-10 rounded-full bg-black/55 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Sign in to like &amp; comment
+            </Link>
+          )}
           <Link
             to="/"
             aria-label="Back to feed"

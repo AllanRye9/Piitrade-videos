@@ -4,6 +4,7 @@ import { resolveAvatarUrl } from './profile';
 import { resolveAssetUrl, getSessionId } from './videos';
 import { HttpError } from '../lib/httpError';
 import { writeLimiter } from '../middleware/rateLimit';
+import { requireAccount } from '../middleware/requireAccount';
 
 const router = Router();
 
@@ -147,7 +148,7 @@ router.get('/:handle', async (req: Request, res: Response) => {
 // toggle-on-repeat-call shape as /like, /favorite, /save in
 // routes/videos.ts: calling it again just undoes it, so the frontend
 // doesn't need to track direction, only the returned `following` state.
-router.post('/:handle/follow', writeLimiter, async (req: Request, res: Response) => {
+router.post('/:handle/follow', requireAccount, writeLimiter, async (req: Request, res: Response) => {
   const handle = req.params.handle.toLowerCase();
   const followerSessionId = getSessionId(req);
 

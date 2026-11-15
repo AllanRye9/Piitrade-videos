@@ -36,3 +36,15 @@ See `backend/.env.example`. Create a bucket, enable public access (custom domain
 R2 API token with Object Read & Write, then set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
 `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`. Existing ImageKit files keep working until you run
 `npm run storage:migrate -- --dry` and then `npm run storage:migrate` in `backend/`.
+
+## Sign-in rules
+* **Anyone can watch** — feeds, search, hashtags, creator pages, comments (read) and `/v/:id` share links need no account.
+* **Writes need an account, enforced on the server** (`backend/src/middleware/requireAccount.ts`): like, save,
+  comment, report, follow, upload, profile edits and notification read-state return `401 SIGN_IN_REQUIRED`
+  for guest sessions. Both apps react to that by opening the sign-in popup.
+* Sharing is open to guests (it only increments a counter).
+
+## Known gaps
+* Crop-to-search visual search, watermarked downloads and a live music preview in the upload popup exist on the
+  web app only; the mobile app has typed "Find on Piitrade" search instead.
+* The rest of the web app (feed, profile…) still requires login; only `/v/:id` is public.

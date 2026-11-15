@@ -14,6 +14,7 @@ import { HttpError } from '../lib/httpError';
 import { ensureHandle, resolveAvatarUrl } from './profile';
 import { uploadLimiter, writeLimiter } from '../middleware/rateLimit';
 import { extractHashtags } from '../lib/hashtags';
+import { requireAccount } from '../middleware/requireAccount';
 
 const router = Router();
 
@@ -283,7 +284,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 // video's own sound at the volumes given (`videoVolume`/`audioVolume`,
 // 0–1; original sound at 0 replaces it), starting `audioStart` seconds
 // into the audio, and cut to the clip's length.
-router.post('/', uploadLimiter, uploadVideoWithAudio, async (req: Request, res: Response) => {
+router.post('/', requireAccount, uploadLimiter, uploadVideoWithAudio, async (req: Request, res: Response) => {
   const files = (req.files || {}) as { [field: string]: Express.Multer.File[] };
   const file = files.video?.[0];
   const audioFile = files.audio?.[0];
@@ -495,9 +496,9 @@ function makeToggleHandler(field: 'liked' | 'favorited' | 'saved') {
   };
 }
 
-router.post('/:id/like', makeToggleHandler('liked'));
-router.post('/:id/favorite', makeToggleHandler('favorited'));
-router.post('/:id/save', makeToggleHandler('saved'));
+router.post('/:id/like', requireAccount, makeToggleHandler('liked'));
+router.post('/:id/favorite', requireAccount, makeToggleHandler('favorited'));
+router.post('/:id/save', requireAccount, makeToggleHandler('saved'));
 
 // POST /api/videos/:id/share
 //
@@ -569,7 +570,7 @@ router.get('/:id/comments/:commentId/replies', async (req: Request, res: Respons
 
 // POST /api/videos/:id/comments/:commentId/like — toggle, same
 // on-repeat-call-undoes-it shape as /videos/:id/like etc.
-router.post('/:id/comments/:commentId/like', writeLimiter, async (req: Request, res: Response) => {
+router.post('/:id/comments/:commentId/like', requireAccount, writeLimiter, async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const commentId = req.params.commentId;
   const key = { commentId_sessionId: { commentId, sessionId } };
@@ -593,7 +594,7 @@ router.post('/:id/comments/:commentId/like', writeLimiter, async (req: Request, 
 });
 
 // POST /api/videos/:id/comments  { text, author?, parentId? }
-router.post('/:id/comments', writeLimiter, async (req: Request, res: Response) => {
+router.post('/:id/comments', requireAccount, writeLimiter, async (req: Request, res: Response) => {
   const text = String(req.body.text || '').trim().slice(0, 500);
   if (!text) throw new HttpError(400, 'Comment text is required');
 
@@ -651,7 +652,7 @@ const REPORT_REASONS = new Set(['spam', 'inappropriate', 'copyright', 'other']);
 // came down if an admin happened to see it. One report per (video,
 // session) — see the Report model's unique constraint — so this can't
 // be scripted into a fake-report pile-on by one anonymous session.
-router.post('/:id/report', writeLimiter, async (req: Request, res: Response) => {
+router.post('/:id/report', requireAccount, writeLimiter, async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const videoId = req.params.id;
   const reason = String(req.body?.reason || '').trim().toLowerCase();

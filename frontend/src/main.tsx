@@ -56,6 +56,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           {/* Legal pages — reachable outside the login gate too, same
               reasoning as /reset-password: a prospective user should be
               able to read these before signing up, not only after. */}
+          {/* Shared video links (the mobile app's Share button points here) —
+              anyone with the link can watch without an account; liking and
+              commenting still need one, and the page says so. */}
+          <Route path="/v/:id" element={<VideoPermalinkPage />} />
           <Route path="/legal/terms" element={<TermsPage />} />
           <Route path="/legal/privacy" element={<PrivacyPage />} />
           <Route path="/legal/dmca" element={<DmcaPage />} />
@@ -67,7 +71,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                   <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/discover" element={<DiscoverPage />} />
                   <Route path="/u/:handle" element={<AccountPage />} />
-                  <Route path="/v/:id" element={<VideoPermalinkPage />} />
                   <Route path="/tag/:tag" element={<HashtagPage />} />
                   <Route path="/*" element={<App />} />
                 </Routes>
