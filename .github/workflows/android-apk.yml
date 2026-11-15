@@ -77,5 +77,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: piitrade-videos-apk
-          path: ${{ steps.apk.outputs.path }}
+          path: mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
