@@ -4,7 +4,7 @@
 | --- | --- |
 | `mobile/` | **React Native (Expo) app for Android + iOS** — the consumer app |
 | `backend/` | Express + Prisma API. Media now lives in **Cloudflare R2** |
-| `frontend/` | Web app, kept for the admin dashboard, legal pages, `/v/:id` share links and the password-reset page |
+| `frontend/` | Web app, kept for the admin dashboard (`/const/admin`), legal pages, `/v/:id` share links and the password-reset page |
 
 ## Mobile app
 
@@ -30,6 +30,21 @@ npx expo run:android        # or: npx expo run:ios  (macOS)
 `piitrade-videos-apk`. Set repository **variable** `API_BASE_URL` (and optionally `WEB_URL`), then run
 the workflow. That APK is signed with the debug keystore — fine for sideloading/testing.
 For Play Store / App Store builds use EAS (`mobile/eas.json`): `npx eas-cli build -p android|ios --profile production`.
+
+## Admin dashboard (`/const/admin`)
+Open `https://<your-site>/const/admin`. (`/admin` redirects there.)
+
+* **First run:** click *Register* — the first account becomes the **primary admin** with full control.
+  Registration then closes for good. Set `ADMIN_SETUP_CODE` on the server to require a code for that first
+  registration so nobody can claim a fresh deployment before you.
+* **Secondary admins:** the primary admin adds them under *Admins & roles* and ticks exactly what each may
+  view / create / edit / delete (Users, Videos, Comments, Reports, Products, Locations). Permissions are
+  re-checked on every request, so disabling an admin or changing permissions applies immediately.
+  Only the primary admin can manage admins or read the *Activity log* (audit trail of admin actions).
+* **Manage:** users (create, edit, suspend, delete), videos (search, preview, edit, delete), comments, the
+  report queue, products, and locations (tag videos and users).
+* Existing deployments: migration `20250114000000_admin_roles_locations` promotes the oldest existing admin to
+  primary; other existing admins keep their previous access as secondary admins.
 
 ## Cloudflare R2
 See `backend/.env.example`. Create a bucket, enable public access (custom domain recommended), create an

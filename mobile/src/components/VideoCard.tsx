@@ -21,6 +21,21 @@ interface Props {
 
 const HASHTAG = /#([a-z0-9_]{1,30})/gi;
 
+/**
+ * Videos at or below this width/height ratio are "portrait enough" to fill the
+ * screen with `cover` (9:16 = 0.56, 3:4 = 0.75, 4:5 = 0.8). Anything wider —
+ * landscape clips, squares — is letterboxed with `contain` so it is shown whole
+ * instead of being cropped and zoomed to the phone's tall aspect ratio.
+ */
+const COVER_MAX_RATIO = 0.82;
+
+type Fit = 'cover' | 'contain';
+
+function fitFor(width?: number, height?: number): Fit {
+  if (!width || !height) return 'cover'; // size unknown yet: keep the full-bleed default
+  return width / height <= COVER_MAX_RATIO ? 'cover' : 'contain';
+}
+
 function Caption({ text, onTag }: { text: string; onTag: (tag: string) => void }) {
   const parts: React.ReactNode[] = [];
   let last = 0;
@@ -71,6 +86,25 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
   const [shareCount, setShareCount] = useState(video.shares);
   const [expanded, setExpanded] = useState(false);
   const [following, setFollowing] = useState(false);
+  const [fit, setFit] = useState<Fit>('cover');
+
+  // Pick cover/contain from the real video dimensions. The decoder reports them
+  // via the track events; the poster (same aspect, extracted server-side) covers
+  // inactive cards and the moment before the first track event arrives.
+  useEffect(() => {
+    setFit('cover');
+  }, [src]);
+
+  useEffect(() => {
+    if (!active) return;
+    const size = player.videoTrack?.size;
+    if (size) setFit(fitFor(size.width, size.height));
+    const sub = player.addListener('videoTrackChange', ({ videoTrack }) => {
+      const s = videoTrack?.size;
+      if (s) setFit(fitFor(s.width, s.height));
+    });
+    return () => sub.remove();
+  }, [active, player, src]);
 
   useEffect(() => {
     player.muted = muted;
@@ -178,10 +212,24 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
 
   return (
     <View style={{ width, height, backgroundColor: '#000' }}>
+      {/* Letterboxed (non-portrait) videos get a blurred, dimmed copy of the poster
+          behind them instead of flat black bars. */}
+      {fit === 'contain' && poster ? (
+        <>
+          <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={40} />
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} />
+        </>
+      ) : null}
+
       {active ? (
-        <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />
+        <VideoView player={player} style={StyleSheet.absoluteFill} contentFit={fit} nativeControls={false} />
       ) : poster ? (
-        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        <Image
+          source={{ uri: poster }}
+          style={StyleSheet.absoluteFill}
+          contentFit={fit}
+          onLoad={(e) => setFit(fitFor(e.source?.width, e.source?.height))}
+        />
       ) : null}
 
       <Pressable style={StyleSheet.absoluteFill} onPress={togglePlay} accessibilityLabel={paused ? 'Play video' : 'Pause video'} />

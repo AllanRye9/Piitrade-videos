@@ -18,9 +18,16 @@ export async function requireAccount(req: Request, _res: Response, next: NextFun
   const sessionId = req.header('x-session-id')?.trim();
   if (!sessionId) throw new HttpError(400, 'Missing X-Session-Id header');
 
-  const profile = await prisma.sessionProfile.findUnique({ where: { sessionId }, select: { userId: true } });
+  const profile = await prisma.sessionProfile.findUnique({
+    where: { sessionId },
+    select: { userId: true, user: { select: { suspendedAt: true } } },
+  });
   if (!profile?.userId) {
     throw new HttpError(401, 'Sign in to continue', { code: 'SIGN_IN_REQUIRED' });
+  }
+  // An admin can suspend an account: it keeps its data but can't write anything.
+  if (profile.user?.suspendedAt) {
+    throw new HttpError(403, 'This account has been suspended. Contact support if you think this is a mistake.', { code: 'ACCOUNT_SUSPENDED' });
   }
   next();
 }

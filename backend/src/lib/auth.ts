@@ -12,6 +12,9 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   );
 }
 
+/** The token only identifies the admin; role/permissions/disabled are always
+ *  re-read from the database (see middleware/requireAdmin.ts) so changes take
+ *  effect immediately instead of when the token expires. */
 export interface AdminTokenPayload {
   sub: string; // admin user id
   email: string;

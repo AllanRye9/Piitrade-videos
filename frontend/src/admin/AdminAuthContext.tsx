@@ -1,19 +1,23 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { adminApi, getAdminToken, setAdminToken } from '../api';
-import type { AdminUser } from '../types';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
+import { getAdminToken, setAdminToken } from '../api';
+import { adminApi, Admin, UNAUTHORIZED_EVENT } from './adminApi';
 
 interface AdminAuthContextValue {
-  admin: AdminUser | null;
+  admin: Admin | null;
   loading: boolean;
+  isPrimary: boolean;
+  /** True if the signed-in admin holds the permission (the primary holds all). */
+  can: (permission: string) => boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, setupCode?: string) => Promise<void>;
+  register: (data: { email: string; password: string; name?: string; setupCode?: string }) => Promise<void>;
+  setAdmin: (admin: Admin) => void;
   logout: () => void;
 }
 
 const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);
 
 export function AdminAuthProvider({ children }: { children: ReactNode }) {
-  const [admin, setAdmin] = useState<AdminUser | null>(null);
+  const [admin, setAdmin] = useState<Admin | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,28 +32,45 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  async function login(email: string, password: string) {
+  // Any API call that comes back 401 (expired token, admin deleted) signs us out.
+  useEffect(() => {
+    const onUnauthorized = () => setAdmin(null);
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
     const res = await adminApi.login(email, password);
     setAdminToken(res.token);
     setAdmin(res.admin);
-  }
+  }, []);
 
-  async function register(email: string, password: string, setupCode?: string) {
-    const res = await adminApi.register(email, password, setupCode);
+  const register = useCallback(async (data: { email: string; password: string; name?: string; setupCode?: string }) => {
+    const res = await adminApi.register(data);
     setAdminToken(res.token);
     setAdmin(res.admin);
-  }
+  }, []);
 
-  function logout() {
+  const logout = useCallback(() => {
     setAdminToken(null);
     setAdmin(null);
-  }
+  }, []);
 
-  return (
-    <AdminAuthContext.Provider value={{ admin, loading, login, register, logout }}>
-      {children}
-    </AdminAuthContext.Provider>
+  const value = useMemo<AdminAuthContextValue>(
+    () => ({
+      admin,
+      loading,
+      isPrimary: admin?.role === 'PRIMARY',
+      can: (p: string) => !!admin && (admin.role === 'PRIMARY' || admin.permissions.includes(p)),
+      login,
+      register,
+      setAdmin,
+      logout,
+    }),
+    [admin, loading, login, register, logout]
   );
+
+  return <AdminAuthContext.Provider value={value}>{children}</AdminAuthContext.Provider>;
 }
 
 export function useAdminAuth(): AdminAuthContextValue {

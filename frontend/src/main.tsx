@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import App from './App';
 import ProfilePage from './components/ProfilePage';
 import AccountPage from './components/AccountPage';
@@ -12,11 +12,7 @@ import RequireConsumerAuth from './components/RequireConsumerAuth';
 import TermsPage from './components/legal/TermsPage';
 import PrivacyPage from './components/legal/PrivacyPage';
 import DmcaPage from './components/legal/DmcaPage';
-import { AdminAuthProvider } from './admin/AdminAuthContext';
-import RequireAdmin from './admin/RequireAdmin';
-import AdminLogin from './admin/AdminLogin';
-import AdminRegister from './admin/AdminRegister';
-import AdminDashboard from './admin/AdminDashboard';
+import AdminApp from './admin/AdminApp';
 import './styles/index.css';
 
 // Register the app-shell service worker (see public/sw.js) — narrow in
@@ -35,18 +31,12 @@ if ('serviceWorker' in navigator) {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
-      <AdminAuthProvider>
         <Routes>
-          <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin/register" element={<AdminRegister />} />
-          <Route
-            path="/admin"
-            element={
-              <RequireAdmin>
-                <AdminDashboard />
-              </RequireAdmin>
-            }
-          />
+          {/* Admin dashboard. Owns its own auth provider, so the consumer app
+              never loads or calls anything admin-related. The old /admin
+              URLs keep working by redirecting. */}
+          <Route path="/const/admin/*" element={<AdminApp />} />
+          <Route path="/admin/*" element={<Navigate to="/const/admin" replace />} />
           {/* Reachable unconditionally, authed or not — resetting a
               password is a valid thing to do even while already signed
               in on this particular browser (e.g. suspected compromise),
@@ -78,7 +68,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             }
           />
         </Routes>
-      </AdminAuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

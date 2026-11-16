@@ -36,7 +36,7 @@ function hashToken(token: string): string {
  * actually linked (a handle belongs to a session, a session can be
  * linked to a user — see the userId field on SessionProfile).
  */
-async function findUserByEmailOrHandle(identifier: string): Promise<{ id: string; email: string; passwordHash: string } | null> {
+async function findUserByEmailOrHandle(identifier: string): Promise<{ id: string; email: string; passwordHash: string; suspendedAt: Date | null } | null> {
   if (isValidEmail(identifier)) {
     return prisma.user.findUnique({ where: { email: identifier } });
   }
@@ -141,6 +141,9 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
   const user = await findUserByEmailOrHandle(identifier);
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     throw new HttpError(401, 'Invalid email/username or password');
+  }
+  if (user.suspendedAt) {
+    throw new HttpError(403, 'This account has been suspended. Contact support if you think this is a mistake.', { code: 'ACCOUNT_SUSPENDED' });
   }
 
   const profile = await prisma.sessionProfile.findUnique({ where: { userId: user.id } });

@@ -38,3 +38,11 @@ test('sessions linked to an account pass through', async () => {
 test('missing session header is a 400', async () => {
   assert.equal((await run(undefined)).err.status, 400);
 });
+
+test('suspended accounts get 403 ACCOUNT_SUSPENDED', async () => {
+  prisma.sessionProfile.findUnique = async () => ({ userId: 'user-2', user: { suspendedAt: new Date() } });
+  const { nexted, err } = await run('suspended-1');
+  assert.equal(nexted, false);
+  assert.equal(err.status, 403);
+  assert.equal(err.code, 'ACCOUNT_SUSPENDED');
+});

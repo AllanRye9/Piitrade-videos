@@ -27,7 +27,7 @@ export function resolveAvatarUrl(value: string): string {
 }
 
 /** Removes a stored avatar from wherever it lives: R2 (by URL), or local disk (by filename). Legacy ImageKit URLs are left alone. */
-async function removeAvatarFile(value: string): Promise<void> {
+export async function removeAvatarFile(value: string): Promise<void> {
   if (/^https?:\/\//i.test(value)) {
     await deleteFromR2ByUrl(value);
     return;

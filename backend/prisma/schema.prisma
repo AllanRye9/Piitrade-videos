@@ -39,6 +39,10 @@ model Video {
   // still read fine — they just have no discoverable uploader.
   uploaderSessionId String?
 
+  // Optional admin-managed location tag (see Location below).
+  locationId     String?
+  location       Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
   commentList    Comment[]
   states         UserVideoState[]
   reportList     Report[]
@@ -46,6 +50,7 @@ model Video {
 
   @@index([createdAt])
   @@index([uploaderSessionId])
+  @@index([locationId])
 }
 
 // A top-level comment or a reply (see parentId). Replies are flattened
@@ -178,14 +183,60 @@ model Notification {
   @@index([recipientSessionId, createdAt])
 }
 
-// Admin accounts for the /admin dashboard. This app has no public user
-// accounts — regular visitors interact anonymously via a per-browser
-// session id (see UserVideoState). Only admins log in.
+// Admin accounts for the /const/admin dashboard. Regular visitors interact
+// via a per-browser session id / User account (see below); only admins log
+// in here.
+//
+// Exactly one admin is PRIMARY: the first person to register. The primary
+// admin has every permission implicitly and is the only one who can create,
+// edit, disable or delete other admins. Everyone else is SECONDARY and can
+// only do what `permissions` lists ("resource.action", e.g. "videos.delete"
+// — see src/lib/permissions.ts for the catalogue).
+enum AdminRole {
+  PRIMARY
+  SECONDARY
+}
+
 model AdminUser {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
-  createdAt    DateTime @default(now())
+  name         String    @default("")
+  role         AdminRole @default(SECONDARY)
+  permissions  String[]  @default([])
+  disabled     Boolean   @default(false)
+  // The admin who created this account (null for the primary).
+  createdById  String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+// Append-only trail of what admins did, shown to the primary admin.
+model AuditLog {
+  id         String   @id @default(cuid())
+  adminId    String?
+  adminEmail String
+  action     String // e.g. "video.delete"
+  targetType String
+  targetId   String?
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([adminId])
+}
+
+// Admin-managed list of places. A location can be attached to a video
+// (content) and to a user's profile; deleting a location just clears those
+// references.
+model Location {
+  id        String           @id @default(cuid())
+  name      String           @unique
+  country   String           @default("")
+  city      String           @default("")
+  createdAt DateTime         @default(now())
+  videos    Video[]
+  profiles  SessionProfile[]
 }
 
 // A real, persistent account a viewer/creator can sign up for so their
@@ -202,6 +253,9 @@ model User {
   email        String   @unique
   passwordHash String
   createdAt    DateTime @default(now())
+  // Set by an admin to block this account (login + every write) without
+  // deleting it. Null = active.
+  suspendedAt  DateTime?
 
   profile      SessionProfile?
   resetTokens  PasswordResetToken[]
@@ -256,6 +310,9 @@ model SessionProfile {
   // User has exactly one canonical SessionProfile.
   userId      String?  @unique
   user        User?    @relation(fields: [userId], references: [id])
+  // Optional admin-assigned location (see Location).
+  locationId  String?
+  location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
   updatedAt   DateTime @updatedAt
 }
 
