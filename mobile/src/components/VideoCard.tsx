@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, Easing, GestureResponderEvent, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,14 +8,19 @@ import type { Video } from '../types';
 import { WEB_URL, mediaUrl } from '../config';
 import { useApp } from '../state/AppContext';
 import { mutedStore, setMuted } from '../state/stores';
-import { colors, radius, space } from '../theme';
+import { colors, space } from '../theme';
 import { Avatar, Icon, formatCount } from './ui';
 
 interface Props {
   video: Video;
   active: boolean;
+  /** The next card: its player is created and buffered (paused) so the swipe starts instantly. */
+  preload?: boolean;
+  /** Something is covering the feed (a page on top): stay paused. */
+  suspended?: boolean;
+  /** Height of this card = the visible video viewport. */
   height: number;
-  /** Extra bottom padding so the caption clears the bottom bar. */
+  /** Extra bottom padding for screens with no nav bar (e.g. the home-indicator inset). */
   bottomInset?: number;
 }
 
@@ -23,9 +28,8 @@ const HASHTAG = /#([a-z0-9_]{1,30})/gi;
 
 /**
  * Videos at or below this width/height ratio are "portrait enough" to fill the
- * screen with `cover` (9:16 = 0.56, 3:4 = 0.75, 4:5 = 0.8). Anything wider —
- * landscape clips, squares — is letterboxed with `contain` so it is shown whole
- * instead of being cropped and zoomed to the phone's tall aspect ratio.
+ * viewport with `cover` (9:16 = 0.56, 3:4 = 0.75, 4:5 = 0.8). Anything wider —
+ * landscape clips, squares — is letterboxed with `contain` so it is shown whole.
  */
 const COVER_MAX_RATIO = 0.82;
 
@@ -36,7 +40,34 @@ function fitFor(width?: number, height?: number): Fit {
   return width / height <= COVER_MAX_RATIO ? 'cover' : 'contain';
 }
 
-function Caption({ text, onTag }: { text: string; onTag: (tag: string) => void }) {
+/**
+ * Overlay proportions, modelled on TikTok's phone layout: a narrow right rail
+ * (≈ 28px icons, 11–12px counts), a 2-line caption, and everything kept inside
+ * the lower-left / right-edge thumb zones so the picture stays visible.
+ */
+const RAIL_WIDTH = 52;
+const SIDE_MARGIN = 12;
+const BOTTOM_MARGIN = 14;
+
+function sizesFor(height: number) {
+  const compact = height < 640; // small phones / split screen
+  return { icon: compact ? 26 : 28, gap: compact ? 8 : 14, avatar: compact ? 40 : 44 };
+}
+
+/** Soft gradient from transparent to black without a gradient dependency: stacked bands with eased opacity. */
+function Fade({ height, max, edge }: { height: number; max: number; edge: 'top' | 'bottom' }) {
+  const bands = 18;
+  return (
+    <View pointerEvents="none" style={[styles.fade, { height }, edge === 'bottom' ? { bottom: 0 } : { top: 0 }]}>
+      {Array.from({ length: bands }, (_, i) => {
+        const t = (edge === 'bottom' ? i + 1 : bands - i) / bands; // 0 → far from the edge, 1 → at the edge
+        return <View key={i} style={{ flex: 1, backgroundColor: `rgba(0,0,0,${(max * t * t).toFixed(3)})` }} />;
+      })}
+    </View>
+  );
+}
+
+function CaptionText({ text, onTag }: { text: string; onTag: (tag: string) => void }) {
   const parts: React.ReactNode[] = [];
   let last = 0;
   let key = 0;
@@ -52,27 +83,45 @@ function Caption({ text, onTag }: { text: string; onTag: (tag: string) => void }
     last = i + m[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));
-  return <Text style={styles.desc}>{parts}</Text>;
+  return <>{parts}</>;
 }
 
-function RailButton({ icon, label, onPress, color = colors.text, a11y }: { icon: React.ComponentProps<typeof Icon>['name']; label?: string; onPress: () => void; color?: string; a11y: string }) {
+function RailButton({ icon, label, onPress, color = colors.text, a11y, size }: { icon: React.ComponentProps<typeof Icon>['name']; label?: string; onPress: () => void; color?: string; a11y: string; size: number }) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={a11y} hitSlop={6} style={({ pressed }) => [styles.rail, pressed && { opacity: 0.6 }]}>
-      <Icon name={icon} size={30} color={color} />
+      <Icon name={icon} size={size} color={color} />
       {label !== undefined && <Text style={styles.railLabel}>{label}</Text>}
     </Pressable>
   );
 }
 
-export default function VideoCard({ video, active, height, bottomInset = 0 }: Props) {
+/** The heart that pops where you double-tapped. */
+function HeartBurst({ x, y, onDone }: { x: number; y: number; onDone: () => void }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(v, { toValue: 1, duration: 750, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(onDone);
+  }, [v, onDone]);
+  const scale = v.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0.4, 1.15, 1] });
+  const opacity = v.interpolate({ inputRange: [0, 0.15, 0.7, 1], outputRange: [0, 1, 1, 0] });
+  const translateY = v.interpolate({ inputRange: [0, 1], outputRange: [0, -36] });
+  return (
+    <Animated.View pointerEvents="none" style={{ position: 'absolute', left: x - 44, top: y - 44, opacity, transform: [{ translateY }, { scale }] }}>
+      <Icon name="heart" size={88} color={colors.brand} />
+    </Animated.View>
+  );
+}
+
+export default function VideoCard({ video, active, preload = false, suspended = false, height, bottomInset = 0 }: Props) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { requireAuth, openSheet, pushPage, setWatching } = useApp();
+  const { requireAuth, openSheet, pushPage, setWatching, signedIn } = useApp();
   const muted = useSyncExternalStore(mutedStore.subscribe, () => mutedStore.get().muted);
   const src = mediaUrl(video.url) || video.url;
+  const sz = sizesFor(height);
 
-  // Only the active card owns a live decoder; the rest show the poster.
-  const player = useVideoPlayer(active ? src : null, (p) => {
+  // The active card plays; the next one is created and buffered (paused) so swiping is instant.
+  // Everything else shows its poster and holds no decoder.
+  const player = useVideoPlayer(active || preload ? src : null, (p) => {
     p.loop = true;
     p.timeUpdateEventInterval = 0.25;
   });
@@ -85,14 +134,18 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
   const [commentCount, setCommentCount] = useState(video.comments);
   const [shareCount, setShareCount] = useState(video.shares);
   const [expanded, setExpanded] = useState(false);
-  const [following, setFollowing] = useState(false);
+  const [following, setFollowing] = useState(!!video.uploader?.isFollowing);
   const [fit, setFit] = useState<Fit>('cover');
+  const [firstFrame, setFirstFrame] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'loading' | 'readyToPlay' | 'error'>('idle');
+  const [removed, setRemoved] = useState(false);
+  const [burst, setBurst] = useState<{ x: number; y: number; key: number } | null>(null);
 
-  // Pick cover/contain from the real video dimensions. The decoder reports them
-  // via the track events; the poster (same aspect, extracted server-side) covers
-  // inactive cards and the moment before the first track event arrives.
+  // Pick cover/contain from the real video dimensions (decoder track events), falling back to the poster's.
   useEffect(() => {
     setFit('cover');
+    setFirstFrame(false);
+    setStatus('idle');
   }, [src]);
 
   useEffect(() => {
@@ -106,25 +159,51 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
     return () => sub.remove();
   }, [active, player, src]);
 
+  // Loading / failure feedback — without it a failed video was just a frozen black screen.
+  useEffect(() => {
+    if (!active) return;
+    setStatus(player.status);
+    const sub = player.addListener('statusChange', ({ status: s }) => setStatus(s));
+    return () => sub.remove();
+  }, [active, player, src]);
+
   useEffect(() => {
     player.muted = muted;
   }, [player, muted]);
 
+  // Becoming active restarts the clip; play/pause then follows one rule.
   useEffect(() => {
     if (active) {
       setPaused(false);
       player.currentTime = 0;
-      player.play();
-    } else {
-      player.pause();
     }
   }, [active, player, src]);
 
+  const shouldPlay = active && !suspended && !paused;
+  useEffect(() => {
+    if (shouldPlay) player.play();
+    else player.pause();
+  }, [shouldPlay, player]);
+
   // Tell the guest-nudge timer whether a video is actually being watched.
   useEffect(() => {
-    setWatching(active && !paused);
+    setWatching(shouldPlay);
     return () => setWatching(false);
-  }, [active, paused, setWatching]);
+  }, [shouldPlay, setWatching]);
+
+  // Count a view once the video has really been watched for a moment (the server de-duplicates per session).
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    viewedRef.current = false;
+  }, [video.id]);
+  useEffect(() => {
+    if (!shouldPlay || viewedRef.current) return;
+    const t = setTimeout(() => {
+      viewedRef.current = true;
+      api.recordView(video.id).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [shouldPlay, video.id]);
 
   useEffect(() => {
     if (!active) return;
@@ -135,28 +214,25 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
     return () => sub.remove();
   }, [active, player, video.duration]);
 
-  const togglePlay = useCallback(() => {
-    if (paused) {
-      player.play();
-      setPaused(false);
-    } else {
-      player.pause();
-      setPaused(true);
-    }
-  }, [paused, player]);
+  const retry = useCallback(() => {
+    setStatus('loading');
+    player.replace(src);
+    player.play();
+  }, [player, src]);
 
+  // ---- actions
   async function onLike() {
     requireAuth('Sign in to like videos.', async () => {
       const was = liked;
       setLiked(!was);
-      setLikes((n) => n + (was ? -1 : 1));
+      setLikes((n) => Math.max(0, n + (was ? -1 : 1)));
       try {
         const res = await api.like(video.id);
         setLiked(res.liked);
         setLikes(res.likes);
       } catch {
         setLiked(was);
-        setLikes((n) => n + (was ? 1 : -1));
+        setLikes((n) => Math.max(0, n + (was ? 1 : -1)));
       }
     });
   }
@@ -195,7 +271,7 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
 
   function onFollow() {
     const handle = video.uploader?.handle;
-    if (!handle) return;
+    if (!handle || following) return;
     requireAuth('Sign in to follow creators.', async () => {
       setFollowing(true);
       try {
@@ -207,13 +283,47 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
     });
   }
 
+  // Single tap = play/pause; double tap = like (never unlike), with a heart where you tapped.
+  const lastTap = useRef(0);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const likeRef = useRef(onLike);
+  likeRef.current = onLike;
+  const likedRef = useRef(liked);
+  likedRef.current = liked;
+  useEffect(() => () => {
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+  }, []);
+
+  function onSurfacePress(e: GestureResponderEvent) {
+    const now = Date.now();
+    if (now - lastTap.current < 280) {
+      lastTap.current = 0;
+      if (tapTimer.current) clearTimeout(tapTimer.current);
+      if (signedIn) setBurst({ x: e.nativeEvent.locationX, y: e.nativeEvent.locationY, key: now });
+      if (!likedRef.current) likeRef.current();
+      else if (!signedIn) likeRef.current(); // guests get the sign-in prompt
+      return;
+    }
+    lastTap.current = now;
+    tapTimer.current = setTimeout(() => setPaused((p) => !p), 230);
+  }
+
   const poster = useMemo(() => mediaUrl(video.poster), [video.poster]);
   const uploader = video.uploader;
+  const showFollowBadge = !!uploader && !uploader.isOwn && !following;
+  const hasCaption = !!video.title || !!video.description;
+
+  if (removed) {
+    return (
+      <View style={{ width, height, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={styles.errorText}>Video deleted</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={{ width, height, backgroundColor: '#000' }}>
-      {/* Letterboxed (non-portrait) videos get a blurred, dimmed copy of the poster
-          behind them instead of flat black bars. */}
+      {/* Letterboxed (non-portrait) videos get a blurred, dimmed copy of the poster behind them. */}
       {fit === 'contain' && poster ? (
         <>
           <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={40} />
@@ -221,64 +331,115 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
         </>
       ) : null}
 
-      {active ? (
-        <VideoView player={player} style={StyleSheet.absoluteFill} contentFit={fit} nativeControls={false} />
-      ) : poster ? (
-        <Image
-          source={{ uri: poster }}
-          style={StyleSheet.absoluteFill}
+      {/* The poster stays underneath until the first decoded frame so the swap never flashes black. */}
+      {poster && !(active && firstFrame) ? (
+        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={fit} onLoad={(e) => !active && setFit(fitFor(e.source?.width, e.source?.height))} />
+      ) : null}
+
+      {active || preload ? (
+        <VideoView
+          player={player}
+          style={[StyleSheet.absoluteFill, !active && { opacity: 0 }]}
           contentFit={fit}
-          onLoad={(e) => setFit(fitFor(e.source?.width, e.source?.height))}
+          nativeControls={false}
+          onFirstFrameRender={() => setFirstFrame(true)}
         />
       ) : null}
 
-      <Pressable style={StyleSheet.absoluteFill} onPress={togglePlay} accessibilityLabel={paused ? 'Play video' : 'Pause video'} />
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={onSurfacePress}
+        onLongPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true) })}
+        delayLongPress={450}
+        accessibilityLabel={paused ? 'Play video' : 'Pause video'}
+      />
 
-      {paused && (
-        <View pointerEvents="none" style={styles.pauseBadge}>
+      {paused && !suspended && (
+        <View pointerEvents="none" style={styles.center}>
           <Icon name="play" size={44} color="rgba(255,255,255,0.9)" />
         </View>
       )}
 
-      {/* bottom scrim keeps captions legible on bright video */}
-      <View pointerEvents="none" style={styles.scrim} />
+      {active && status === 'loading' && firstFrame === false && !paused ? (
+        <View pointerEvents="none" style={styles.center}>
+          <ActivityIndicator color="rgba(255,255,255,0.85)" />
+        </View>
+      ) : null}
 
-      <View pointerEvents="box-none" style={[styles.rightRail, { bottom: bottomInset + space.xl }]}>
-        <RailButton a11y={liked ? 'Unlike' : 'Like'} icon={liked ? 'heart' : 'heart-outline'} color={liked ? colors.brand : colors.text} label={formatCount(likes)} onPress={onLike} />
-        <RailButton a11y="Comments" icon="chatbubble-ellipses-outline" label={formatCount(commentCount)} onPress={onComments} />
-        <RailButton a11y={saved ? 'Remove bookmark' : 'Bookmark'} icon={saved ? 'bookmark' : 'bookmark-outline'} color={saved ? colors.brandSoft : colors.text} onPress={onSave} />
-        <RailButton a11y="Share" icon="arrow-redo-outline" label={formatCount(shareCount)} onPress={onShare} />
-        <RailButton a11y="Find on Piitrade" icon="search-circle-outline" label="Find" onPress={() => openSheet({ type: 'find', initialQuery: video.hashtags[0] || video.title })} />
-        <RailButton a11y={muted ? 'Unmute' : 'Mute'} icon={muted ? 'volume-mute' : 'volume-high'} onPress={() => setMuted(!muted)} />
-        <RailButton a11y="More" icon="ellipsis-horizontal" onPress={() => openSheet({ type: 'more', video })} />
-      </View>
-
-      <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: bottomInset + space.xl, paddingRight: 84 }]}>
-        {uploader ? (
-          <View style={styles.uploaderRow}>
-            <Pressable onPress={() => pushPage({ name: 'account', handle: uploader.handle })} style={styles.uploaderLink} accessibilityRole="button" accessibilityLabel={`Open ${uploader.handle}`}>
-              <Avatar uri={uploader.avatar} name={uploader.displayName || uploader.handle} size={36} />
-              <Text style={styles.handle} numberOfLines={1}>
-                @{uploader.handle}
-              </Text>
-            </Pressable>
-            <Pressable onPress={onFollow} style={[styles.follow, following && styles.following]} accessibilityRole="button">
-              <Text style={styles.followText}>{following ? 'Following' : 'Follow'}</Text>
+      {active && status === 'error' ? (
+        <View style={styles.center}>
+          <View style={styles.errorCard}>
+            <Icon name="cloud-offline-outline" size={26} color={colors.textMuted} />
+            <Text style={styles.errorText}>Couldn’t play this video</Text>
+            <Pressable onPress={retry} style={styles.retry} accessibilityRole="button">
+              <Text style={styles.retryText}>Try again</Text>
             </Pressable>
           </View>
+        </View>
+      ) : null}
+
+      {burst ? <HeartBurst key={burst.key} x={burst.x} y={burst.y} onDone={() => setBurst(null)} /> : null}
+
+      {/* Soft gradients keep text legible on bright video without a visible block edge. */}
+      <Fade edge="bottom" height={Math.min(300, height * 0.4)} max={0.62} />
+      <Fade edge="top" height={110} max={0.32} />
+
+      {/* Sound control: a small chip, out of the thumb zone (TikTok has no always-on mute button). */}
+      <Pressable
+        onPress={() => setMuted(!muted)}
+        accessibilityRole="button"
+        accessibilityLabel={muted ? 'Unmute' : 'Mute'}
+        hitSlop={8}
+        style={[styles.muteChip, { top: insets.top + 56 }]}
+      >
+        <Icon name={muted ? 'volume-mute' : 'volume-high'} size={16} color={colors.text} />
+      </Pressable>
+
+      <View pointerEvents="box-none" style={[styles.rightRail, { bottom: bottomInset + BOTTOM_MARGIN, gap: sz.gap }]}>
+        {uploader ? (
+          <View style={{ width: sz.avatar + 6, height: sz.avatar + 14, alignItems: 'center' }}>
+            <Pressable onPress={() => pushPage({ name: 'account', handle: uploader.handle })} accessibilityRole="button" accessibilityLabel={`Open ${uploader.handle}`} style={styles.avatarRing}>
+              <Avatar uri={uploader.avatar} name={uploader.displayName || uploader.handle} size={sz.avatar} />
+            </Pressable>
+            {showFollowBadge ? (
+              <Pressable onPress={onFollow} accessibilityRole="button" accessibilityLabel={`Follow ${uploader.handle}`} hitSlop={8} style={styles.followBadge}>
+                <Icon name="add" size={14} color="#fff" />
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
-        {video.title ? (
-          <Text style={styles.title} numberOfLines={expanded ? 6 : 2}>
-            {video.title}
-          </Text>
-        ) : null}
-        {video.description ? (
-          <Pressable onPress={() => setExpanded((e) => !e)}>
-            <View style={{ maxHeight: expanded ? undefined : 40, overflow: 'hidden' }}>
-              <Caption text={video.description} onTag={(tag) => pushPage({ name: 'tag', tag })} />
-            </View>
+        <RailButton size={sz.icon} a11y={liked ? 'Unlike' : 'Like'} icon={liked ? 'heart' : 'heart-outline'} color={liked ? colors.brand : colors.text} label={formatCount(likes)} onPress={onLike} />
+        <RailButton size={sz.icon} a11y="Comments" icon="chatbubble-ellipses-outline" label={formatCount(commentCount)} onPress={onComments} />
+        <RailButton size={sz.icon} a11y={saved ? 'Remove bookmark' : 'Bookmark'} icon={saved ? 'bookmark' : 'bookmark-outline'} color={saved ? colors.brandSoft : colors.text} onPress={onSave} />
+        <RailButton size={sz.icon} a11y="Share" icon="arrow-redo-outline" label={formatCount(shareCount)} onPress={onShare} />
+        <RailButton size={sz.icon - 4} a11y="More" icon="ellipsis-horizontal" onPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true) })} />
+      </View>
+
+      <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: bottomInset + BOTTOM_MARGIN, paddingRight: RAIL_WIDTH + SIDE_MARGIN * 2 }]}>
+        {uploader ? (
+          <Pressable onPress={() => pushPage({ name: 'account', handle: uploader.handle })} accessibilityRole="button" accessibilityLabel={`Open ${uploader.handle}`} hitSlop={6}>
+            <Text style={styles.handle} numberOfLines={1}>
+              @{uploader.handle}
+            </Text>
           </Pressable>
         ) : null}
+        {hasCaption ? (
+          <Pressable onPress={() => setExpanded((e) => !e)} accessibilityLabel={expanded ? 'Collapse caption' : 'Expand caption'}>
+            <Text style={styles.desc} numberOfLines={expanded ? 8 : 2}>
+              {video.title ? <Text style={styles.title}>{video.title}{video.description ? '  ' : ''}</Text> : null}
+              {video.description ? <CaptionText text={video.description} onTag={(tag) => pushPage({ name: 'tag', tag })} /> : null}
+            </Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          onPress={() => openSheet({ type: 'find', initialQuery: video.hashtags[0] || video.title })}
+          accessibilityRole="button"
+          accessibilityLabel="Find this on Piitrade"
+          style={styles.findChip}
+        >
+          <Icon name="bag-handle-outline" size={14} color={colors.text} />
+          <Text style={styles.findText}>Find on Piitrade</Text>
+        </Pressable>
       </View>
 
       <View pointerEvents="none" style={[styles.progressTrack, { bottom: bottomInset }]}>
@@ -288,22 +449,28 @@ export default function VideoCard({ video, active, height, bottomInset = 0 }: Pr
   );
 }
 
+const shadow = { textShadowColor: 'rgba(0,0,0,0.55)', textShadowRadius: 4, textShadowOffset: { width: 0, height: 1 } } as const;
+
 const styles = StyleSheet.create({
-  pauseBadge: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
-  scrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 280, backgroundColor: 'rgba(0,0,0,0.28)' },
-  rightRail: { position: 'absolute', right: space.sm, alignItems: 'center', gap: space.lg },
-  rail: { alignItems: 'center', minWidth: 48, gap: 2 },
-  railLabel: { color: colors.text, fontSize: 12, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4 },
-  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingLeft: space.lg, gap: space.sm },
-  uploaderRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  uploaderLink: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexShrink: 1 },
-  handle: { color: colors.text, fontWeight: '800', fontSize: 15, flexShrink: 1 },
-  follow: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)', borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 4 },
-  following: { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'transparent' },
-  followText: { color: colors.text, fontWeight: '700', fontSize: 12 },
-  title: { color: colors.text, fontWeight: '700', fontSize: 15 },
-  desc: { color: 'rgba(255,255,255,0.92)', fontSize: 14, lineHeight: 19 },
+  fade: { position: 'absolute', left: 0, right: 0 },
+  center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  rightRail: { position: 'absolute', right: SIDE_MARGIN - 4, width: RAIL_WIDTH, alignItems: 'center' },
+  rail: { alignItems: 'center', width: RAIL_WIDTH, gap: 2 },
+  railLabel: { color: colors.text, fontSize: 12, fontWeight: '700', ...shadow },
+  avatarRing: { borderWidth: 1.5, borderColor: '#fff', borderRadius: 30, padding: 0 },
+  followBadge: { position: 'absolute', bottom: 0, width: 20, height: 20, borderRadius: 10, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
+  muteChip: { position: 'absolute', right: SIDE_MARGIN, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.38)', alignItems: 'center', justifyContent: 'center' },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingLeft: SIDE_MARGIN + 4, gap: 6 },
+  handle: { color: colors.text, fontWeight: '800', fontSize: 16, ...shadow },
+  title: { fontWeight: '700' },
+  desc: { color: 'rgba(255,255,255,0.95)', fontSize: 14, lineHeight: 19, ...shadow },
   tag: { color: colors.brandSoft, fontWeight: '700' },
+  findChip: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, height: 30, paddingHorizontal: 12, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.35)' },
+  findText: { color: colors.text, fontSize: 12.5, fontWeight: '700' },
+  errorCard: { alignItems: 'center', gap: 8, backgroundColor: 'rgba(20,20,20,0.85)', paddingVertical: 18, paddingHorizontal: 24, borderRadius: 16 },
+  errorText: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  retry: { backgroundColor: colors.brand, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 18, marginTop: 4 },
+  retryText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   progressTrack: { position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.18)' },
   progressFill: { height: 2, backgroundColor: colors.text },
 });

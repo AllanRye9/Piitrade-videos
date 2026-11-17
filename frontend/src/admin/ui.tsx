@@ -1,10 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Info, Loader2, Search, X } from 'lucide-react';
 
 export const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
 
 export const inputCls =
   'w-full bg-white/5 border border-white/10 text-white text-sm rounded-lg px-3 py-2 outline-none placeholder:text-white/30 focus:border-brand-orange/70 focus:ring-1 focus:ring-brand-orange/40 disabled:opacity-50 [color-scheme:dark]';
+
+const selectCls =
+  'bg-white/5 border border-white/10 text-white text-sm rounded-lg pl-3 pr-8 py-2 outline-none focus:border-brand-orange/70 focus:ring-1 focus:ring-brand-orange/40 [color-scheme:dark]';
 
 // ---------- Button ----------
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
@@ -85,7 +88,7 @@ export function Toolbar({ children }: { children: ReactNode }) {
 
 export function SearchInput({ value, onChange, placeholder = 'Search…' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
-    <div className="relative flex-1 min-w-[200px] max-w-sm">
+    <div className="relative basis-full sm:basis-auto sm:flex-1 sm:min-w-[220px] sm:max-w-sm">
       <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={cx(inputCls, 'pl-9')} aria-label={placeholder} />
     </div>
@@ -94,7 +97,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…' }: { va
 
 export function Select({ className, children, ...rest }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select className={cx(inputCls, 'w-auto pr-8', className)} {...rest}>
+    <select className={cx(selectCls, className)} {...rest}>
       {children}
     </select>
   );
@@ -110,20 +113,50 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
+/**
+ * Desktop: a normal table. Phones (<768px): every row becomes a card whose cells
+ * are "LABEL … value" lines, so nothing is hidden off-screen behind a horizontal
+ * scroll (the row actions in particular). Labels come from the <th> text.
+ */
 export function Table({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLTableElement>(null);
+  useEffect(() => {
+    const t = ref.current;
+    if (!t) return;
+    const heads = Array.from(t.querySelectorAll('thead th')).map((h) => (h.textContent || '').trim());
+    t.querySelectorAll('tbody tr').forEach((tr) => {
+      Array.from(tr.children).forEach((td, i) => {
+        const label = heads[i] && heads[i] !== 'Actions' && i !== 0 ? heads[i] : '';
+        td.setAttribute('data-label', label);
+        td.classList.toggle('is-actions', heads[i] === 'Actions');
+      });
+    });
+  });
   return (
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">{children}</table>
+      <div className="xl:overflow-x-auto">
+        <table ref={ref} className="admin-table w-full text-sm text-left">
+          {children}
+        </table>
       </div>
     </Card>
   );
 }
 export const Th = ({ children, className }: { children?: ReactNode; className?: string }) => (
-  <th className={cx('px-4 py-2.5 text-[11px] uppercase tracking-wide font-semibold text-white/45 bg-white/[0.03] whitespace-nowrap', className)}>{children}</th>
+  <th className={cx('px-3 py-2.5 text-[11px] uppercase tracking-wide font-semibold text-white/45 bg-white/[0.03] whitespace-nowrap', className)}>{children}</th>
 );
 export const Td = ({ children, className }: { children?: ReactNode; className?: string }) => (
-  <td className={cx('px-4 py-3 text-white/85 align-middle border-t border-white/5', className)}>{children}</td>
+  <td
+    className={cx(
+      'px-3 py-3 text-white/85 align-middle border-t border-white/5',
+      'max-xl:flex max-xl:items-center max-xl:justify-between max-xl:gap-4 max-xl:border-t-0 max-xl:py-1.5 max-xl:text-right',
+      'max-xl:before:content-[attr(data-label)] max-xl:before:text-[11px] max-xl:before:uppercase max-xl:before:tracking-wide max-xl:before:text-white/40 max-xl:before:text-left max-xl:before:shrink-0',
+      'max-xl:[&.is-actions]:justify-end max-xl:[&.is-actions]:pt-2 max-xl:max-w-none max-xl:[&:first-child]:justify-start max-xl:[&:first-child]:text-left max-xl:[&:first-child]:pt-3',
+      className
+    )}
+  >
+    {children}
+  </td>
 );
 
 const TONES = {

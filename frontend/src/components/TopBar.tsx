@@ -17,7 +17,7 @@ import Avatar from './Avatar';
 import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
 import { piitradeUrl } from '../config';
 
-export type FeedMode = 'latest' | 'trending';
+export type FeedMode = 'foryou' | 'latest' | 'trending';
 
 interface Props {
   mode: FeedMode;
@@ -30,6 +30,7 @@ interface Props {
 }
 
 const TABS: Array<{ id: FeedMode; label: string }> = [
+  { id: 'foryou', label: 'For you' },
   { id: 'latest', label: 'Latest' },
   { id: 'trending', label: 'Trending' },
 ];

@@ -107,6 +107,8 @@ model UserVideoState {
   liked     Boolean @default(false)
   favorited Boolean @default(false)
   saved     Boolean @default(false)
+  // Set the first time this session watches the video (see POST /api/videos/:id/view).
+  viewedAt  DateTime?
 
   @@unique([sessionId, videoId])
   @@index([videoId])

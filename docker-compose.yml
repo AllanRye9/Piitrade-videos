@@ -3,11 +3,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: piitrade
-      POSTGRES_PASSWORD: piitrade
-      POSTGRES_DB: piitrade
+      POSTGRES_USER: ${POSTGRES_USER:-piitrade}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-piitrade}
+      POSTGRES_DB: ${POSTGRES_DB:-piitrade}
     volumes:
       - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U piitrade"]
       interval: 5s
@@ -37,6 +39,10 @@ services:
       MARKETPLACE_COUNTRY: ${MARKETPLACE_COUNTRY:-UGANDA}
       MARKETPLACE_DEFAULT_CURRENCY: ${MARKETPLACE_DEFAULT_CURRENCY:-UGX}
       PIITRADE_SITE_URL: ${PIITRADE_SITE_URL:-https://piitrade.com}
+      # Public origin of THIS site (canonical URLs, sitemap, share previews), e.g. https://videos.piitrade.com
+      SITE_URL: ${SITE_URL:-}
+      # Optional: where to fetch the built index.html from (default http://frontend/index.html, or SITE_URL/index.html)
+      SPA_SHELL_URL: ${SPA_SHELL_URL:-http://frontend/index.html}
       # Optional Cloudflare R2 storage — all required values must be set;
       # otherwise media is stored on local disk.
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}

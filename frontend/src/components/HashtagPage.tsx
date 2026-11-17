@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Video } from '../types';
 import { api } from '../api';
+import { useSeo } from '../seo';
 import { mediaUrl } from '../config';
 import VideoCard from './VideoCard';
 import { ArrowLeft, Heart, MessageCircle, Play, Hash, Loader2 } from 'lucide-react';
@@ -45,6 +46,7 @@ function VideoThumb({ video, onOpen }: { video: Video; onOpen: (v: Video) => voi
 
 export default function HashtagPage() {
   const { tag } = useParams<{ tag: string }>();
+  useSeo({ title: tag ? `#${tag} videos` : 'Hashtag', description: tag ? `Short videos tagged #${tag} on Piitrade Videos.` : undefined, noindex: true });
   const [videos, setVideos] = useState<Video[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

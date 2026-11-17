@@ -9,12 +9,12 @@ import { useApp, useProfile } from '../state/AppContext';
 import { addRecentSearch } from '../state/stores';
 import { colors, radius, space } from '../theme';
 
-type Mode = 'latest' | 'trending';
+type Mode = 'foryou' | 'latest' | 'trending';
 export const BOTTOM_BAR_HEIGHT = 64;
 
 export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: number) => void }) {
   const insets = useSafeAreaInsets();
-  const { signedIn, openSheet, requireAuth, pushPage, unreadCount } = useApp();
+  const { signedIn, openSheet, requireAuth, pushPage, pages, unreadCount } = useApp();
   const profile = useProfile();
 
   const [videos, setVideos] = useState<Video[]>([]);
@@ -22,7 +22,7 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [mode, setMode] = useState<Mode>('latest');
+  const [mode, setMode] = useState<Mode>('foryou');
   const [searching, setSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -37,7 +37,7 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
         setVideos(res.videos);
         setNextCursor(null);
       } else {
-        const res = await api.listVideos();
+        const res = await api.listVideos(null, m === 'foryou' ? 'foryou' : 'latest');
         setVideos(res.videos);
         setNextCursor(res.nextCursor);
       }
@@ -58,12 +58,15 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
   }, [signedIn]);
 
   const loadMore = useCallback(() => {
-    if (mode !== 'latest' || searching || loadingMore || !nextCursor) return;
+    if (mode === 'trending' || searching || loadingMore || !nextCursor) return;
     setLoadingMore(true);
     api
-      .listVideos(nextCursor)
+      .listVideos(nextCursor, mode === 'foryou' ? 'foryou' : 'latest')
       .then((res) => {
-        setVideos((prev) => [...prev, ...res.videos]);
+        setVideos((prev) => {
+          const seen = new Set(prev.map((v) => v.id));
+          return [...prev, ...res.videos.filter((v) => !seen.has(v.id))];
+        });
         setNextCursor(res.nextCursor);
       })
       .catch(() => {})
@@ -100,12 +103,14 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
     }
   }
 
-  const bottomInset = BOTTOM_BAR_HEIGHT + Math.max(insets.bottom, 0);
+  // The video viewport ends where the nav bar begins (as TikTok does) instead of running
+  // underneath it — otherwise the bottom ~100px of every video, and the caption, hide behind the bar.
+  const barHeight = BOTTOM_BAR_HEIGHT + Math.max(insets.bottom, 0);
 
   return (
     <View style={styles.root}>
       {/* The video fills the whole screen; chrome floats on top. */}
-      <View style={StyleSheet.absoluteFill} onLayout={(e) => { setHeight(e.nativeEvent.layout.height); onLayoutHeight?.(e.nativeEvent.layout.height); }}>
+      <View style={[StyleSheet.absoluteFill, { bottom: barHeight }]} onLayout={(e) => { setHeight(e.nativeEvent.layout.height); onLayoutHeight?.(e.nativeEvent.layout.height); }}>
         {height > 0 && loading && (
           <View style={styles.center}>
             <ActivityIndicator color={colors.text} />
@@ -128,7 +133,8 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
             key={`${mode}-${searching ? 'q' : 'f'}-${signedIn ? 'u' : 'g'}`}
             videos={videos}
             height={height}
-            bottomInset={bottomInset}
+            bottomInset={0}
+            suspended={pages.length > 0}
             onNearEnd={loadMore}
             onRefresh={() => loadFeed(mode)}
           />
@@ -160,9 +166,9 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
           <View style={styles.topRow}>
             <IconButton name="search" label="Search" onPress={() => setSearchOpen(true)} />
             <View style={styles.modes}>
-              {(['latest', 'trending'] as Mode[]).map((m) => (
+              {(['foryou', 'latest', 'trending'] as Mode[]).map((m) => (
                 <Pressable key={m} onPress={() => setMode(m)} hitSlop={6} accessibilityRole="tab" accessibilityState={{ selected: mode === m }}>
-                  <Text style={[styles.mode, mode === m && styles.modeActive]}>{m === 'latest' ? 'Latest' : 'Trending'}</Text>
+                  <Text style={[styles.mode, mode === m && styles.modeActive]}>{m === 'foryou' ? 'For you' : m === 'latest' ? 'Latest' : 'Trending'}</Text>
                   {mode === m && <View style={styles.modeUnderline} />}
                 </Pressable>
               ))}

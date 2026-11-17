@@ -179,7 +179,7 @@ export default function UsersPage() {
                     </button>
                   </Td>
                   <Td className="max-w-[220px] truncate">{u.email}</Td>
-                  <Td>{u.location?.name ?? <span className="text-white/35">—</span>}</Td>
+                  <Td className="whitespace-nowrap">{u.location?.name ?? <span className="text-white/35">—</span>}</Td>
                   <Td className="tabular-nums">{u.videoCount ?? 0}</Td>
                   <Td className="whitespace-nowrap">{fmtDate(u.createdAt)}</Td>
                   <Td><Badge tone={u.status === 'active' ? 'green' : 'red'}>{u.status === 'active' ? 'Active' : 'Suspended'}</Badge></Td>

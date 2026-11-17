@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
-import { hashPassword, verifyPassword, signAdminToken } from '../lib/auth';
+import { hashPassword, verifyPassword, signAdminToken, DUMMY_HASH } from '../lib/auth';
 import { HttpError } from '../lib/httpError';
 import { requireAdmin, toCurrentAdmin, AuthedRequest } from '../middleware/requireAdmin';
 import { authLimiter } from '../middleware/rateLimit';
@@ -67,7 +67,9 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
   const password = String(req.body.password || '');
 
   const admin = await prisma.adminUser.findUnique({ where: { email } });
-  if (!admin || !(await verifyPassword(password, admin.passwordHash))) {
+  // Always run a bcrypt comparison so response time doesn't reveal whether the email exists.
+  const passwordOk = await verifyPassword(password, admin?.passwordHash ?? DUMMY_HASH);
+  if (!admin || !passwordOk) {
     throw new HttpError(401, 'Invalid email or password');
   }
   if (admin.disabled) throw new HttpError(403, 'This admin account has been disabled');

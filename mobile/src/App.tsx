@@ -27,7 +27,7 @@ function SheetHost() {
     case 'settings': return <SettingsSheet />;
     case 'notifications': return <NotificationsSheet />;
     case 'comments': return <CommentsSheet video={sheet.video} onCountChange={sheet.onCountChange} />;
-    case 'more': return <MoreSheet video={sheet.video} />;
+    case 'more': return <MoreSheet video={sheet.video} onDeleted={sheet.onDeleted} />;
     case 'find': return <FindSheet initialQuery={sheet.initialQuery} />;
   }
 }

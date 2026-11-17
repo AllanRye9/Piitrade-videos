@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0a0a" />
+    <meta name="application-name" content="Piitrade Videos" />
+    <meta name="format-detection" content="telephone=no" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -16,11 +18,26 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon.svg" />
-    <meta name="description" content="Short videos from the Piitrade marketplace. Watch, then find the item on piitrade.com." />
-    <title>Piitrade Videos</title>
+    <title data-seo>Piitrade Videos — short videos from the Piitrade marketplace</title>
+    <meta name="description" content="Short videos from the Piitrade marketplace. Watch, then find the item on piitrade.com." data-seo />
+    <meta name="robots" content="index, follow, max-image-preview:large" data-seo />
+    <meta property="og:site_name" content="Piitrade Videos" data-seo />
+    <meta property="og:type" content="website" data-seo />
+    <meta property="og:title" content="Piitrade Videos — short videos from the Piitrade marketplace" data-seo />
+    <meta property="og:description" content="Short videos from the Piitrade marketplace. Watch, then find the item on piitrade.com." data-seo />
+    <meta name="twitter:card" content="summary_large_image" data-seo />
+    <meta name="twitter:title" content="Piitrade Videos — short videos from the Piitrade marketplace" data-seo />
+    <meta name="twitter:description" content="Short videos from the Piitrade marketplace. Watch, then find the item on piitrade.com." data-seo />
   </head>
   <body class="bg-black">
     <div id="root"></div>
+    <noscript>
+      <main style="color:#fff;font-family:system-ui,sans-serif;padding:24px;max-width:560px;margin:0 auto">
+        <h1>Piitrade Videos</h1>
+        <p>Short videos from the Piitrade marketplace. Watch, then find the item on <a href="https://piitrade.com" style="color:#FFB347">piitrade.com</a>.</p>
+        <p>Please enable JavaScript to watch videos.</p>
+      </main>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

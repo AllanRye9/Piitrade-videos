@@ -150,8 +150,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  listVideos: (cursor?: string | null) =>
-    request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+  listVideos: (cursor?: string | null, sort: 'latest' | 'foryou' = 'latest') => {
+    const qs = [cursor ? `cursor=${encodeURIComponent(cursor)}` : '', sort === 'foryou' ? 'sort=foryou' : ''].filter(Boolean).join('&');
+    return request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${qs ? `?${qs}` : ''}`);
+  },
 
   getTrendingVideos: () => request<{ videos: Video[] }>('/api/videos/trending'),
 

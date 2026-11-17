@@ -16,7 +16,7 @@ export type SheetDescriptor =
   | { type: 'settings' }
   | { type: 'notifications' }
   | { type: 'comments'; video: Video; onCountChange?: (n: number) => void }
-  | { type: 'more'; video: Video }
+  | { type: 'more'; video: Video; onDeleted?: () => void }
   | { type: 'find'; initialQuery?: string };
 
 // ------------------------------------------------------------------ pages

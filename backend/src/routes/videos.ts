@@ -15,6 +15,9 @@ import { ensureHandle, resolveAvatarUrl } from './profile';
 import { uploadLimiter, writeLimiter } from '../middleware/rateLimit';
 import { extractHashtags } from '../lib/hashtags';
 import { requireAccount } from '../middleware/requireAccount';
+import { decodeCursor, encodeCursor, olderThan } from '../lib/cursor';
+import { RANK_POOL_SIZE, ViewerSignals, decodeRankCursor, encodeRankCursor, rankVideos } from '../lib/feedRank';
+import { removeStoredFile } from './admin/helpers';
 
 const router = Router();
 
@@ -42,7 +45,16 @@ type VideoRecord = {
 
 type StateRecord = { videoId: string; liked: boolean; favorited: boolean; saved: boolean };
 
-type UploaderRecord = { sessionId: string; handle: string | null; displayName: string | null; avatar: string | null };
+type UploaderRecord = {
+  sessionId: string;
+  handle: string | null;
+  displayName: string | null;
+  avatar: string | null;
+  /** The requesting session is this uploader (so the app hides "Follow"). */
+  isOwn?: boolean;
+  /** The requesting session already follows this uploader. */
+  isFollowing?: boolean;
+};
 
 export function getSessionId(req: Request): string {
   const id = req.header('x-session-id');
@@ -80,7 +92,9 @@ export function serialize(video: VideoRecord, state?: StateRecord, uploader?: Up
     // Only ever the uploader's *public* handle/displayName/avatar —
     // never uploaderSessionId itself, which stays server-side so a
     // viewer can't be tracked across videos by session id.
-    uploader: uploader?.handle ? { handle: uploader.handle, displayName: uploader.displayName, avatar: uploader.avatar } : null,
+    uploader: uploader?.handle
+      ? { handle: uploader.handle, displayName: uploader.displayName, avatar: uploader.avatar, isOwn: !!uploader.isOwn, isFollowing: !!uploader.isFollowing }
+      : null,
   };
 }
 
@@ -91,14 +105,27 @@ export function serialize(video: VideoRecord, state?: StateRecord, uploader?: Up
  * existed, or whose uploader never claimed a public handle, simply
  * have no entry in the returned map.
  */
-async function fetchUploadersFor(videos: VideoRecord[]): Promise<Map<string, UploaderRecord>> {
+async function fetchUploadersFor(videos: VideoRecord[], viewerSessionId?: string): Promise<Map<string, UploaderRecord>> {
   const sessionIds = [...new Set(videos.map((v) => v.uploaderSessionId).filter((id): id is string => !!id))];
   if (sessionIds.length === 0) return new Map();
-  const profiles = await prisma.sessionProfile.findMany({ where: { sessionId: { in: sessionIds }, handle: { not: null } } });
+  const [profiles, followRows] = await Promise.all([
+    prisma.sessionProfile.findMany({ where: { sessionId: { in: sessionIds }, handle: { not: null } } }),
+    viewerSessionId && viewerSessionId !== 'anonymous'
+      ? prisma.follow.findMany({ where: { followerSessionId: viewerSessionId, followingSessionId: { in: sessionIds } }, select: { followingSessionId: true } })
+      : Promise.resolve([] as { followingSessionId: string }[]),
+  ]);
+  const following = new Set<string>(followRows.map((f: { followingSessionId: string }) => f.followingSessionId));
   return new Map(
     profiles.map((p: { sessionId: string; handle: string | null; displayName: string | null; avatar: string | null }) => [
       p.sessionId,
-      { sessionId: p.sessionId, handle: p.handle, displayName: p.displayName, avatar: p.avatar ? resolveAvatarUrl(p.avatar) : null },
+      {
+        sessionId: p.sessionId,
+        handle: p.handle,
+        displayName: p.displayName,
+        avatar: p.avatar ? resolveAvatarUrl(p.avatar) : null,
+        isOwn: !!viewerSessionId && p.sessionId === viewerSessionId,
+        isFollowing: following.has(p.sessionId),
+      },
     ])
   );
 }
@@ -127,24 +154,94 @@ async function fetchStatesFor(videoIds: string[], sessionId: string): Promise<Ma
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
 
+/**
+ * Collects what we know about this viewer for the "For you" ranking: what they
+ * already watched, who they follow, and the creators/hashtags behind videos
+ * they liked, saved or favourited. All from tables that already exist.
+ */
+async function loadViewerSignals(sessionId: string, snapshot: Date): Promise<ViewerSignals> {
+  const signals: ViewerSignals = { viewedIds: new Set(), followingSessionIds: new Set(), tagWeights: new Map(), creatorWeights: new Map(), locationWeights: new Map(), sessionId };
+  if (sessionId === 'anonymous') return signals;
+
+  const [viewed, engaged, follows, me] = await Promise.all([
+    // Only views recorded before the feed snapshot, so watching page 1 doesn't reshuffle page 2.
+    prisma.userVideoState.findMany({ where: { sessionId, viewedAt: { not: null, lt: snapshot } }, select: { videoId: true } }),
+    prisma.userVideoState.findMany({
+      where: { sessionId, OR: [{ liked: true }, { saved: true }, { favorited: true }] },
+      select: { video: { select: { hashtags: true, uploaderSessionId: true, locationId: true } } },
+      take: 100,
+    }),
+    prisma.follow.findMany({ where: { followerSessionId: sessionId }, select: { followingSessionId: true } }),
+    prisma.sessionProfile.findUnique({ where: { sessionId }, select: { locationId: true } }),
+  ]);
+  signals.locationId = me?.locationId ?? null;
+
+  for (const v of viewed) signals.viewedIds.add(v.videoId);
+  for (const f of follows) signals.followingSessionIds.add(f.followingSessionId);
+  for (const e of engaged) {
+    for (const t of e.video.hashtags) signals.tagWeights.set(t, (signals.tagWeights.get(t) ?? 0) + 1);
+    if (e.video.locationId) signals.locationWeights.set(e.video.locationId, (signals.locationWeights.get(e.video.locationId) ?? 0) + 1);
+    const c = e.video.uploaderSessionId;
+    if (c && c !== sessionId) signals.creatorWeights.set(c, (signals.creatorWeights.get(c) ?? 0) + 1);
+  }
+  return signals;
+}
+
 router.get('/', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
-  const cursor = typeof req.query.cursor === 'string' && req.query.cursor ? req.query.cursor : undefined;
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(req.query.limit) || DEFAULT_PAGE_SIZE));
+  const rawCursor = req.query.cursor;
+  const rankOffset = decodeRankCursor(typeof rawCursor === 'string' ? rawCursor.split('.')[0] : rawCursor);
+  const personalised = req.query.sort === 'foryou' && (rankOffset !== null || !rawCursor || decodeCursor(rawCursor) === null);
 
+  // ── "For you": rank a bounded pool of the newest videos for this viewer, ──
+  // page through it by offset, then fall back to the chronological cursor so
+  // older videos remain reachable.
+  if (personalised) {
+    const snapshotMs = rankOffset !== null ? Number(String(rawCursor).split('.')[1]) || Date.now() : Date.now();
+    const snapshot = new Date(snapshotMs);
+    const offset = rankOffset ?? 0;
+
+    const [pool, signals] = await Promise.all([
+      prisma.video.findMany({ where: { createdAt: { lte: snapshot } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: RANK_POOL_SIZE }),
+      loadViewerSignals(sessionId, snapshot),
+    ]);
+    const ranked = rankVideos(pool as VideoRecord[], signals, snapshotMs);
+    const page = ranked.slice(offset, offset + limit);
+    const end = offset + limit;
+
+    let nextCursor: string | null = null;
+    if (end < ranked.length) {
+      nextCursor = `${encodeRankCursor(end)}.${snapshotMs}`;
+    } else if (pool.length === RANK_POOL_SIZE) {
+      // Pool exhausted: continue chronologically from the oldest video in it.
+      const oldest = pool[pool.length - 1];
+      nextCursor = encodeCursor(oldest.createdAt, oldest.id);
+    }
+
+    const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
+    const uploaderMap = await fetchUploadersFor(page, sessionId);
+    res.json({
+      videos: page.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
+      nextCursor,
+    });
+    return;
+  }
+
+  const cursor = decodeCursor(rawCursor);
   const videos: VideoRecord[] = await prisma.video.findMany({
-    orderBy: { createdAt: 'desc' },
+    where: cursor ? olderThan(cursor) : undefined,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1, // fetch one extra to know whether there's a next page
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
   const hasMore = videos.length > limit;
   const page = hasMore ? videos.slice(0, limit) : videos;
 
   const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
-  const uploaderMap = await fetchUploadersFor(page);
+  const uploaderMap = await fetchUploadersFor(page, sessionId);
   res.json({
     videos: page.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
-    nextCursor: hasMore ? page[page.length - 1].id : null,
+    nextCursor: hasMore ? encodeCursor(page[page.length - 1].createdAt, page[page.length - 1].id) : null,
   });
 });
 
@@ -180,32 +277,82 @@ router.get('/trending', async (req: Request, res: Response) => {
   const ordered = ids.map((id: string) => videoMap.get(id)).filter((v: VideoRecord | undefined): v is VideoRecord => !!v);
 
   const stateMap = await fetchStatesFor(ids, sessionId);
-  const uploaderMap = await fetchUploadersFor(ordered);
+  const uploaderMap = await fetchUploadersFor(ordered, sessionId);
   res.json({
     videos: ordered.map((v: VideoRecord) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
   });
 });
 
 // GET /api/videos/search?q=
+//
+// Every whitespace-separated word must match somewhere on the video — its
+// title, description, hashtags, uploader (handle / display name) or location —
+// so "#shoes kampala" or "@rye bike" work. A leading # or @ is just stripped.
+// Results are ranked by where the match was (title > hashtag > creator >
+// location > description) with engagement and recency as tie-breakers.
+const SEARCH_CANDIDATES = 200;
+const SEARCH_MAX_TERMS = 5;
+
 router.get('/search', async (req: Request, res: Response) => {
-  const q = String(req.query.q || '').trim();
+  const raw = String(req.query.q || '').trim().slice(0, 100);
   const sessionId = getSessionId(req);
-  if (!q) {
+  const terms = [...new Set(raw.split(/\s+/).map((t) => t.replace(/^[#@]+/, '').trim()).filter(Boolean))].slice(0, SEARCH_MAX_TERMS);
+  if (terms.length === 0) {
     res.json({ videos: [] });
     return;
   }
-  const videos: VideoRecord[] = await prisma.video.findMany({
-    where: {
-      OR: [
-        { title: { contains: q, mode: 'insensitive' } },
-        { description: { contains: q, mode: 'insensitive' } },
-      ],
-    },
-    orderBy: { createdAt: 'desc' },
-    take: MAX_PAGE_SIZE, // safety cap — search has no pagination UI, just bounded results
+
+  // Uploaders whose handle / display name matches any term.
+  const profiles = await prisma.sessionProfile.findMany({
+    where: { OR: terms.flatMap((t) => [{ handle: { contains: t, mode: 'insensitive' as const } }, { displayName: { contains: t, mode: 'insensitive' as const } }]) },
+    select: { sessionId: true, handle: true, displayName: true },
+    take: 200,
   });
+  const creatorMatches = (term: string) =>
+    profiles.filter((p: { handle: string | null; displayName: string | null }) => `${p.handle ?? ''} ${p.displayName ?? ''}`.toLowerCase().includes(term.toLowerCase())).map((p: { sessionId: string }) => p.sessionId);
+
+  type SearchCandidate = VideoRecord & { location: { name: string; city: string } | null; hashtags: string[] };
+  const candidates: SearchCandidate[] = await prisma.video.findMany({
+    where: {
+      AND: terms.map((t) => ({
+        OR: [
+          { title: { contains: t, mode: 'insensitive' as const } },
+          { description: { contains: t, mode: 'insensitive' as const } },
+          { hashtags: { has: t.toLowerCase() } },
+          { uploaderSessionId: { in: creatorMatches(t) } },
+          { location: { is: { OR: [{ name: { contains: t, mode: 'insensitive' as const } }, { city: { contains: t, mode: 'insensitive' as const } }] } } },
+        ],
+      })),
+    },
+    include: { location: { select: { name: true, city: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: SEARCH_CANDIDATES,
+  });
+
+  const lower = terms.map((t) => t.toLowerCase());
+  const now = Date.now();
+  const scored = candidates.map((v: SearchCandidate) => {
+    const title = v.title.toLowerCase();
+    const desc = v.description.toLowerCase();
+    const loc = `${v.location?.name ?? ''} ${v.location?.city ?? ''}`.toLowerCase();
+    let score = 0;
+    for (const t of lower) {
+      if (title.includes(t)) score += 3;
+      if (v.hashtags.includes(t)) score += 2.5;
+      if (v.uploaderSessionId && creatorMatches(t).includes(v.uploaderSessionId)) score += 2;
+      if (loc.includes(t)) score += 1.5;
+      if (desc.includes(t)) score += 1;
+    }
+    if (lower.length > 1 && title.includes(lower.join(' '))) score += 2; // exact phrase in the title
+    score += Math.log1p(v.likes * 2 + v.comments * 3 + v.shares * 4 + v.views * 0.1) * 0.2;
+    score += 1 / (1 + (now - v.createdAt.getTime()) / 86_400_000 / 7); // gentle recency
+    return { v, score };
+  });
+  scored.sort((a: { v: SearchCandidate; score: number }, b: { v: SearchCandidate; score: number }) => b.score - a.score || b.v.createdAt.getTime() - a.v.createdAt.getTime());
+  const videos: VideoRecord[] = scored.slice(0, MAX_PAGE_SIZE).map((x: { v: SearchCandidate }) => x.v);
+
   const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
-  const uploaderMap = await fetchUploadersFor(videos);
+  const uploaderMap = await fetchUploadersFor(videos, sessionId);
   res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)) });
 });
 
@@ -218,24 +365,23 @@ router.get('/search', async (req: Request, res: Response) => {
 router.get('/hashtag/:tag', async (req: Request, res: Response) => {
   const tag = req.params.tag.toLowerCase();
   const sessionId = getSessionId(req);
-  const cursor = typeof req.query.cursor === 'string' && req.query.cursor ? req.query.cursor : undefined;
+  const cursor = decodeCursor(req.query.cursor);
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(req.query.limit) || DEFAULT_PAGE_SIZE));
 
   const videos: VideoRecord[] = await prisma.video.findMany({
-    where: { hashtags: { has: tag } },
-    orderBy: { createdAt: 'desc' },
+    where: { hashtags: { has: tag }, ...(cursor ? olderThan(cursor) : {}) },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
   });
   const hasMore = videos.length > limit;
   const page = hasMore ? videos.slice(0, limit) : videos;
 
   const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
-  const uploaderMap = await fetchUploadersFor(page);
+  const uploaderMap = await fetchUploadersFor(page, sessionId);
   res.json({
     tag,
     videos: page.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
-    nextCursor: hasMore ? page[page.length - 1].id : null,
+    nextCursor: hasMore ? encodeCursor(page[page.length - 1].createdAt, page[page.length - 1].id) : null,
   });
 });
 
@@ -257,16 +403,51 @@ router.get('/hashtags/trending', async (_req: Request, res: Response) => {
   res.json({ hashtags: rows.map((r: { tag: string; count: bigint }) => ({ tag: r.tag, count: Number(r.count) })) });
 });
 
+/**
+ * Counts one view per session per video. Returns true only the first time this
+ * session watches this video. Atomic: the flip is a conditional UPDATE, and the
+ * first-ever row is a CREATE that a concurrent request can't also win (unique
+ * (sessionId, videoId)), so two simultaneous calls never double-count.
+ */
+async function recordView(sessionId: string, videoId: string): Promise<boolean> {
+  if (sessionId === 'anonymous') return false; // no identity → can't de-duplicate, so don't count
+  let first = false;
+  const flipped = await prisma.userVideoState.updateMany({ where: { sessionId, videoId, viewedAt: null }, data: { viewedAt: new Date() } });
+  if (flipped.count > 0) {
+    first = true;
+  } else {
+    try {
+      await prisma.userVideoState.create({ data: { sessionId, videoId, viewedAt: new Date() } });
+      first = true;
+    } catch (err: any) {
+      if (err?.code === 'P2002') return false; // row exists and was already counted
+      if (err?.code === 'P2003') throw new HttpError(404, 'Video not found'); // video doesn't exist
+      throw err;
+    }
+  }
+  if (first) await prisma.video.update({ where: { id: videoId }, data: { views: { increment: 1 } } });
+  return first;
+}
+
+// POST /api/videos/:id/view — called by the app once a video has actually been
+// watched for a moment. (Previously only GET /:id counted views, which the feed
+// never calls, so feed views were never recorded.)
+router.post('/:id/view', writeLimiter, async (req: Request, res: Response) => {
+  const counted = await recordView(getSessionId(req), req.params.id);
+  res.json({ counted });
+});
+
 // GET /api/videos/:id
 router.get('/:id', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const video: VideoRecord | null = await prisma.video.findUnique({ where: { id: req.params.id } });
   if (!video) throw new HttpError(404, 'Video not found');
 
-  const updated = await prisma.video.update({ where: { id: video.id }, data: { views: { increment: 1 } } });
+  await recordView(sessionId, video.id); // once per session, not once per refresh/crawler hit
+  const fresh: VideoRecord = (await prisma.video.findUnique({ where: { id: video.id } })) ?? video;
   const stateMap = await fetchStatesFor([video.id], sessionId);
-  const uploaderMap = await fetchUploadersFor([updated]);
-  res.json({ video: serialize(updated, stateMap.get(video.id), updated.uploaderSessionId ? uploaderMap.get(updated.uploaderSessionId) : null) });
+  const uploaderMap = await fetchUploadersFor([fresh], sessionId);
+  res.json({ video: serialize(fresh, stateMap.get(video.id), fresh.uploaderSessionId ? uploaderMap.get(fresh.uploaderSessionId) : null) });
 });
 
 // POST /api/videos  (multipart: video, title, description, trimStart?,
@@ -464,9 +645,28 @@ router.post('/', requireAccount, uploadLimiter, uploadVideoWithAudio, async (req
     },
   });
 
-  const uploaderMap = await fetchUploadersFor([video]);
+  const uploaderMap = await fetchUploadersFor([video], sessionId);
   res.status(201).json({ video: serialize(video, undefined, video.uploaderSessionId ? uploaderMap.get(video.uploaderSessionId) : null) });
 });
+
+/**
+ * Flips one boolean flag on the (session, video) state row and reports whether
+ * it actually changed. Conditional UPDATE / unique CREATE, so concurrent or
+ * repeated taps can't both "win" — the earlier read-then-write version let a
+ * double-tap increment `likes` twice for a single like.
+ */
+async function setFlag(sessionId: string, videoId: string, field: 'liked' | 'favorited' | 'saved', want: boolean): Promise<boolean> {
+  const flipped = await prisma.userVideoState.updateMany({ where: { sessionId, videoId, [field]: !want }, data: { [field]: want } });
+  if (flipped.count > 0) return true;
+  if (!want) return false; // already false (or no row yet)
+  try {
+    await prisma.userVideoState.create({ data: { sessionId, videoId, [field]: true } });
+    return true;
+  } catch (err: any) {
+    if (err?.code === 'P2002') return false; // someone else just set it
+    throw err;
+  }
+}
 
 function makeToggleHandler(field: 'liked' | 'favorited' | 'saved') {
   return async (req: Request, res: Response) => {
@@ -475,26 +675,39 @@ function makeToggleHandler(field: 'liked' | 'favorited' | 'saved') {
     const video = await prisma.video.findUnique({ where: { id: videoId } });
     if (!video) throw new HttpError(404, 'Video not found');
 
-    const existing = await prisma.userVideoState.findUnique({
-      where: { sessionId_videoId: { sessionId, videoId } },
-    });
+    const existing = await prisma.userVideoState.findUnique({ where: { sessionId_videoId: { sessionId, videoId } } });
     const newValue = !(existing?.[field] ?? false);
-
-    await prisma.userVideoState.upsert({
-      where: { sessionId_videoId: { sessionId, videoId } },
-      create: { sessionId, videoId, [field]: newValue },
-      update: { [field]: newValue },
-    });
+    const changed = await setFlag(sessionId, videoId, field, newValue);
 
     let likes = video.likes;
     if (field === 'liked') {
-      likes = video.likes + (newValue ? 1 : -1);
-      await prisma.video.update({ where: { id: videoId }, data: { likes } });
+      // Atomic increment in the database — never `video.likes + 1` from a stale read.
+      const updated = changed
+        ? await prisma.video.update({ where: { id: videoId }, data: { likes: { increment: newValue ? 1 : -1 } } })
+        : await prisma.video.findUnique({ where: { id: videoId } });
+      likes = Math.max(0, updated?.likes ?? video.likes);
     }
 
-    res.json({ [field]: newValue, likes });
+    // Report the state as stored, which is what the app reconciles to.
+    const stored = await prisma.userVideoState.findUnique({ where: { sessionId_videoId: { sessionId, videoId } } });
+    res.json({ [field]: stored?.[field] ?? newValue, likes });
   };
 }
+
+// DELETE /api/videos/:id — a creator removes their own video (and its stored files).
+// Only the uploader's session may do this; everyone else gets 403 (admins use /api/admin/videos).
+router.delete('/:id', requireAccount, writeLimiter, async (req: Request, res: Response) => {
+  const sessionId = getSessionId(req);
+  const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+  if (!video) throw new HttpError(404, 'Video not found');
+  if (!video.uploaderSessionId || video.uploaderSessionId !== sessionId) {
+    throw new HttpError(403, 'You can only delete your own videos');
+  }
+  await prisma.video.delete({ where: { id: video.id } }); // comments/likes/reports cascade
+  await removeStoredFile(video.filename, VIDEOS_DIR).catch((err: unknown) => console.warn('video file cleanup failed', err));
+  if (video.posterFilename) await removeStoredFile(video.posterFilename, POSTERS_DIR).catch((err: unknown) => console.warn('poster cleanup failed', err));
+  res.status(204).send();
+});
 
 router.post('/:id/like', requireAccount, makeToggleHandler('liked'));
 router.post('/:id/favorite', requireAccount, makeToggleHandler('favorited'));
@@ -598,9 +811,12 @@ router.post('/:id/comments', requireAccount, writeLimiter, async (req: Request, 
   const text = String(req.body.text || '').trim().slice(0, 500);
   if (!text) throw new HttpError(400, 'Comment text is required');
 
-  const author = String(req.body.author || 'Guest').slice(0, 60);
   const videoId = req.params.id;
   const commenterSessionId = getSessionId(req);
+  // The display name comes from the commenter's own profile, never from the request
+  // body — otherwise anyone could post as "@someone-else" or as the app itself.
+  const commenterProfile = await prisma.sessionProfile.findUnique({ where: { sessionId: commenterSessionId }, select: { displayName: true, handle: true } });
+  const author = (commenterProfile?.displayName || (commenterProfile?.handle ? `@${commenterProfile.handle}` : '') || 'User').slice(0, 60);
   const requestedParentId = typeof req.body.parentId === 'string' && req.body.parentId ? req.body.parentId : null;
 
   const video = await prisma.video.findUnique({ where: { id: videoId } });

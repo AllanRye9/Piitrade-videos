@@ -10,6 +10,27 @@
     },
     "rewrites": [
         {
+            "source": "/(robots.txt|sitemap.xml)",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
+            "source": "/legal/:page",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
+            "source": "/v/:id",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
             "source": "/api(/.*)?",
             "destination": {
                 "type": "service",

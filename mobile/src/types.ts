@@ -4,6 +4,10 @@ export interface VideoUploader {
   handle: string;
   displayName: string | null;
   avatar: string | null;
+  /** The signed-in viewer is this creator (hide Follow). */
+  isOwn?: boolean;
+  /** The viewer already follows this creator. */
+  isFollowing?: boolean;
 }
 
 export interface Video {

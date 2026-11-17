@@ -13,6 +13,7 @@ import TermsPage from './components/legal/TermsPage';
 import PrivacyPage from './components/legal/PrivacyPage';
 import DmcaPage from './components/legal/DmcaPage';
 import AdminApp from './admin/AdminApp';
+import RouteSeo from './RouteSeo';
 import './styles/index.css';
 
 // Register the app-shell service worker (see public/sw.js) — narrow in
@@ -31,6 +32,7 @@ if ('serviceWorker' in navigator) {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
+        <RouteSeo />
         <Routes>
           {/* Admin dashboard. Owns its own auth provider, so the consumer app
               never loads or calls anything admin-related. The old /admin

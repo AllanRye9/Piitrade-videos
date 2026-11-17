@@ -215,3 +215,12 @@ a:focus-visible {
   min-width: 44px;
   min-height: 44px;
 }
+
+/* Admin tables: on phones each row becomes a card (see Table in admin/ui.tsx). */
+@media (max-width: 1279px) {
+  .admin-table,
+  .admin-table tbody { display: block; }
+  .admin-table thead { display: none; }
+  .admin-table tbody tr { display: block; padding: 0.5rem 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+  .admin-table tbody tr:first-child { border-top: 0; }
+}

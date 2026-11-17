@@ -62,8 +62,10 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const api = {
-  listVideos: (cursor?: string | null) =>
-    request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+  listVideos: (cursor?: string | null, sort: 'latest' | 'foryou' = 'latest') => {
+    const qs = [cursor ? `cursor=${encodeURIComponent(cursor)}` : '', sort === 'foryou' ? 'sort=foryou' : ''].filter(Boolean).join('&');
+    return request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${qs ? `?${qs}` : ''}`);
+  },
   getTrendingVideos: () => request<{ videos: Video[] }>('/api/videos/trending'),
   searchVideos: (q: string) => request<{ videos: Video[] }>(`/api/videos/search?q=${encodeURIComponent(q)}`),
   getHashtagVideos: (tag: string, cursor?: string | null) =>
@@ -74,6 +76,9 @@ export const api = {
   getVideo: (id: string) => request<{ video: Video }>(`/api/videos/${id}`),
   reportVideo: (id: string, reason: 'spam' | 'inappropriate' | 'copyright' | 'other') =>
     request<{ reported: boolean }>(`/api/videos/${id}/report`, json('POST', { reason })),
+  /** Counts one view per session per video (server de-duplicates). Fire-and-forget. */
+  recordView: (id: string) => request<{ counted: boolean }>(`/api/videos/${id}/view`, { method: 'POST' }),
+  deleteVideo: (id: string) => request<void>(`/api/videos/${id}`, { method: 'DELETE' }),
   shareVideo: (id: string) => request<{ shares: number }>(`/api/videos/${id}/share`, { method: 'POST' }),
 
   uploadVideo: (

@@ -13,9 +13,11 @@ interface Props {
   onRefresh?: () => Promise<void> | void;
   /** Index to scroll to initially (used by profile/tag viewers). */
   initialIndex?: number;
+  /** Pause everything (e.g. a page is open on top of this feed) so audio doesn't play underneath. */
+  suspended?: boolean;
 }
 
-export default function VideoFeed({ videos, height, bottomInset, onNearEnd, onRefresh, initialIndex = 0 }: Props) {
+export default function VideoFeed({ videos, height, bottomInset, onNearEnd, onRefresh, initialIndex = 0, suspended = false }: Props) {
   const [activeIndex, setActiveIndex] = useState(initialIndex);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -40,7 +42,10 @@ export default function VideoFeed({ videos, height, bottomInset, onNearEnd, onRe
     <FlatList
       data={videos}
       keyExtractor={(v) => v.id}
-      renderItem={({ item, index }) => <VideoCard video={item} active={index === activeIndex} height={height} bottomInset={bottomInset} />}
+      extraData={`${activeIndex}-${suspended}`}
+      renderItem={({ item, index }) => (
+        <VideoCard video={item} active={index === activeIndex} preload={index === activeIndex + 1} suspended={suspended} height={height} bottomInset={bottomInset} />
+      )}
       pagingEnabled
       snapToInterval={height}
       snapToAlignment="start"

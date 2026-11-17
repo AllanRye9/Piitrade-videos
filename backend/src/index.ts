@@ -14,6 +14,7 @@ import profileRouter from './routes/profile';
 import accountsRouter from './routes/accounts';
 import accountRouter from './routes/account';
 import notificationsRouter from './routes/notifications';
+import seoRouter from './routes/seo';
 import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
 
@@ -47,6 +48,9 @@ app.use(express.json());
 // Uploaded files are named with random UUIDs and never overwritten in
 // place, so it's safe to let browsers/CDNs cache them aggressively.
 app.use('/uploads', express.static(UPLOAD_ROOT, { maxAge: '7d', immutable: true }));
+
+// Crawler-facing routes at the site root: /robots.txt, /sitemap.xml, /v/:id (see routes/seo.ts).
+app.use(seoRouter);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/videos', videosRouter);

@@ -69,3 +69,18 @@ does not need CORS. Serving the bucket from a custom domain also lets Cloudflare
 * Crop-to-search visual search, watermarked downloads and a live music preview in the upload popup exist on the
   web app only; the mobile app has typed "Find on Piitrade" search instead.
 * The rest of the web app (feed, profile…) still requires login; only `/v/:id` is public.
+
+## SEO & link previews
+
+The frontend is a client-rendered SPA, so the backend (`backend/src/routes/seo.ts`) serves the crawler-facing pages and the proxy forwards exactly these paths to it (`frontend/nginx.conf`, `vercel.json`):
+
+| Path | What it does |
+| --- | --- |
+| `/v/:id` | Shared-video page: the SPA shell with real `<title>`, description, canonical, Open Graph / Twitter tags and `VideoObject` JSON-LD. Reported videos are `noindex`; unknown ids return 404. |
+| `/`, `/legal/*` | Same shell with absolute canonical / Open Graph URLs. |
+| `/sitemap.xml` | Home, legal pages and up to 5,000 newest videos (Google video sitemap). Videos with open reports are left out. Cached 10 min. |
+| `/robots.txt` | Blocks `/const/`, `/admin`, `/api/`, `/reset-password`; points at the sitemap. |
+
+Set `SITE_URL` (e.g. `https://videos.piitrade.com`) so canonical URLs and the sitemap use your public origin; otherwise it is derived from the request host. `SPA_SHELL_URL` is where the backend fetches the built `index.html` (defaults to `http://frontend/index.html` in docker-compose). If the backend is unreachable, nginx falls back to the plain SPA.
+
+In the app, `src/seo.ts` / `src/RouteSeo.tsx` keep the tags in sync for in-app navigation (Googlebot runs JS). Admin, password-reset and sign-in-gated screens are `noindex`; nginx also sends `X-Robots-Tag: noindex` for the admin paths.

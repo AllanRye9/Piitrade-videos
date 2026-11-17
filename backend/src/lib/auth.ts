@@ -1,14 +1,22 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomBytes } from 'crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-insecure-secret-change-me';
+const INSECURE_DEFAULT = 'dev-only-insecure-secret-change-me';
 const TOKEN_TTL = '7d';
 
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  // Fail loudly rather than silently signing tokens with a known,
-  // publicly-visible default secret in production.
+// The default secret is public (it's in this repo and docker-compose.yml), so
+// anyone could forge an admin token with it. In production, if no real secret
+// is configured, use a random per-process one instead: the service stays up,
+// the admin dashboard is not forgeable, and admins just have to sign in again
+// after each restart until JWT_SECRET is set.
+const configured = process.env.JWT_SECRET;
+const insecure = !configured || configured === INSECURE_DEFAULT;
+const JWT_SECRET = insecure && process.env.NODE_ENV === 'production' ? randomBytes(48).toString('hex') : configured || INSECURE_DEFAULT;
+
+if (insecure && process.env.NODE_ENV === 'production') {
   console.warn(
-    'WARNING: JWT_SECRET is not set. Using an insecure default — set JWT_SECRET in production before exposing this service.'
+    'WARNING: JWT_SECRET is not set (or is the public default). Using a random per-process secret — admin sessions will not survive a restart. Set JWT_SECRET to a long random string.'
   );
 }
 
@@ -35,3 +43,6 @@ export function signAdminToken(payload: AdminTokenPayload): string {
 export function verifyAdminToken(token: string): AdminTokenPayload {
   return jwt.verify(token, JWT_SECRET) as AdminTokenPayload;
 }
+
+/** A real bcrypt hash of a random string — used to burn equal CPU time when a login names an unknown account. */
+export const DUMMY_HASH = bcrypt.hashSync(randomBytes(16).toString('hex'), 12);

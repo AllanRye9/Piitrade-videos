@@ -6,9 +6,9 @@ import { useFetch } from '../hooks';
 import { ADMIN_BASE } from '../paths';
 import { Card, ErrorState, PageHeader, Spinner, fmtDate, fmtNum, Table, Th, Td } from '../ui';
 
-function Stat({ label, value, sub, icon: Icon, to }: { label: string; value: string; sub?: string; icon: typeof Users; to?: string }) {
+function Stat({ label, value, sub, icon: Icon, to, alert }: { label: string; value: string; sub?: string; icon: typeof Users; to?: string; alert?: boolean }) {
   const body = (
-    <Card className="p-4 h-full hover:border-white/20">
+    <Card className={`p-4 h-full hover:border-white/20 ${alert ? 'border-amber-500/40 bg-amber-500/[0.06]' : ''}`}>
       <div className="flex items-center justify-between text-white/50">
         <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
         <Icon size={16} />
@@ -31,13 +31,20 @@ export default function DashboardPage() {
       {error && <ErrorState message={error} onRetry={reload} />}
       {s && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {s.reports && s.reports.openVideos > 0 && (
+            <Link to={`${ADMIN_BASE}/reports`} className="flex items-center gap-3 mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 hover:bg-amber-500/15">
+              <Flag size={16} className="shrink-0" />
+              <span><b>{s.reports.openVideos}</b> reported video{s.reports.openVideos === 1 ? '' : 's'} waiting for review</span>
+              <span className="ml-auto font-semibold">Review →</span>
+            </Link>
+          )}
+          <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-3 gap-3">
             {s.users && <Stat label="Users" value={fmtNum(s.users.total)} sub={`+${s.users.newThisWeek} this week · ${s.users.suspended} suspended`} icon={Users} to="users" />}
             {s.videos && <Stat label="Videos" value={fmtNum(s.videos.total)} sub={`+${s.videos.newThisWeek} this week`} icon={Film} to="videos" />}
             {s.videos && <Stat label="Total views" value={fmtNum(s.videos.totalViews)} sub={`${fmtNum(s.videos.totalShares)} shares`} icon={Eye} />}
             {s.videos && <Stat label="Total likes" value={fmtNum(s.videos.totalLikes)} icon={Heart} />}
             {s.comments && <Stat label="Comments" value={fmtNum(s.comments.total)} icon={MessageSquare} to="comments" />}
-            {s.reports && <Stat label="Reported videos" value={fmtNum(s.reports.openVideos)} sub={s.reports.openVideos ? 'Needs review' : 'All clear'} icon={Flag} to="reports" />}
+            {s.reports && <Stat label="Reported videos" value={fmtNum(s.reports.openVideos)} sub={s.reports.openVideos ? 'Needs review' : 'All clear'} icon={Flag} to="reports" alert={s.reports.openVideos > 0} />}
             {s.products && <Stat label="Products" value={fmtNum(s.products.total)} icon={ShoppingBag} to="products" />}
             {s.locations && <Stat label="Locations" value={fmtNum(s.locations.total)} icon={MapPin} to="locations" />}
             {s.admins && <Stat label="Admins" value={fmtNum(s.admins.total)} icon={ShieldCheck} to="admins" />}

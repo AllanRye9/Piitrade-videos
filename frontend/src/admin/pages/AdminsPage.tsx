@@ -24,6 +24,14 @@ function PermissionMatrix({ resources, value, onChange }: { resources: ResourceD
     onChange([...next]);
   }
 
+  function toggleRow(r: ResourceDef) {
+    const keys = r.actions.map((a) => `${r.key}.${a}`);
+    const full = keys.every((k) => set.has(k));
+    const next = new Set(set);
+    keys.forEach((k) => (full ? next.delete(k) : next.add(k)));
+    onChange([...next]);
+  }
+
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-2">
@@ -37,6 +45,7 @@ function PermissionMatrix({ resources, value, onChange }: { resources: ResourceD
             <tr className="bg-white/[0.03] text-white/45 text-[11px] uppercase tracking-wide">
               <th className="text-left px-3 py-2">Section</th>
               {ACTIONS.map((a) => <th key={a} className="px-3 py-2 capitalize">{a}</th>)}
+              <th className="px-3 py-2">All</th>
             </tr>
           </thead>
           <tbody>
@@ -52,6 +61,9 @@ function PermissionMatrix({ resources, value, onChange }: { resources: ResourceD
                     )}
                   </td>
                 ))}
+                <td className="px-3 py-2 text-center">
+                  <input type="checkbox" aria-label={`${r.label} all`} checked={r.actions.every((a) => set.has(`${r.key}.${a}`))} onChange={() => toggleRow(r)} className="w-4 h-4 accent-brand-orange" />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -73,6 +85,7 @@ function AdminForm({ initial, resources, onClose, onSaved }: { initial?: AdminRe
     <FormModal
       size="lg"
       title={initial ? 'Edit admin' : 'Add secondary admin'}
+      submitLabel={initial ? 'Save changes' : 'Create admin'}
       onClose={onClose}
       onSubmit={async () => {
         if (initial) await adminApi.updateAdmin(initial.id, { name, email, permissions, ...(password ? { password } : {}) });

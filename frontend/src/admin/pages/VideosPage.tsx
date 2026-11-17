@@ -164,7 +164,7 @@ export default function VideosPage() {
               {data.videos.map((v) => (
                 <tr key={v.id}>
                   <Td>
-                    <button className="flex items-center gap-3 text-left group max-w-[300px]" onClick={() => setViewing(v)}>
+                    <button className="flex items-center gap-3 text-left group max-w-[250px]" onClick={() => setViewing(v)}>
                       <span className="relative w-10 h-14 rounded-md bg-white/10 overflow-hidden shrink-0 grid place-items-center">
                         {v.poster ? <img src={mediaUrl(v.poster)} alt="" className="w-full h-full object-cover" loading="lazy" /> : <Play size={14} className="text-white/40" />}
                       </span>
@@ -176,7 +176,7 @@ export default function VideosPage() {
                     </button>
                   </Td>
                   <Td>{v.uploader?.handle ? `@${v.uploader.handle}` : <span className="text-white/35">—</span>}</Td>
-                  <Td>{v.location?.name ?? <span className="text-white/35">—</span>}</Td>
+                  <Td className="whitespace-nowrap">{v.location?.name ?? <span className="text-white/35">—</span>}</Td>
                   <Td className="tabular-nums">{fmtNum(v.views)}</Td>
                   <Td className="tabular-nums">{fmtNum(v.likes)}</Td>
                   <Td className="tabular-nums">{fmtNum(v.comments)}</Td>

@@ -233,6 +233,14 @@ router.delete('/:id', requirePermission('users.delete'), async (req: AuthedReque
       await removeStoredFile(v.filename, VIDEOS_DIR).catch(() => {});
       if (v.posterFilename) await removeStoredFile(v.posterFilename, POSTERS_DIR).catch(() => {});
     }
+    // Their likes on other people's videos/comments disappear with them, so take them off the counters too.
+    const [likedStates, likedComments] = await Promise.all([
+      prisma.userVideoState.findMany({ where: { sessionId, liked: true }, select: { videoId: true } }),
+      prisma.commentLike.findMany({ where: { sessionId }, select: { commentId: true } }),
+    ]);
+    if (likedStates.length) await prisma.video.updateMany({ where: { id: { in: likedStates.map((s: { videoId: string }) => s.videoId) } }, data: { likes: { decrement: 1 } } });
+    if (likedComments.length) await prisma.comment.updateMany({ where: { id: { in: likedComments.map((c: { commentId: string }) => c.commentId) } }, data: { likes: { decrement: 1 } } });
+    await prisma.commentLike.deleteMany({ where: { sessionId } });
     const theirComments = await prisma.comment.findMany({ where: { sessionId }, select: { videoId: true } });
     await prisma.comment.deleteMany({ where: { sessionId } });
     await recountComments(theirComments.map((c: any) => c.videoId));

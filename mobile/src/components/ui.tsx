@@ -104,10 +104,14 @@ export function ErrorText({ children }: { children?: string | null }) {
   return children ? <Text style={styles.error}>{children}</Text> : null;
 }
 
+/** 999 → "999", 1200 → "1.2K", 10_000 → "10K", 999_950 → "1M" (never "1000.0K"), no trailing ".0". */
 export function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
+  const v = Math.max(0, Math.round(n || 0));
+  const short = (x: number, unit: string) => `${(Math.round(x * 10) / 10).toString().replace(/\.0$/, '')}${unit}`;
+  if (v >= 999_950_000) return '1B';
+  if (v >= 999_950) return short(v / 1_000_000, 'M');
+  if (v >= 1_000) return short(v / 1_000, 'K');
+  return String(v);
 }
 
 const styles = StyleSheet.create({

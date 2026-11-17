@@ -59,7 +59,21 @@ router.get('/', requirePermission('videos.view'), async (req: AuthedRequest, res
   const uploaderUserId = String(req.query.uploader || '');
 
   const where: any = {};
-  if (q) where.OR = [{ title: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } }];
+  if (q) {
+    const tag = q.replace(/^#/, '').toLowerCase();
+    const creators = await prisma.sessionProfile.findMany({
+      where: { OR: [{ handle: { contains: q.replace(/^@/, ''), mode: 'insensitive' } }, { displayName: { contains: q.replace(/^@/, ''), mode: 'insensitive' } }] },
+      select: { sessionId: true },
+      take: 200,
+    });
+    where.OR = [
+      { id: q },
+      { title: { contains: q, mode: 'insensitive' } },
+      { description: { contains: q, mode: 'insensitive' } },
+      { hashtags: { has: tag } },
+      ...(creators.length ? [{ uploaderSessionId: { in: creators.map((c: { sessionId: string }) => c.sessionId) } }] : []),
+    ];
+  }
   if (locationId) where.locationId = locationId;
   if (String(req.query.reported || '') === 'true') where.reportList = { some: {} };
   if (uploaderUserId) {
@@ -98,7 +112,8 @@ router.get('/:id', requirePermission('videos.view'), async (req: AuthedRequest, 
 
 // PATCH /api/admin/videos/:id  { title?, description?, locationId? }
 router.patch('/:id', requirePermission('videos.edit'), async (req: AuthedRequest, res: Response) => {
-  const title = req.body.title !== undefined ? String(req.body.title).slice(0, 200) : undefined;
+  const title = req.body.title !== undefined ? String(req.body.title).trim().slice(0, 200) : undefined;
+  if (title !== undefined && !title) throw new HttpError(400, 'A video needs a title');
   const description = req.body.description !== undefined ? String(req.body.description).slice(0, 1000) : undefined;
   const locationId = optionalId(req.body.locationId);
 
@@ -131,8 +146,9 @@ router.delete('/:id', requirePermission('videos.delete'), async (req: AuthedRequ
   if (!video) throw new HttpError(404, 'Video not found');
 
   await prisma.video.delete({ where: { id: video.id } });
-  await removeStoredFile(video.filename, VIDEOS_DIR);
-  if (video.posterFilename) await removeStoredFile(video.posterFilename, POSTERS_DIR);
+  // The row is already gone; a storage hiccup (R2 down, file missing) must not turn a successful delete into a 500.
+  await removeStoredFile(video.filename, VIDEOS_DIR).catch((err: unknown) => console.error('video file cleanup failed', err));
+  if (video.posterFilename) await removeStoredFile(video.posterFilename, POSTERS_DIR).catch((err: unknown) => console.error('poster cleanup failed', err));
   audit(req, 'video.delete', 'video', video.id, video.title);
   res.status(204).send();
 });

@@ -14,11 +14,24 @@ const REASONS: { id: 'spam' | 'inappropriate' | 'copyright' | 'other'; label: st
   { id: 'other', label: 'Something else' },
 ];
 
-export default function MoreSheet({ video }: { video: Video }) {
+export default function MoreSheet({ video, onDeleted }: { video: Video; onDeleted?: () => void }) {
   const { closeSheet, requireAuth } = useApp();
-  const [step, setStep] = useState<'menu' | 'report' | 'done'>('menu');
+  const [step, setStep] = useState<'menu' | 'report' | 'done' | 'confirmDelete'>('menu');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+
+  async function removeVideo() {
+    setBusy(true);
+    setFailed(false);
+    try {
+      await api.deleteVideo(video.id);
+      onDeleted?.();
+      closeSheet();
+    } catch {
+      setFailed(true);
+      setBusy(false);
+    }
+  }
 
   async function report(reason: (typeof REASONS)[number]['id']) {
     setBusy(true);
@@ -34,13 +47,31 @@ export default function MoreSheet({ video }: { video: Video }) {
   }
 
   return (
-    <Sheet title={step === 'report' ? 'Report video' : 'More'} onClose={closeSheet} maxHeight={0.7}>
+    <Sheet title={step === 'report' ? 'Report video' : step === 'confirmDelete' ? 'Delete video?' : 'More'} onClose={closeSheet} maxHeight={0.7}>
       <View style={styles.body}>
-        {step === 'menu' && (
+        {step === 'menu' && video.uploader?.isOwn && (
+          <Pressable style={styles.item} onPress={() => setStep('confirmDelete')}>
+            <Icon name="trash-outline" color={colors.danger} />
+            <Text style={[styles.itemText, { color: colors.danger }]}>Delete my video</Text>
+          </Pressable>
+        )}
+        {step === 'menu' && !video.uploader?.isOwn && (
           <Pressable style={styles.item} onPress={() => requireAuth('Sign in to report a video.', () => setStep('report'))}>
             <Icon name="flag-outline" color={colors.danger} />
             <Text style={[styles.itemText, { color: colors.danger }]}>Report video</Text>
           </Pressable>
+        )}
+        {step === 'confirmDelete' && (
+          <View style={{ gap: space.md }}>
+            <Text style={styles.itemText}>This permanently removes the video, its comments and likes. This can’t be undone.</Text>
+            <Pressable style={[styles.item, { backgroundColor: colors.danger }, busy && { opacity: 0.5 }]} disabled={busy} onPress={removeVideo}>
+              <Text style={[styles.itemText, { color: '#fff' }]}>{busy ? 'Deleting…' : 'Yes, delete it'}</Text>
+            </Pressable>
+            <Pressable style={styles.item} disabled={busy} onPress={() => setStep('menu')}>
+              <Text style={styles.itemText}>Cancel</Text>
+            </Pressable>
+            {failed && <Text style={styles.err}>Could not delete the video — try again.</Text>}
+          </View>
         )}
         {step === 'report' &&
           REASONS.map((r) => (
