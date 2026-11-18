@@ -4,6 +4,9 @@ import { isUploadBusy, startUpload } from '../uploadManager';
 import { useAudioSync } from '../useAudioSync';
 import type { AudioPreview } from '../useAudioSync';
 import { MAX_VIDEO_SECONDS } from '../config';
+import { useSites } from '../sites';
+import { ProductDraft, draftsToPayload } from '../productDrafts';
+import ProductListEditor from './ProductListEditor';
 import VideoTrimmer from './VideoTrimmer';
 import AudioPanel from './AudioPanel';
 import type { AudioSelection } from './AudioPanel';
@@ -45,6 +48,8 @@ export default function UploadModal({ onClose }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const sites = useSites();
+  const [productDrafts, setProductDrafts] = useState<ProductDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -201,6 +206,13 @@ export default function UploadModal({ onClose }: Props) {
       setError('Another video is still uploading — wait for it to finish.');
       return;
     }
+    let products;
+    try {
+      products = draftsToPayload(productDrafts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Check the product details.');
+      return;
+    }
     setError(null);
     // Hand the file to the background upload manager and get out of the
     // way: progress shows in the floating <UploadStatus /> card.
@@ -208,6 +220,7 @@ export default function UploadModal({ onClose }: Props) {
       file,
       title: title || 'Untitled',
       description,
+      link: products.length ? { products } : null,
       trim: needsTrim ? trim : null,
       audio: audio
         ? {
@@ -373,6 +386,14 @@ export default function UploadModal({ onClose }: Props) {
             />
             <p className="text-right text-[11px] text-white/30">{description.length}/1000</p>
           </div>
+
+          {/* Products shown on the video. Optional: viewers get tappable "Shop" buttons, and the creator earns when they lead to a sale. */}
+          {sites.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-white/70">Products in this video (optional)</p>
+              <ProductListEditor value={productDrafts} onChange={setProductDrafts} sites={sites} durationSec={needsTrim ? trim.end - trim.start : null} />
+            </div>
+          )}
 
           {error && (
             <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">

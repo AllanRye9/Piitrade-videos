@@ -12,6 +12,8 @@ import CommentsPage from './pages/CommentsPage';
 import ReportsPage from './pages/ReportsPage';
 import ProductsPage from './pages/ProductsPage';
 import LocationsPage from './pages/LocationsPage';
+import SitesPage from './pages/SitesPage';
+import EarningsPage from './pages/EarningsPage';
 import AdminsPage from './pages/AdminsPage';
 import ActivityPage from './pages/ActivityPage';
 import MyAccountPage from './pages/MyAccountPage';
@@ -38,6 +40,8 @@ export default function AdminApp() {
             <Route path="comments" element={<RequirePermission permission="comments.view"><CommentsPage /></RequirePermission>} />
             <Route path="reports" element={<RequirePermission permission="reports.view"><ReportsPage /></RequirePermission>} />
             <Route path="products" element={<RequirePermission permission="products.view"><ProductsPage /></RequirePermission>} />
+            <Route path="sites" element={<RequirePermission permission="sites.view"><SitesPage /></RequirePermission>} />
+            <Route path="earnings" element={<RequirePermission permission="attribution.view"><EarningsPage /></RequirePermission>} />
             <Route path="locations" element={<RequirePermission permission="locations.view"><LocationsPage /></RequirePermission>} />
             <Route path="admins" element={<RequirePermission primaryOnly><AdminsPage /></RequirePermission>} />
             <Route path="activity" element={<RequirePermission primaryOnly><ActivityPage /></RequirePermission>} />

@@ -43,6 +43,18 @@ model Video {
   locationId     String?
   location       Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
+  // The connected marketplace/store this video promotes (see Site below)
+  // and, optionally, the exact product page on it. productUrl must belong
+  // to a registered Site (checked in routes/videos.ts) so videos can't be
+  // used to link anywhere on the internet.
+  siteId         String?
+  site           Site?   @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  productUrl     String?
+  productTitle   String?
+  // The products pinned to this video (the first one is mirrored into
+  // siteId/productUrl/productTitle above for older app builds).
+  products       VideoProduct[]
+
   commentList    Comment[]
   states         UserVideoState[]
   reportList     Report[]
@@ -51,6 +63,7 @@ model Video {
   @@index([createdAt])
   @@index([uploaderSessionId])
   @@index([locationId])
+  @@index([siteId])
 }
 
 // A top-level comment or a reply (see parentId). Replies are flattened
@@ -343,4 +356,106 @@ model MarketplaceLink {
   marketplaceRefreshToken String
   marketplaceUserId       String
   linkedAt                DateTime @default(now())
+}
+
+// A marketplace / store / website that videos link to — added and managed by
+// admins (Admin → Sites), so nothing about which sites exist is hardcoded.
+//
+// `apiType` says how the app can look products up on it:
+//   "piitrade"  — the site (or its backend, `apiUrl`) exposes the Piitrade
+//                 classifieds API (GET /api/listings?q=…), so "Find products"
+//                 shows live listings from it.
+//   "link-only" — no API: searching just offers a link to the site's own
+//                 search page (`searchPath`).
+// `listingPath` / `searchPath` / `sellPath` are paths on `siteUrl` with
+// {id} / {q} placeholders, e.g. "/listings/{id}" and "/listings?q={q}".
+model Site {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  siteUrl     String
+  apiUrl      String   @default("")
+  apiType     String   @default("piitrade")
+  country     String   @default("")
+  currency    String   @default("")
+  listingPath String   @default("/listings/{id}")
+  searchPath  String   @default("/listings?q={q}")
+  sellPath    String   @default("")
+  active      Boolean  @default(true)
+  position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  videos      Video[]
+  // Share of each confirmed sale (in percent) owed to the creator whose video
+  // drove it, and the secret this site signs conversion postbacks with.
+  commissionPct  Float  @default(0)
+  postbackSecret String @default("")
+  videoProducts  VideoProduct[]
+}
+
+// A product pinned to a video, optionally only for part of it (startMs..endMs)
+// and optionally at a spot on the frame (x/y as fractions 0..1). `url` is always
+// a page on `site` (checked in lib/sites.ts). Replaces the single productUrl.
+model VideoProduct {
+  id        String   @id @default(cuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  siteId    String
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  url       String
+  title     String?
+  startMs   Int      @default(0)
+  endMs     Int?
+  x         Float?
+  y         Float?
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([videoId])
+  @@index([siteId])
+  @@index([url])
+}
+
+// One tap on a "Shop" link, logged by GET /go/:videoId/:productId. `token` is
+// appended to the shop URL (?pv_click=) so the shop can report the sale back.
+// Plain ids (no FKs): a click is history and must outlive the video or site.
+model Click {
+  id               String   @id @default(cuid())
+  token            String   @unique
+  videoId          String
+  productId        String?
+  siteId           String
+  creatorSessionId String?
+  viewerHash       String?
+  createdAt        DateTime @default(now())
+  conversions      Conversion[]
+
+  @@index([videoId, createdAt])
+  @@index([siteId, createdAt])
+  @@index([creatorSessionId, createdAt])
+  @@index([viewerHash, productId])
+}
+
+// A sale a shop reported for a click — doubles as the creator's ledger entry.
+// Amounts are in minor units (cents). status: pending -> approved -> paid,
+// or reversed (refund / fraud) from pending or approved.
+model Conversion {
+  id               String   @id @default(cuid())
+  clickId          String
+  click            Click    @relation(fields: [clickId], references: [id])
+  videoId          String
+  siteId           String
+  creatorSessionId String?
+  externalOrderId  String
+  amountMinor      Int
+  currency         String   @default("")
+  commissionMinor  Int      @default(0)
+  status           String   @default("pending")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([siteId, externalOrderId])
+  @@index([creatorSessionId, status])
+  @@index([siteId, createdAt])
+  @@index([videoId])
 }

@@ -13,6 +13,8 @@ import MoreSheet from './sheets/MoreSheet';
 import NotificationsSheet from './sheets/NotificationsSheet';
 import ProfileSheet from './sheets/ProfileSheet';
 import SettingsSheet from './sheets/SettingsSheet';
+import ProductsSheet from './sheets/ProductsSheet';
+import EarningsSheet from './sheets/EarningsSheet';
 import UploadSheet from './sheets/UploadSheet';
 import { AppProvider, useApp } from './state/AppContext';
 import { colors } from './theme';
@@ -27,8 +29,10 @@ function SheetHost() {
     case 'settings': return <SettingsSheet />;
     case 'notifications': return <NotificationsSheet />;
     case 'comments': return <CommentsSheet video={sheet.video} onCountChange={sheet.onCountChange} />;
-    case 'more': return <MoreSheet video={sheet.video} onDeleted={sheet.onDeleted} />;
+    case 'more': return <MoreSheet video={sheet.video} onDeleted={sheet.onDeleted} onProductsChanged={sheet.onProductsChanged} />;
     case 'find': return <FindSheet initialQuery={sheet.initialQuery} />;
+    case 'products': return <ProductsSheet video={sheet.video} onSaved={sheet.onSaved} />;
+    case 'earnings': return <EarningsSheet />;
   }
 }
 

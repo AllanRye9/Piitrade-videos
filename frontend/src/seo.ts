@@ -10,7 +10,7 @@ import { useEffect } from 'react';
  */
 
 export const SITE_NAME = 'Piitrade Videos';
-export const DEFAULT_DESCRIPTION = 'Short videos from the Piitrade marketplace. Watch, then find the item on piitrade.com.';
+export const DEFAULT_DESCRIPTION = 'Creative short videos that link to the products you see. Watch, then find the item on the shop.';
 
 export interface SeoMeta {
   /** Page title; the site name is appended. Omit for the home page. */
@@ -68,7 +68,7 @@ function abs(urlOrPath: string): string {
 
 export function applySeo(meta: SeoMeta): void {
   if (typeof document === 'undefined') return;
-  const title = meta.title ? `${meta.title} · ${SITE_NAME}` : `${SITE_NAME} — short videos from the Piitrade marketplace`;
+  const title = meta.title ? `${meta.title} · ${SITE_NAME}` : `${SITE_NAME} — creative videos that link to products`;
   const description = (meta.description || DEFAULT_DESCRIPTION).replace(/\s+/g, ' ').trim().slice(0, 200);
   const canonical = abs(meta.canonical ?? window.location.pathname);
   const image = abs(meta.image || '/og-default.png');

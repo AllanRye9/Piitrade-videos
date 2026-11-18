@@ -1,28 +1,23 @@
 import { HttpError } from './httpError';
-import { listingUrl, searchUrl } from './piitrade';
+import { listActiveSites, SiteRecord } from './sites';
+import { listingUrlFor, searchUrlFor } from './siteUrls';
 
 /**
- * Client for the Piitrade classifieds marketplace's backend API, used
- * to turn "what's in this video frame" (or a typed search) into real
- * listings the viewer can open on piitrade.com.
+ * Client for the marketplaces ("Sites") that videos link to, used to turn
+ * "what's in this video frame" (or a typed search) into real listings the
+ * viewer can open on the marketplace itself.
  *
- * piitrade.com is a CLASSIFIEDS marketplace: there is no cart, stock
- * count, checkout or order for Piitrade Videos to place. An earlier
- * version of this file logged viewers into the marketplace and
- * created orders (POST /api/orders); all of that was removed on
- * purpose. This module is read-only — it searches listings, and every
- * result carries a `listingUrl` that opens the listing on piitrade.com,
- * where the viewer contacts the seller through the marketplace's own
- * messaging, subject to its own terms and safety rules.
+ * Which sites exist is NOT hardcoded: admins add them in Admin → Sites (see
+ * lib/sites.ts). A site with apiType "piitrade" exposes the classifieds API
+ * described below at its `apiUrl` (the site's BACKEND — not its website);
+ * a "link-only" site has no API, so searching just offers a link to its own
+ * search page.
  *
- * Set MARKETPLACE_API to the marketplace's BACKEND base URL — NOT the
- * piitrade.com frontend. Verified against the live site: the website
- * loads listing images from a separate Railway-hosted backend
- * (https://backend-production-a662.up.railway.app/api/images/...), and
- * https://piitrade.com/listings returns an HTML page, not JSON, so
- * pointing MARKETPLACE_API at piitrade.com fails every search with a
- * JSON-parse error. Railway hostnames can change on redeploy — see
- * .env.example for how to re-derive the current one.
+ * These are classifieds-style marketplaces: there is no cart, stock count,
+ * checkout or order for this app to place. This module is read-only — it
+ * searches listings, and every result carries a `listingUrl` that opens the
+ * listing on the site, where the viewer contacts the seller through the site's
+ * own messaging, subject to its own terms and safety rules.
  *
  * Endpoint used:
  *
@@ -43,9 +38,13 @@ import { listingUrl, searchUrl } from './piitrade';
  */
 
 const REQUEST_TIMEOUT_MS = 15_000;
-const DEFAULT_CURRENCY = process.env.MARKETPLACE_DEFAULT_CURRENCY || 'UGX';
 
-/** A listing from piitrade.com as shown on a result card in the video feed. */
+export interface SiteRef {
+  slug: string;
+  name: string;
+}
+
+/** A listing from a connected site as shown on a result card in the video feed. */
 export interface MarketplaceProduct {
   id: string;
   name: string;
@@ -55,8 +54,9 @@ export interface MarketplaceProduct {
   originalPrice?: string;
   image: string;
   description: string;
-  /** Where to open this listing on piitrade.com. */
+  /** Where to open this listing on its site. */
   listingUrl: string;
+  site: SiteRef;
   location?: string;
   condition?: string;
   sellerName?: string;
@@ -65,23 +65,22 @@ export interface MarketplaceProduct {
   featured?: boolean;
 }
 
-function baseUrl(): string {
-  const url = process.env.MARKETPLACE_API;
-  if (!url) throw new HttpError(503, 'Marketplace is not configured (set MARKETPLACE_API)');
-  return url.replace(/\/+$/, '');
+function baseUrl(site: SiteRecord): string {
+  if (!site.apiUrl) throw new HttpError(503, `${site.name} has no API configured`);
+  return site.apiUrl.replace(/\/+$/, '');
 }
 
-async function request(path: string, init: RequestInit): Promise<Response> {
+async function request(site: SiteRecord, path: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    return await fetch(`${baseUrl()}${path}`, { ...init, signal: controller.signal });
+    return await fetch(`${baseUrl(site)}${path}`, { ...init, signal: controller.signal });
   } catch (err) {
     if (err instanceof HttpError) throw err;
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new HttpError(504, 'Piitrade marketplace timed out');
+      throw new HttpError(504, `${site.name} timed out`);
     }
-    throw new HttpError(502, 'Could not reach the Piitrade marketplace');
+    throw new HttpError(502, `Could not reach ${site.name}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -104,18 +103,19 @@ async function readError(res: Response): Promise<string | undefined> {
  * into that fallback. This is the one place that decides what ends up
  * in a listing's `image` field.
  */
-export function resolveMarketplaceImageUrl(raw: string | null | undefined): string {
+export function resolveMarketplaceImageUrl(raw: string | null | undefined, site: SiteRecord): string {
   if (!raw) return '';
   if (/^https?:\/\//i.test(raw)) return raw;
   if (raw.startsWith('//')) return `https:${raw}`;
-  const base = baseUrl();
+  const base = baseUrl(site);
   return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
 }
 
-/** "UGX 800,000" — the same "<CURRENCY> <grouped number>" form piitrade.com itself shows. */
-export function formatPrice(price: unknown, currency?: string | null): string {
+/** "UGX 800,000" — "<CURRENCY> <grouped number>". The currency is the listing's own, else the site's default. */
+export function formatPrice(price: unknown, currency?: string | null, siteCurrency?: string | null): string {
   const value = typeof price === 'number' ? price : Number(price);
-  const code = (currency || DEFAULT_CURRENCY).toUpperCase();
+  const code = (currency || siteCurrency || '').toUpperCase();
+  if (!code) return Number.isFinite(value) ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value) : '';
   if (!Number.isFinite(value)) return code;
   return `${code} ${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)}`;
 }
@@ -163,17 +163,18 @@ interface RawListing {
   storeName?: unknown;
 }
 
-function toResult(l: RawListing): MarketplaceProduct {
+function toResult(l: RawListing, site: SiteRecord): MarketplaceProduct {
   const originalPrice = firstNumber(l.originalPrice, l.compareAtPrice);
   const condition = firstString(l.condition);
   return {
     id: l.id,
     name: l.title,
-    price: formatPrice(l.price, l.currency),
-    originalPrice: originalPrice !== undefined && originalPrice > l.price ? formatPrice(originalPrice, l.currency) : undefined,
-    image: resolveMarketplaceImageUrl(l.productImages?.find((img) => img.cdnUrl)?.cdnUrl || l.images?.[0]),
+    price: formatPrice(l.price, l.currency, site.currency),
+    originalPrice: originalPrice !== undefined && originalPrice > l.price ? formatPrice(originalPrice, l.currency, site.currency) : undefined,
+    image: resolveMarketplaceImageUrl(l.productImages?.find((img) => img.cdnUrl)?.cdnUrl || l.images?.[0], site),
     description: l.description || '',
-    listingUrl: listingUrl(l.id),
+    listingUrl: listingUrlFor(site, l.id),
+    site: { slug: site.slug, name: site.name },
     location: firstString(l.location, l.city),
     condition: condition ? titleCase(condition) : undefined,
     sellerName: firstString(l.user?.name),
@@ -191,8 +192,9 @@ export interface MarketplaceSearchResultDto {
   category: string;
   image: string;
   description?: string;
-  /** Opens this listing (or, for the local demo catalog, a piitrade.com search) on piitrade.com. */
+  /** Opens this listing (or, for the local demo catalog, a search) on the site. */
   listingUrl: string;
+  site?: SiteRef;
   location?: string;
   condition?: string;
   sellerName?: string;
@@ -216,6 +218,7 @@ export function toSearchResultDto(p: MarketplaceProduct, category: string): Mark
     image: p.image,
     description: p.description,
     listingUrl: p.listingUrl,
+    site: p.site,
     location: p.location,
     condition: p.condition,
     sellerName: p.sellerName,
@@ -225,27 +228,27 @@ export function toSearchResultDto(p: MarketplaceProduct, category: string): Mark
   };
 }
 
-/** Link to the full result set for `query` on piitrade.com ("See all on Piitrade"). */
-export function browseUrlFor(query: string): string {
-  return searchUrl(query);
+/** Link to the full result set for `query` on a site ("See all on <site>"). */
+export function browseUrlFor(site: SiteRecord, query: string): string {
+  return searchUrlFor(site, query);
 }
 
-export async function searchProducts(query: string): Promise<MarketplaceProduct[]> {
+export async function searchProducts(site: SiteRecord, query: string): Promise<MarketplaceProduct[]> {
   const params = new URLSearchParams({ q: query, sort: 'relevance', limit: '12' });
-  if (process.env.MARKETPLACE_COUNTRY) params.set('country', process.env.MARKETPLACE_COUNTRY);
+  if (site.country) params.set('country', site.country);
   const path = `/api/listings?${params.toString()}`;
-  console.log(`[Marketplace] GET ${path}`);
+  console.log(`[Marketplace:${site.slug}] GET ${path}`);
   const startedAt = Date.now();
 
-  const res = await request(path, {
+  const res = await request(site, path, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
   });
-  console.log(`[Marketplace] responded ${res.status} in ${Date.now() - startedAt}ms`);
+  console.log(`[Marketplace:${site.slug}] responded ${res.status} in ${Date.now() - startedAt}ms`);
 
   if (!res.ok) {
     const message = (await readError(res)) || `Marketplace search returned ${res.status}`;
-    console.error(`[Marketplace] search failed: ${message}`);
+    console.error(`[Marketplace:${site.slug}] search failed: ${message}`);
     throw new HttpError(res.status === 401 || res.status === 403 ? res.status : 502, message);
   }
 
@@ -257,10 +260,10 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
   // listing with no status field at all is assumed live (the search
   // endpoint is itself expected to return active ads).
   const live = listings.filter((l) => !l.status || l.status === 'ACTIVE');
-  const results = live.map(toResult);
+  const results = live.map((l) => toResult(l, site));
 
   console.log(
-    `[Marketplace] ${results.length} live listing(s) for "${query}"` +
+    `[Marketplace:${site.slug}] ${results.length} live listing(s) for "${query}"` +
       (results.length > 0 ? `: ${results.slice(0, 5).map((r) => `"${r.name}" (${r.id})`).join(', ')}${results.length > 5 ? ', …' : ''}` : '')
   );
   return results;
@@ -337,24 +340,106 @@ function buildQueryLadder(rawQuery: string): string[] {
   return Array.from(new Set(candidates)).slice(0, MAX_LADDER_ATTEMPTS);
 }
 
-export async function searchProductsWithFallback(rawQuery: string): Promise<MarketplaceSearchOutcome> {
+export async function searchProductsWithFallback(site: SiteRecord, rawQuery: string): Promise<MarketplaceSearchOutcome> {
   const ladder = buildQueryLadder(rawQuery);
   const attempts: Array<{ query: string; count: number }> = [];
 
   for (const candidate of ladder) {
-    const results = await searchProducts(candidate);
+    const results = await searchProducts(site, candidate);
     attempts.push({ query: candidate, count: results.length });
     if (results.length > 0) {
       if (candidate !== ladder[0]) {
-        console.log(`[Marketplace] fallback: no match on full text "${ladder[0]}", matched on shortened query "${candidate}"`);
+        console.log(`[Marketplace:${site.slug}] fallback: no match on full text "${ladder[0]}", matched on shortened query "${candidate}"`);
       }
       return { results, matchedQuery: candidate, attempts };
     }
   }
 
   console.log(
-    `[Marketplace] no results for "${rawQuery}" after trying ${attempts.length} quer${attempts.length === 1 ? 'y' : 'ies'}: ` +
+    `[Marketplace:${site.slug}] no results for "${rawQuery}" after trying ${attempts.length} quer${attempts.length === 1 ? 'y' : 'ies'}: ` +
       attempts.map((a) => `"${a.query}"`).join(', ')
   );
   return { results: [], matchedQuery: null, attempts };
+}
+
+
+/** What one site contributed to a multi-site search. */
+export interface SiteSearchSummary {
+  slug: string;
+  name: string;
+  /** "See all on <site>" for the query that matched (or the original one). */
+  browseUrl: string;
+  count: number;
+  /** "link-only" sites (no API) can only offer the browse link. */
+  linkOnly: boolean;
+  error?: string;
+}
+
+export interface MultiSiteOutcome {
+  results: MarketplaceProduct[];
+  matchedQuery: string | null;
+  sites: SiteSearchSummary[];
+  /** Convenience: the browse link of the first site that returned results, else of the first site. */
+  browseUrl: string;
+}
+
+const MAX_RESULTS_TOTAL = 24;
+const MAX_RESULTS_PER_SITE = 12;
+
+/**
+ * Searches every active site (or just `onlySlug`) in parallel. API sites return
+ * live listings; link-only sites contribute only their browse link. One slow or
+ * broken site never blocks the others — its error is reported in `sites`.
+ * Results are interleaved round-robin so no single site fills the whole panel.
+ */
+export async function searchSites(rawQuery: string, onlySlug?: string): Promise<MultiSiteOutcome> {
+  let sites = await listActiveSites();
+  if (onlySlug) sites = sites.filter((s) => s.slug === onlySlug);
+  if (sites.length === 0) throw new HttpError(503, onlySlug ? 'That site is not available' : 'No sites are connected yet — add one in Admin → Sites');
+
+  const settled = await Promise.all(
+    sites.map(async (site) => {
+      const linkOnly = site.apiType !== 'piitrade' || !site.apiUrl;
+      if (linkOnly) {
+        return { site, linkOnly, outcome: null as MarketplaceSearchOutcome | null, error: undefined as string | undefined };
+      }
+      try {
+        return { site, linkOnly, outcome: await searchProductsWithFallback(site, rawQuery), error: undefined as string | undefined };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Search failed';
+        console.error(`[Marketplace:${site.slug}] ${message}`);
+        return { site, linkOnly, outcome: null as MarketplaceSearchOutcome | null, error: message };
+      }
+    })
+  );
+
+  const summaries: SiteSearchSummary[] = settled.map(({ site, linkOnly, outcome, error }) => ({
+    slug: site.slug,
+    name: site.name,
+    browseUrl: browseUrlFor(site, outcome?.matchedQuery || rawQuery),
+    count: Math.min(outcome?.results.length ?? 0, MAX_RESULTS_PER_SITE),
+    linkOnly,
+    ...(error ? { error } : {}),
+  }));
+
+  const lists = settled.map((s) => s.outcome?.results.slice(0, MAX_RESULTS_PER_SITE) ?? []);
+  const results: MarketplaceProduct[] = [];
+  for (let i = 0; results.length < MAX_RESULTS_TOTAL; i++) {
+    let added = false;
+    for (const list of lists) {
+      if (i < list.length && results.length < MAX_RESULTS_TOTAL) {
+        results.push(list[i]);
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
+
+  const firstHit = settled.find((s) => s.outcome && s.outcome.results.length > 0);
+  return {
+    results,
+    matchedQuery: firstHit?.outcome?.matchedQuery ?? null,
+    sites: summaries,
+    browseUrl: (summaries.find((s) => s.count > 0) ?? summaries[0]).browseUrl,
+  };
 }

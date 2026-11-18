@@ -3,19 +3,20 @@ import { prisma } from '../db';
 import { uploadImage } from '../middleware/upload';
 import { computeImageHash, hammingDistance, similarityScore } from '../lib/phash';
 import { identifyImage } from '../lib/aiSearch';
-import { searchProductsWithFallback, toSearchResultDto, browseUrlFor } from '../lib/marketplace';
+import { searchSites, toSearchResultDto, browseUrlFor } from '../lib/marketplace';
+import { hasSearchableSites, listActiveSites } from '../lib/sites';
 
 const router = Router();
 
 /**
- * Whether the AI-identify + marketplace pipeline is configured. Both
- * env vars are required together — if only one is set, that's a
- * misconfiguration, and we fall back to the local phash catalog rather
- * than partially failing, so the search feature keeps working either
- * way (see README "Visual search modes").
+ * Whether the AI-identify + marketplace pipeline can run: AI_SEARCH must be
+ * set AND at least one active site (Admin → Sites) must have a searchable API.
+ * Otherwise we fall back to the local phash catalog rather than partially
+ * failing, so the search feature keeps working either way (see README
+ * "Visual search modes").
  */
-function marketplacePipelineEnabled(): boolean {
-  return Boolean(process.env.AI_SEARCH && process.env.MARKETPLACE_API);
+async function marketplacePipelineEnabled(): Promise<boolean> {
+  return Boolean(process.env.AI_SEARCH) && (await hasSearchableSites());
 }
 
 // POST /api/visual-search  (multipart: image)
@@ -28,8 +29,8 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
 
   console.log(`[VisualSearch] received ${file.size} byte ${file.mimetype} selection`);
 
-  if (marketplacePipelineEnabled()) {
-    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> MARKETPLACE_API search (with query-shortening fallback)');
+  if (await marketplacePipelineEnabled()) {
+    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> connected sites search (with query-shortening fallback)');
     // 1. Ask the configured AI service what the cropped selection shows.
     const identification = await identifyImage(file.buffer, file.mimetype);
     // 2. Ask the marketplace whether it carries anything matching that
@@ -37,8 +38,8 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
     //    matching, so a multi-word AI description is retried against
     //    progressively shorter prefixes until something actually
     //    matches — see searchProductsWithFallback for why.
-    const outcome = await searchProductsWithFallback(identification.text);
-    const results = outcome.results.slice(0, 12).map((p) => toSearchResultDto(p, identification.text));
+    const outcome = await searchSites(identification.text);
+    const results = outcome.results.map((p) => toSearchResultDto(p, identification.text));
     console.log(
       `[VisualSearch] returning ${results.length} result(s) for "${identification.text}"` +
         (outcome.matchedQuery && outcome.matchedQuery !== identification.text ? ` (matched on shortened query "${outcome.matchedQuery}")` : '')
@@ -47,7 +48,8 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
       results,
       identification: identification.text,
       matchedQuery: outcome.matchedQuery,
-      browseUrl: browseUrlFor(outcome.matchedQuery || identification.text),
+      browseUrl: outcome.browseUrl,
+      sites: outcome.sites,
     });
     return;
   }
@@ -56,8 +58,9 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
   // catalog (see backend/src/lib/phash.ts). This is what runs when
   // AI_SEARCH / MARKETPLACE_API are not configured, e.g. local dev.
   console.log(
-    `[VisualSearch] pipeline: local phash catalog (${!process.env.AI_SEARCH ? 'AI_SEARCH' : 'MARKETPLACE_API'} not configured)`
+    `[VisualSearch] pipeline: local phash catalog (${!process.env.AI_SEARCH ? 'AI_SEARCH' : 'no searchable site'} not configured)`
   );
+  const fallbackSite = (await listActiveSites())[0];
   let queryHash: string;
   try {
     queryHash = await computeImageHash(file.buffer);
@@ -79,10 +82,10 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
         price: p.price,
         category: p.category,
         image: `/uploads/products/${p.imageFilename}`,
-        // The demo catalog isn't real piitrade.com inventory, so there
-        // is no listing to open — send the viewer to a piitrade.com
+        // The demo catalog isn't real marketplace inventory, so there is no
+        // listing to open — send the viewer to the first connected site's
         // search for the closest-matching product's name instead.
-        listingUrl: browseUrlFor(p.name),
+        listingUrl: fallbackSite ? browseUrlFor(fallbackSite, p.name) : '',
         match: similarityScore(distance),
         distance,
       };
@@ -95,7 +98,7 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
     `[VisualSearch] phash: top match ${ranked[0] ? `"${ranked[0].name}" (${ranked[0].match}% similar)` : 'none'}, returning ${ranked.length} result(s)`
   );
   const topName = typeof ranked[0]?.name === 'string' ? ranked[0].name : '';
-  res.json({ results: ranked, browseUrl: browseUrlFor(topName) });
+  res.json({ results: ranked, browseUrl: fallbackSite ? browseUrlFor(fallbackSite, topName) : '' });
 });
 
 export default router;

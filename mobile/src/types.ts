@@ -27,6 +27,90 @@ export interface Video {
   favorited: boolean;
   saved: boolean;
   uploader?: VideoUploader | null;
+  /** The connected marketplace/store this video promotes, if any. */
+  site?: { slug: string; name: string; url: string } | null;
+  /** The exact product page the creator linked (always on that site). */
+  product?: { url: string; title: string | null } | null;
+  /** Every product pinned to the video. Open `go` (relative to the API host) so the tap is tracked. */
+  products?: VideoProductPin[];
+}
+
+/** A product pinned to a video, shown from startMs until endMs (null = until the end), optionally at a spot on the frame. */
+export interface VideoProductPin {
+  id: string;
+  title: string | null;
+  /** Direct link to the product page: a fallback only. */
+  url: string;
+  site: { slug: string; name: string } | null;
+  /** Tracked link, e.g. /go/<videoId>/<productId>. */
+  go: string;
+  startMs: number;
+  endMs: number | null;
+  /** Position on the frame as fractions 0..1, when the creator placed it. */
+  x: number | null;
+  y: number | null;
+}
+
+/** What the apps send when saving products. */
+export interface ProductPayload {
+  siteId?: string;
+  url: string;
+  title?: string;
+  startMs?: number;
+  endMs?: number | null;
+  x?: number | null;
+  y?: number | null;
+}
+
+/** A product on one of your own videos, as stored. */
+export interface OwnProduct {
+  id: string;
+  siteId: string;
+  url: string;
+  title: string | null;
+  startMs: number;
+  endMs: number | null;
+  x: number | null;
+  y: number | null;
+}
+
+/** An AI suggestion from looking at a few frames of your video. */
+export interface ProductSuggestion {
+  query: string;
+  startMs: number;
+  endMs: number;
+  candidates: Array<{ title: string; url: string; image: string; price: string; site: string | null }>;
+}
+
+/** A creator's earnings ledger. Amounts are minor units (cents) per currency. */
+export interface Earnings {
+  balances: Record<string, { pending: number; approved: number; paid: number }>;
+  clicksLast30Days: number;
+  recent: Array<{ id: string; video: string; site: string; currency: string; saleMinor: number; commissionMinor: number; status: 'pending' | 'approved' | 'paid' | 'reversed'; createdAt: string }>;
+  rates: Array<{ site: string; commissionPct: number }>;
+}
+
+/** A connected marketplace/store (Admin → Sites), with ready-made links. */
+export interface SiteInfo {
+  id: string;
+  slug: string;
+  name: string;
+  country: string;
+  url: string;
+  homeUrl: string;
+  browseUrl: string;
+  sellUrl: string | null;
+  searchable: boolean;
+}
+
+/** What one site contributed to a product search. */
+export interface SiteSearchSummary {
+  slug: string;
+  name: string;
+  browseUrl: string;
+  count: number;
+  linkOnly: boolean;
+  error?: string;
 }
 
 /** Summary shown on the discover list and at the top of a public
@@ -59,11 +143,10 @@ export interface Comment {
   replyCount?: number;
 }
 
-/** One result card in the "Find on Piitrade" sheet — a classifieds
- *  listing from piitrade.com (or, for the local demo-catalog fallback,
- *  a stand-in that links to a piitrade.com search). There is nothing
- *  to add to a cart or check out: piitrade.com is a classifieds site,
- *  so the card just opens the listing there. */
+/** One result card in the "Find products" sheet — a listing from one of the
+ *  connected sites (or, for the local demo-catalog fallback, a stand-in that
+ *  links to a site search). There is nothing to add to a cart or check out:
+ *  the card just opens the listing on its site. */
 export interface VisualSearchResult {
   id: string;
   name: string;
@@ -74,8 +157,9 @@ export interface VisualSearchResult {
   category: string;
   image: string;
   description?: string;
-  /** Opens this listing on piitrade.com. */
+  /** Opens this listing on its site. */
   listingUrl: string;
+  site?: { slug: string; name: string };
   location?: string;
   condition?: string;
   sellerName?: string;
@@ -91,8 +175,9 @@ export interface MarketplaceSearchResponse {
   results: VisualSearchResult[];
   identification?: string;
   matchedQuery?: string | null;
-  /** "See all results" on piitrade.com. */
   browseUrl?: string;
+  /** Per-site breakdown with a "See all" link for each. */
+  sites?: SiteSearchSummary[];
 }
 
 export interface AdminUser {

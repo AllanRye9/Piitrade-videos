@@ -5,10 +5,13 @@
  */
 export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 
-/** The public website — used for share links, legal pages and the password-reset link. */
-export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || API_BASE || 'https://piitrade.com').replace(/\/$/, '');
-
-export const PIITRADE_SITE_URL = (process.env.EXPO_PUBLIC_PIITRADE_SITE_URL || 'https://piitrade.com').replace(/\/$/, '');
+/**
+ * This app's own public website — used for share links and the legal pages.
+ * Set EXPO_PUBLIC_WEB_URL; falls back to the API host (the usual setup when the
+ * web app and API share an origin). The marketplaces videos link to are NOT
+ * configured here: they come from the backend (Admin → Sites).
+ */
+export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || API_BASE).replace(/\/$/, '');
 
 /** Keep in sync with MAX_VIDEO_SECONDS in backend/src/lib/videoLimits.ts. */
 export const MAX_VIDEO_SECONDS = 60;
@@ -18,13 +21,6 @@ export function mediaUrl(path: string | null | undefined): string | undefined {
   if (!path) return undefined;
   if (/^https?:\/\//i.test(path)) return path;
   return `${API_BASE}${path}`;
-}
-
-export function piitradeUrl(path: string): string {
-  const url = new URL(`${PIITRADE_SITE_URL}${path.startsWith('/') ? '' : '/'}${path}`);
-  url.searchParams.set('utm_source', 'piitrade_videos_app');
-  url.searchParams.set('utm_medium', 'video');
-  return url.toString();
 }
 
 /**

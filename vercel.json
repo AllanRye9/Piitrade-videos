@@ -17,6 +17,27 @@
             }
         },
         {
+            "source": "/go/:videoId/:productId",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
+            "source": "/embed/:id",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
+            "source": "/(widget.js|track.js)",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
             "source": "/legal/:page",
             "destination": {
                 "type": "service",

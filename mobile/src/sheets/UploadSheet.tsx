@@ -8,7 +8,11 @@ import Sheet from '../components/Sheet';
 import { Button, ErrorText, Icon, SectionLabel, TextField } from '../components/ui';
 import { MAX_VIDEO_SECONDS } from '../config';
 import { PickedVideo, pickVideo } from '../lib/pickers';
+import ProductEditor from '../components/ProductEditor';
+import { ProductDraft, draftsToPayload } from '../lib/productDrafts';
+import type { ProductPayload } from '../types';
 import { useApp } from '../state/AppContext';
+import { useSites } from '../state/sites';
 import { UploadDraft, isUploadBusy, startUpload } from '../state/uploads';
 import { colors, radius, space } from '../theme';
 
@@ -43,6 +47,8 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
   const [trimLength, setTrimLength] = useState(MAX_VIDEO_SECONDS);
   const [title, setTitle] = useState(draft?.title ?? '');
   const [description, setDescription] = useState(draft?.description ?? '');
+  const sites = useSites();
+  const [productDrafts, setProductDrafts] = useState<ProductDraft[]>([]);
 
   const [audio, setAudio] = useState<LocalFile | null>(null);
   const [videoVol, setVideoVol] = useState(1);
@@ -99,6 +105,13 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
       setError('Another video is still uploading — wait for it to finish.');
       return;
     }
+    let products: ProductPayload[];
+    try {
+      products = draftsToPayload(productDrafts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Check the product details.');
+      return;
+    }
     // Hand off and get out of the way; <UploadStatus /> shows the progress.
     startUpload({
       file: picked.file,
@@ -106,6 +119,7 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
       description: description.trim(),
       trim: needsTrim ? { start: trimStart, end: trimStart + trimLength } : null,
       audio: audio ? { file: audio, videoVolume: videoVol, audioVolume: audioVol, audioStart } : null,
+      link: products.length ? { products } : null,
       draft: { file: picked.file, uri: picked.uri, duration: sourceDuration, title, description },
     });
     closeSheet();
@@ -169,6 +183,12 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
             <View style={{ gap: 4 }}>
               <TextField label="Description" value={description} onChangeText={setDescription} multiline maxLength={500} placeholder="Add details and #hashtags so people can find it" />
               <Text style={styles.counter}>{description.length}/500</Text>
+              {sites.length > 0 ? (
+                <View style={{ gap: space.sm }}>
+                  <SectionLabel>Products in this video (optional)</SectionLabel>
+                  <ProductEditor value={productDrafts} onChange={setProductDrafts} sites={sites} durationSec={needsTrim ? trimLength : sourceDuration} />
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.card}>
@@ -211,6 +231,9 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
 }
 
 const styles = StyleSheet.create({
+  siteChip: { paddingHorizontal: 14, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceRaised, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.18)' },
+  siteChipOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  siteChipText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
   body: { padding: space.xl, paddingTop: space.sm, gap: space.lg },
   drop: { alignItems: 'center', gap: space.sm, paddingVertical: 56, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(255,255,255,0.18)', backgroundColor: colors.surfaceRaised },
   dropIcon: { width: 68, height: 68, borderRadius: 34, backgroundColor: 'rgba(255,179,71,0.14)', alignItems: 'center', justifyContent: 'center' },

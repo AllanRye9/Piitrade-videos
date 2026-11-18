@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { api, ApiError } from './api';
-import type { AudioUpload, TrimRange } from './api';
+import type { AudioUpload, TrimRange, VideoLink } from './api';
 import type { Video } from './types';
 import { MAX_VIDEO_SECONDS } from './config';
 
@@ -18,6 +18,7 @@ export interface UploadParams {
   description: string;
   trim: TrimRange | null;
   audio: AudioUpload | null;
+  link?: VideoLink | null;
 }
 
 export interface UploadState {
@@ -62,7 +63,8 @@ async function run(params: UploadParams) {
       params.description,
       (pct) => set({ progress: pct, phase: pct >= 100 ? 'processing' : 'uploading' }),
       params.trim,
-      params.audio
+      params.audio,
+      params.link
     );
     set({ phase: 'done', progress: 100, video: res.video });
     lastParams = null;

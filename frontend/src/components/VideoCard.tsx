@@ -7,9 +7,15 @@ import CropOverlay from './CropOverlay';
 import SearchResultsPanel from './SearchResultsPanel';
 import VideoMoreSheet from './VideoMoreSheet';
 import CommentModal from './CommentModal';
-import type { VisualSearchResult } from '../types';
+import type { SiteSearchSummary, VisualSearchResult } from '../types';
 import { getMuted, setMuted as setSharedMuted, subscribeMuted } from '../soundPreference';
 import { renderWatermarkedVideo, triggerBlobDownload } from '../videoWatermark';
+import { hostOf } from '../sites';
+import { activeAt } from '../productDrafts';
+import { getProfileState, subscribeProfile } from '../profileStore';
+import ManageProductsModal from './ManageProductsModal';
+import type { VideoProductPin } from '../types';
+import { ShoppingBag } from 'lucide-react';
 import { Heart, MessageCircle, Search, Download, Volume2, VolumeX, Play, Share2, MoreHorizontal } from 'lucide-react';
 
 interface Props {
@@ -56,9 +62,31 @@ function linkifyHashtags(text: string): React.ReactNode[] {
   return parts;
 }
 
+/** One tracked Shop button. Opens /go/… (which logs the tap and forwards to the shop). */
+function ShopChip({ p }: { p: VideoProductPin }) {
+  return (
+    <a
+      href={mediaUrl(p.go)}
+      target="_blank"
+      rel="noopener noreferrer sponsored"
+      onClick={(e) => e.stopPropagation()}
+      className="inline-flex max-w-[70vw] items-center gap-1.5 rounded-full bg-brand-orange px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-black/30"
+    >
+      <ShoppingBag size={14} className="shrink-0" />
+      <span className="truncate">{p.title || `Shop on ${p.site?.name ?? hostOf(p.url)}`}</span>
+    </a>
+  );
+}
+
 export default function VideoCard({ video, active }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(true);
+  // Pinned products come with the video; they're refreshed after the creator edits them.
+  const [products, setProducts] = useState<VideoProductPin[]>(video.products ?? []);
+  const [legacyProduct, setLegacyProduct] = useState(video.product ?? null);
+  const ownProfile = useSyncExternalStore(subscribeProfile, getProfileState);
+  const [nowMs, setNowMs] = useState(0);
+  const [showProducts, setShowProducts] = useState(false);
   // Shared across every VideoCard (see soundPreference.ts) so unmuting
   // one video keeps the rest of the feed unmuted too, instead of each
   // card reverting to muted on its own.
@@ -82,6 +110,7 @@ export default function VideoCard({ video, active }: Props) {
   const [identification, setIdentification] = useState<string | null>(null);
   const [matchedQuery, setMatchedQuery] = useState<string | null>(null);
   const [browseUrl, setBrowseUrl] = useState<string | null>(null);
+  const [searchSites, setSearchSites] = useState<SiteSearchSummary[] | null>(null);
 
   // Long-press-to-download control: holding the video for
   // LONG_PRESS_MS shows a filling ring, then triggers the same
@@ -228,7 +257,7 @@ export default function VideoCard({ video, active }: Props) {
   async function handleShare(e: React.MouseEvent) {
     e.stopPropagation();
     const url = `${window.location.origin}/v/${video.id}`;
-    const shareData = { title: video.title || 'Piitrade video', text: 'Watch this on Piitrade Videos', url };
+    const shareData = { title: video.title || 'Video', text: 'Watch this on Piitrade Videos', url };
 
     try {
       if (navigator.share) {
@@ -256,7 +285,7 @@ export default function VideoCard({ video, active }: Props) {
     });
   }
 
-  // "Download" — renders a watermarked copy (piitrade.com branding
+  // "Download" — renders a watermarked copy (the shop's / site's own name
   // burned into the frames — see videoWatermark.ts) and saves it to
   // the device, AND records the server-side `saved` flag (the same
   // field the Profile page's Downloads tab reads back), so the two
@@ -269,8 +298,8 @@ export default function VideoCard({ video, active }: Props) {
     setDownloadProgress(0);
     const src = mediaUrl(video.url) || video.url;
     try {
-      const { blob, extension } = await renderWatermarkedVideo(src, (p) => setDownloadProgress(p.fraction));
-      triggerBlobDownload(blob, `${video.title || 'video'}-piitrade.${extension}`);
+      const { blob, extension } = await renderWatermarkedVideo(src, (p) => setDownloadProgress(p.fraction), video.site ? hostOf(video.site.url) : window.location.hostname.replace(/^www\./, ''));
+      triggerBlobDownload(blob, `${video.title || 'video'}.${extension}`);
       setDownloadFlash(true);
       setTimeout(() => setDownloadFlash(false), 1400);
     } catch {
@@ -374,12 +403,14 @@ export default function VideoCard({ video, active }: Props) {
     setIdentification(null);
     setMatchedQuery(null);
     setBrowseUrl(null);
+    setSearchSites(null);
     try {
       const res = await api.visualSearch(blob);
       setSearchResults(res.results);
       setIdentification(res.identification ?? null);
       setMatchedQuery(res.matchedQuery ?? null);
       setBrowseUrl(res.browseUrl ?? null);
+      setSearchSites(res.sites ?? null);
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -399,11 +430,13 @@ export default function VideoCard({ video, active }: Props) {
     setIdentification(query);
     setMatchedQuery(null);
     setBrowseUrl(null);
+    setSearchSites(null);
     try {
       const res = await api.marketplaceSearch(query);
       setSearchResults(res.results);
       setMatchedQuery(res.matchedQuery ?? null);
       setBrowseUrl(res.browseUrl ?? null);
+      setSearchSites(res.sites ?? null);
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -430,6 +463,11 @@ export default function VideoCard({ video, active }: Props) {
 
   const hasLongDescription = Boolean(video.description) && video.description.length > 70;
 
+  const isOwnVideo = !!video.uploader && !!ownProfile.handle && video.uploader.handle === ownProfile.handle;
+  const visibleNow = activeAt(products, nowMs);
+  const pinned = visibleNow.filter((p) => p.x != null && p.y != null);
+  const inCaption = visibleNow.filter((p) => p.x == null || p.y == null);
+
   return (
     <div className="relative h-full w-full snap-start flex items-center justify-center bg-black">
       <video
@@ -448,9 +486,17 @@ export default function VideoCard({ video, active }: Props) {
         onTimeUpdate={(e) => {
           const el = e.currentTarget;
           if (el.duration > 0) setProgress(el.currentTime / el.duration);
+          setNowMs(Math.floor(el.currentTime * 4) * 250); // quarter-second steps: plenty for timed buttons, few re-renders
         }}
         className="h-full w-full object-contain"
       />
+
+      {/* Buttons the creator placed on the frame itself */}
+      {pinned.map((p) => (
+        <div key={p.id} className="absolute z-10 -translate-x-1/2 -translate-y-1/2" style={{ left: `${(p.x ?? 0.5) * 100}%`, top: `${(p.y ?? 0.5) * 100}%` }}>
+          <ShopChip p={p} />
+        </div>
+      ))}
 
       {/* Soft bottom shade so the caption and action icons stay legible
           on bright frames. Shorter than before — the video is the
@@ -517,7 +563,7 @@ export default function VideoCard({ video, active }: Props) {
       {downloadFlash && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="animate-pulse bg-black/60 rounded-full px-4 py-2 flex items-center gap-2 text-white text-xs font-semibold">
-            <Download size={14} className="text-brand-amber" /> Saved with piitrade.com watermark
+            <Download size={14} className="text-brand-amber" /> Saved with a watermark
           </div>
         </div>
       )}
@@ -562,6 +608,26 @@ export default function VideoCard({ video, active }: Props) {
           </Link>
         )}
         <p className="text-sm drop-shadow break-words line-clamp-2">{linkifyHashtags(video.title)}</p>
+        {/* Products pinned to this moment of the video (links go through /go so the tap is counted). */}
+        {inCaption.length > 0 && (
+          <div className="mt-1.5 flex flex-col items-start gap-1.5">
+            {inCaption.map((p) => (
+              <ShopChip key={p.id} p={p} />
+            ))}
+          </div>
+        )}
+        {products.length === 0 && legacyProduct && (
+          <a
+            href={legacyProduct.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-brand-orange px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-black/30"
+          >
+            <ShoppingBag size={14} className="shrink-0" />
+            <span className="truncate">{legacyProduct.title || `Shop on ${video.site?.name ?? hostOf(legacyProduct.url)}`}</span>
+          </a>
+        )}
         {video.description && (
           <>
             <p className={`text-xs text-white/80 mt-1 drop-shadow ${expanded ? '' : 'line-clamp-1'}`}>
@@ -625,7 +691,7 @@ export default function VideoCard({ video, active }: Props) {
         <button
           type="button"
           onClick={openCrop}
-          aria-label="Find what you see on Piitrade"
+          aria-label="Find the products you see"
           className="flex flex-col items-center justify-center text-white relative"
         >
           <span className="w-11 h-11 rounded-full bg-brand-orange flex items-center justify-center shadow-lg shadow-black/30">
@@ -653,7 +719,7 @@ export default function VideoCard({ video, active }: Props) {
             className="absolute bottom-full right-0 mb-3 bg-black/70 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap animate-pulse pointer-events-none"
             aria-hidden="true"
           >
-            Tap Find to see it on Piitrade ↓
+            Tap Find to shop what you see ↓
           </span>
         )}
       </div>
@@ -673,6 +739,24 @@ export default function VideoCard({ video, active }: Props) {
           onDownload={downloadWithWatermark}
           onReport={submitReport}
           onClose={() => setShowMore(false)}
+          onEditProducts={isOwnVideo ? () => setShowProducts(true) : undefined}
+        />
+      )}
+
+      {showProducts && (
+        <ManageProductsModal
+          videoId={video.id}
+          durationSec={video.duration}
+          onClose={() => setShowProducts(false)}
+          onSaved={() =>
+            api
+              .getVideo(video.id)
+              .then((r) => {
+                setProducts(r.video.products ?? []);
+                setLegacyProduct(r.video.product ?? null);
+              })
+              .catch(() => undefined)
+          }
         />
       )}
 
@@ -692,6 +776,7 @@ export default function VideoCard({ video, active }: Props) {
           identification={identification}
           matchedQuery={matchedQuery}
           browseUrl={browseUrl}
+          sites={searchSites}
           onManualSearch={handleManualSearch}
           onClose={resumeWatching}
         />

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Flag, Film, LayoutDashboard, LogOut, MapPin, Menu, MessageSquare, ScrollText, ShieldCheck, ShoppingBag, UserCircle, Users, X } from 'lucide-react';
+import { Flag, Film, Globe, LayoutDashboard, LogOut, MapPin, Menu, MessageSquare, ScrollText, ShieldCheck, ShoppingBag, UserCircle, Wallet, Users, X } from 'lucide-react';
 import { useAdminAuth } from './AdminAuthContext';
 import { ADMIN_BASE } from './paths';
 import { Badge, cx } from './ui';
@@ -24,6 +24,8 @@ const NAV: Array<{ heading?: string; items: NavItem[] }> = [
       { to: 'comments', label: 'Comments', icon: MessageSquare, permission: 'comments.view' },
       { to: 'reports', label: 'Reports', icon: Flag, permission: 'reports.view' },
       { to: 'products', label: 'Products', icon: ShoppingBag, permission: 'products.view' },
+      { to: 'sites', label: 'Sites', icon: Globe, permission: 'sites.view' },
+      { to: 'earnings', label: 'Earnings', icon: Wallet, permission: 'attribution.view' },
       { to: 'locations', label: 'Locations', icon: MapPin, permission: 'locations.view' },
     ],
   },

@@ -10,7 +10,7 @@
  */
 
 export const SITE_NAME = 'Piitrade Videos';
-export const DEFAULT_DESCRIPTION = 'Short videos from the Piitrade marketplace. Watch, then find the item on piitrade.com.';
+export const DEFAULT_DESCRIPTION = 'Creative short videos that link to the products you see. Watch, then find the item on the shop.';
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -77,6 +77,8 @@ export interface VideoSeoInput {
 }
 
 export interface PageMeta {
+  /** oEmbed discovery URL (video pages) so editors that unfurl links can embed the player. */
+  oembed?: string;
   title: string;
   description: string;
   canonical: string;
@@ -90,7 +92,7 @@ export interface PageMeta {
 export function videoMeta(origin: string, v: VideoSeoInput, opts: { noindex?: boolean } = {}): PageMeta {
   const canonical = `${origin}/v/${encodeURIComponent(v.id)}`;
   const title = truncate(v.title || 'Untitled video', 60);
-  const description = truncate(v.description || `Watch "${v.title || 'this video'}" on ${SITE_NAME} — short videos from the Piitrade marketplace.`, 160);
+  const description = truncate(v.description || `Watch "${v.title || 'this video'}" on ${SITE_NAME} — creative short videos that link to products.`, 160);
   const upload = v.createdAt.toISOString();
   const duration = isoDuration(v.duration);
 
@@ -126,6 +128,7 @@ export function videoMeta(origin: string, v: VideoSeoInput, opts: { noindex?: bo
     image: v.thumbnailUrl,
     video: { url: v.contentUrl, type: /\.webm(\?|$)/i.test(v.contentUrl) ? 'video/webm' : 'video/mp4' },
     jsonLd: [jsonLd],
+    oembed: `${origin}/api/oembed?format=json&url=${encodeURIComponent(canonical)}`,
   };
 }
 
@@ -140,7 +143,7 @@ export function staticPageMeta(origin: string, pathname: string): PageMeta | nul
   const image = `${origin}/og-default.png`;
   if (pathname === '/') {
     return {
-      title: `${SITE_NAME} — short videos from the Piitrade marketplace`,
+      title: `${SITE_NAME} — creative videos that link to products`,
       description: DEFAULT_DESCRIPTION,
       canonical: `${origin}/`,
       robots: 'index, follow, max-image-preview:large',
@@ -148,7 +151,7 @@ export function staticPageMeta(origin: string, pathname: string): PageMeta | nul
       image,
       jsonLd: [
         { '@context': 'https://schema.org', '@type': 'WebSite', name: SITE_NAME, url: `${origin}/`, description: DEFAULT_DESCRIPTION, inLanguage: 'en' },
-        { '@context': 'https://schema.org', '@type': 'Organization', name: 'Piitrade', url: 'https://piitrade.com', logo: `${origin}/icon.svg` },
+        { '@context': 'https://schema.org', '@type': 'Organization', name: SITE_NAME, url: `${origin}/`, logo: `${origin}/icon.svg` },
       ],
     };
   }
@@ -199,6 +202,7 @@ export function renderHeadTags(meta: PageMeta, siteName = SITE_NAME): string {
     t.push(`<meta property="og:video:secure_url" content="${escapeHtml(meta.video.url)}" data-seo />`);
     t.push(`<meta property="og:video:type" content="${escapeHtml(meta.video.type)}" data-seo />`);
   }
+  if (meta.oembed) t.push(`<link rel="alternate" type="application/json+oembed" href="${escapeHtml(meta.oembed)}" title="${escapeHtml(meta.title)}" data-seo />`);
   t.push(`<meta name="twitter:card" content="${meta.image ? 'summary_large_image' : 'summary'}" data-seo />`);
   t.push(`<meta name="twitter:title" content="${escapeHtml(meta.title)}" data-seo />`);
   t.push(`<meta name="twitter:description" content="${escapeHtml(meta.description)}" data-seo />`);

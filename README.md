@@ -70,6 +70,29 @@ does not need CORS. Serving the bucket from a custom domain also lets Cloudflare
   web app only; the mobile app has typed "Find on Piitrade" search instead.
 * The rest of the web app (feed, profile…) still requires login; only `/v/:id` is public.
 
+## Shoppable video: attribution, embeds, product moments
+
+Full contract for shops: [`docs/OPEN_SHOP_SPEC.md`](docs/OPEN_SHOP_SPEC.md). A WooCommerce plugin draft is in `integrations/woocommerce/`.
+
+- **Attribution & payouts:** every Shop button opens `/go/:videoId/:productId`, which logs the tap and forwards to the shop with `?pv_click=<token>`. Shops report paid orders to `POST /api/attribution/conversion` (HMAC-signed with the site's postback secret, shown in Admin → Sites). Each sale becomes a ledger entry for the creator (`commissionPct` of the sale): pending → approved → paid, or reversed. Review them in **Admin → Earnings**. The app only records the amounts; sending money is done by the operator. Creators see their ledger in Settings → Earnings. Videos that actually sell rank a little higher in "For you".
+- **Embeds:** `/embed/:id` (iframe player), `/api/oembed`, `/widget.js` (videos on a shop's product page) and `/track.js` (remembers the click on the shop). Limit framing with `EMBED_FRAME_ANCESTORS`.
+- **Product moments:** a video can have up to 8 products, each optionally shown only between two times and placed on the frame. Creators edit them from a video's ⋯ menu ("Products in this video"), where AI can suggest matches from a few frames.
+- **Deploy:** run `npx prisma migrate deploy` (adds `VideoProduct`, `Click`, `Conversion`, and `Site.commissionPct`/`postbackSecret`; existing single product links become one product each). nginx/Vercel route `/go`, `/embed`, `/widget.js`, `/track.js` to the backend. Grant admins `attribution.view` / `attribution.edit` as needed.
+
+## Sites (multiple marketplaces)
+
+Videos link to products on one or more shops. Nothing about which shops exist is hardcoded: manage them in **Admin → Sites**.
+
+- **Fields:** name, website, optional API address, API type, country/currency, and link patterns (`{id}` / `{q}` placeholders) for product pages, search and "sell".
+- **API type:** `piitrade` (the shop exposes `GET /api/listings?q&sort&limit&country`, so visual search and in-app "Find products" return live items) or `link-only` (only browse/search links are offered).
+- **Test connection** in the site form checks the API before you save.
+- **Uploads & admin video edit:** creators pick a site and paste a product URL; the URL must be on a connected site's domain. Deleting a site clears the product links that pointed at it.
+- **Search** queries all active sites in parallel; one failing site doesn't break the others.
+- **Private/internal API hosts are rejected in production** (SSRF guard). Set `ALLOW_PRIVATE_SITE_URLS=true` to override for local dev.
+- **Upgrading an existing deployment:** if the Sites table is empty at boot and `PIITRADE_SITE_URL` (plus optionally `MARKETPLACE_API`, `MARKETPLACE_COUNTRY`, `MARKETPLACE_DEFAULT_CURRENCY`) is set, one site is seeded from them once. Otherwise just add sites in the admin.
+- **CORS:** set `ALLOWED_ORIGIN` (comma-separated) and `SITE_URL` to your own origins; edit `backend/r2-cors.json` for R2.
+- Run `npx prisma migrate deploy` to apply the `sites` migration.
+
 ## SEO & link previews
 
 The frontend is a client-rendered SPA, so the backend (`backend/src/routes/seo.ts`) serves the crawler-facing pages and the proxy forwards exactly these paths to it (`frontend/nginx.conf`, `vercel.json`):

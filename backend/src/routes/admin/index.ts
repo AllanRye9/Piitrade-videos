@@ -8,6 +8,8 @@ import commentsRouter from './comments';
 import reportsRouter from './reports';
 import productsRouter from './products';
 import locationsRouter from './locations';
+import sitesRouter from './sites';
+import attributionRouter from './attribution';
 import adminsRouter from './admins';
 import auditRouter from './audit';
 
@@ -76,6 +78,20 @@ router.get('/stats', async (req: AuthedRequest, res: Response) => {
   if (can('locations.view')) {
     jobs.push(prisma.location.count().then((n: number) => void (out.locations = { total: n })));
   }
+  if (can('sites.view')) {
+    jobs.push(prisma.site.count().then((n: number) => void (out.sites = { total: n })));
+  }
+  if (can('attribution.view')) {
+    jobs.push(
+      Promise.all([
+        prisma.click.count({ where: { createdAt: { gte: weekAgo } } }),
+        prisma.conversion.count({ where: { createdAt: { gte: weekAgo }, status: { not: 'reversed' } } }),
+        prisma.conversion.count({ where: { status: 'pending' } }),
+      ]).then(([clicksThisWeek, salesThisWeek, pendingPayouts]) => {
+        out.attribution = { clicksThisWeek, salesThisWeek, pendingPayouts };
+      })
+    );
+  }
   if (req.admin!.role === 'PRIMARY') {
     jobs.push(prisma.adminUser.count().then((n: number) => void (out.admins = { total: n })));
   }
@@ -90,6 +106,8 @@ router.use('/comments', commentsRouter);
 router.use('/reports', reportsRouter);
 router.use('/products', productsRouter);
 router.use('/locations', locationsRouter);
+router.use('/sites', sitesRouter);
+router.use('/attribution', attributionRouter);
 router.use('/admins', adminsRouter);
 router.use('/audit', auditRouter);
 

@@ -1,10 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import EarningsPanel from './EarningsPanel';
 import { Link } from 'react-router-dom';
 import { api, getAccountEmail, setAccountEmail, resetSessionId } from '../api';
 import { setProfileDisplayName, setProfileHandle } from '../profileStore';
 import { getMuted, setMuted, subscribeMuted } from '../soundPreference';
 import { X, Volume2, VolumeX, Store, Loader2, Check, ExternalLink, KeyRound, LogOut } from 'lucide-react';
-import { piitradeUrl } from '../config';
+import { useSites } from '../sites';
 
 interface Props {
   displayName: string | null;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function ProfileSettings({ displayName, handle, onClose }: Props) {
+  const sites = useSites();
   const [nameInput, setNameInput] = useState(displayName || '');
   const [savingName, setSavingName] = useState(false);
   const [nameSaved, setNameSaved] = useState(false);
@@ -129,6 +131,12 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
             </button>
           </section>
 
+          {/* Earnings from Shop taps */}
+          <section className="space-y-2">
+            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Earnings</label>
+            <EarningsPanel />
+          </section>
+
           {/* Display name */}
           <section className="space-y-2">
             <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Display name</label>
@@ -158,7 +166,7 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
           <section className="space-y-2">
             <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Public handle</label>
             <div className="flex items-center gap-2">
-              <span className="text-white/40 text-sm shrink-0">piitrade.com/u/</span>
+              <span className="text-white/40 text-sm shrink-0">@</span>
               <input
                 value={handleInput}
                 onChange={(e) => setHandleInput(e.target.value.toLowerCase())}
@@ -212,29 +220,32 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
             <p className="text-white/30 text-[11px]">Applies to every video in the feed on this device.</p>
           </section>
 
-          {/* piitrade.com — the classifieds marketplace this app refers viewers to.
-              Nothing is linked or stored here: contacting a seller, saving
-              listings and posting ads all happen on piitrade.com with its
-              own account. */}
-          <section className="space-y-2">
-            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Piitrade marketplace</label>
-            <a
-              href={piitradeUrl('/')}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between bg-white/5 rounded-lg px-3.5 py-3 text-white text-sm"
-            >
-              <span className="flex items-center gap-2.5">
-                <Store size={18} className="text-brand-orange" />
-                Open piitrade.com
-              </span>
-              <ExternalLink size={16} className="text-white/40" />
-            </a>
-            <p className="text-white/30 text-[11px]">
-              Listings you find in videos open on piitrade.com, where you message sellers and save items with your
-              Piitrade account.
-            </p>
-          </section>
+          {/* The shops videos link to (managed by admins). Nothing is linked or
+              stored here: contacting a seller, saving listings and posting ads
+              all happen on each shop's own site, with its own account. */}
+          {sites.length > 0 && (
+            <section className="space-y-2">
+              <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Shops</label>
+              {sites.map((s) => (
+                <a
+                  key={s.id}
+                  href={s.homeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between bg-white/5 rounded-lg px-3.5 py-3 text-white text-sm"
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <Store size={18} className="text-brand-orange shrink-0" />
+                    <span className="truncate">Open {s.name}</span>
+                  </span>
+                  <ExternalLink size={16} className="text-white/40 shrink-0" />
+                </a>
+              ))}
+              <p className="text-white/30 text-[11px]">
+                Products you find in videos open on the shop’s own site, where you message sellers and save items with that shop’s account.
+              </p>
+            </section>
+          )}
 
           <div className="flex items-center justify-center gap-3 pt-1 text-white/30 text-xs">
             <Link to="/legal/terms" className="underline">

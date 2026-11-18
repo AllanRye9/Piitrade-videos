@@ -8,6 +8,7 @@ import { extractHashtags } from '../../lib/hashtags';
 import { resolveAssetUrl } from '../videos';
 import { VIDEOS_DIR, POSTERS_DIR } from '../../paths';
 import { removeStoredFile, optionalId } from './helpers';
+import { resolveProductPlan, replaceProducts } from '../../lib/videoProducts';
 
 const router = Router();
 
@@ -36,6 +37,11 @@ function serialize(v: any, extra: { uploader?: any; reportCount?: number } = {})
     createdAt: v.createdAt,
     locationId: v.locationId ?? null,
     location: v.location ? { id: v.location.id, name: v.location.name } : null,
+    siteId: v.siteId ?? null,
+    site: v.site ? { id: v.site.id, name: v.site.name } : null,
+    productUrl: v.productUrl ?? null,
+    productTitle: v.productTitle ?? null,
+    products: (v.products ?? []).map((p: any) => ({ id: p.id, siteId: p.siteId, url: p.url, title: p.title, startMs: p.startMs, endMs: p.endMs, x: p.x, y: p.y })),
     uploader: extra.uploader ?? null,
     reportCount: extra.reportCount ?? 0,
   };
@@ -83,7 +89,7 @@ router.get('/', requirePermission('videos.view'), async (req: AuthedRequest, res
 
   const [total, videos] = await Promise.all([
     prisma.video.count({ where }),
-    prisma.video.findMany({ where, orderBy: sort, skip, take, include: { location: true } }),
+    prisma.video.findMany({ where, orderBy: sort, skip, take, include: { location: true, site: true } }),
   ]);
 
   const ids = videos.map((v: any) => v.id as string);
@@ -101,7 +107,7 @@ router.get('/', requirePermission('videos.view'), async (req: AuthedRequest, res
 
 // GET /api/admin/videos/:id
 router.get('/:id', requirePermission('videos.view'), async (req: AuthedRequest, res: Response) => {
-  const v = await prisma.video.findUnique({ where: { id: req.params.id }, include: { location: true } });
+  const v = await prisma.video.findUnique({ where: { id: req.params.id }, include: { location: true, site: true, products: { orderBy: [{ startMs: 'asc' }, { position: 'asc' }] } } });
   if (!v) throw new HttpError(404, 'Video not found');
   const [uploaders, reports] = await Promise.all([
     uploadersFor([(v as any).uploaderSessionId]),
@@ -110,7 +116,7 @@ router.get('/:id', requirePermission('videos.view'), async (req: AuthedRequest, 
   res.json({ video: serialize(v, { uploader: uploaders.get((v as any).uploaderSessionId) ?? null, reportCount: reports.length }), reports });
 });
 
-// PATCH /api/admin/videos/:id  { title?, description?, locationId? }
+// PATCH /api/admin/videos/:id  { title?, description?, locationId?, products? (replaces the list), or the single-link siteId? / productUrl? / productTitle? }
 router.patch('/:id', requirePermission('videos.edit'), async (req: AuthedRequest, res: Response) => {
   const title = req.body.title !== undefined ? String(req.body.title).trim().slice(0, 200) : undefined;
   if (title !== undefined && !title) throw new HttpError(400, 'A video needs a title');
@@ -119,6 +125,8 @@ router.patch('/:id', requirePermission('videos.edit'), async (req: AuthedRequest
 
   const video = await prisma.video.findUnique({ where: { id: req.params.id } });
   if (!video) throw new HttpError(404, 'Video not found');
+
+  const plan = await resolveProductPlan(req.body, video as any, video.duration ? video.duration * 1000 : null);
 
   try {
     const updated = await prisma.video.update({
@@ -130,8 +138,12 @@ router.patch('/:id', requirePermission('videos.edit'), async (req: AuthedRequest
         // Re-parse whenever either changes so hashtags don't go stale.
         ...(title !== undefined || description !== undefined ? { hashtags: extractHashtags(title ?? video.title, description ?? video.description) } : {}),
       },
-      include: { location: true },
+      include: { location: true, site: true, products: { orderBy: [{ startMs: 'asc' }, { position: 'asc' }] } },
     });
+    if (plan) {
+      await replaceProducts(video.id, plan);
+      updated.products = (await prisma.videoProduct.findMany({ where: { videoId: video.id }, orderBy: [{ startMs: 'asc' }, { position: 'asc' }] })) as any;
+    }
     audit(req, 'video.update', 'video', video.id, updated.title);
     res.json({ video: serialize(updated) });
   } catch (err: any) {

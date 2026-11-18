@@ -6,6 +6,11 @@ import type {
   AccountSummary,
   AppNotification,
   TrendingHashtag,
+  SiteInfo,
+  ProductPayload,
+  OwnProduct,
+  ProductSuggestion,
+  Earnings,
 } from './types';
 import { API_BASE } from './config';
 
@@ -116,6 +121,15 @@ export class ApiError extends Error {
 }
 
 /** An audio file to add to a video, and how it's mixed in. Volumes are 0–1. */
+/** The site / product page a video promotes — all optional. */
+export interface VideoLink {
+  siteId?: string;
+  productUrl?: string;
+  productTitle?: string;
+  /** Several products, each optionally timed. Takes precedence over the single link above. */
+  products?: ProductPayload[];
+}
+
 export interface AudioUpload {
   file: File;
   /** Volume of the video's own sound (0 replaces it with the added audio). */
@@ -177,12 +191,18 @@ export const api = {
 
   getVideo: (id: string) => request<{ video: Video }>(`/api/videos/${id}`),
 
-  uploadVideo: (file: File, title: string, description: string, onProgress?: (pct: number) => void, trim?: TrimRange | null, audio?: AudioUpload | null) => {
+  uploadVideo: (file: File, title: string, description: string, onProgress?: (pct: number) => void, trim?: TrimRange | null, audio?: AudioUpload | null, link?: VideoLink | null) => {
     return new Promise<{ video: Video }>((resolve, reject) => {
       const form = new FormData();
       form.append('video', file);
       form.append('title', title);
       form.append('description', description);
+      if (link?.products?.length) form.append('products', JSON.stringify(link.products));
+      else if (link?.siteId) form.append('siteId', link.siteId);
+      if (!link?.products?.length && link?.productUrl) {
+        form.append('productUrl', link.productUrl);
+        if (link.productTitle) form.append('productTitle', link.productTitle);
+      }
       if (trim) {
         // Fixed to millisecond precision so the server never sees a
         // float like 12.300000000000001.
@@ -234,6 +254,18 @@ export const api = {
       body: JSON.stringify({ text, author, parentId }),
     }),
 
+  listSites: () => request<{ sites: SiteInfo[] }>('/api/marketplace/sites'),
+
+  // Products pinned to your own video, with AI suggestions from a few of its frames.
+  getMyProducts: (id: string) => request<{ products: OwnProduct[]; max: number }>(`/api/videos/${id}/products`),
+  saveMyProducts: (id: string, products: ProductPayload[]) =>
+    request<{ products: OwnProduct[] }>(`/api/videos/${id}/products`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products }),
+    }),
+  suggestProducts: (id: string) => request<{ suggestions: ProductSuggestion[] }>(`/api/videos/${id}/suggest-products`, { method: 'POST' }),
+  getEarnings: () => request<Earnings>('/api/earnings'),
   visualSearch: (imageBlob: Blob) => {
     const form = new FormData();
     form.append('image', imageBlob, 'crop.jpg');

@@ -23,6 +23,9 @@ export interface RankableVideo {
   hashtags?: string[];
   uploaderSessionId?: string | null;
   locationId?: string | null;
+  /** Taps on this video's Shop links and sales they led to (recent window); see routes/attribution.ts. */
+  clicks?: number;
+  conversions?: number;
 }
 
 export interface ViewerSignals {
@@ -56,10 +59,18 @@ const W_FOLLOWING = 1.2;
 const W_CREATOR = 0.5;
 const W_TAGS = 0.7;
 const W_LOCATION = 0.6;
+const W_SELL = 0.5; // videos that actually sell things rise a little
 const VIEWED_PENALTY = 3; // pushes already-watched videos behind everything unseen
 
 function engagement(v: RankableVideo): number {
   return v.likes * 2 + v.comments * 3 + v.shares * 4 + v.views * 0.1;
+}
+
+/** Sales per tap, smoothed so one lucky sale on one tap doesn't beat a proven seller. 0 when nothing sold. */
+export function sellRate(v: RankableVideo): number {
+  const conv = v.conversions ?? 0;
+  if (conv <= 0) return 0;
+  return conv / ((v.clicks ?? 0) + 10);
 }
 
 /** Score every video in the pool; higher = show earlier. */
@@ -68,6 +79,7 @@ export function scoreVideos(videos: RankableVideo[], signals: ViewerSignals, now
   const maxTag = Math.max(1, ...signals.tagWeights.values());
   const maxLoc = Math.max(1, ...signals.locationWeights.values());
   const maxCreator = Math.max(1, ...signals.creatorWeights.values());
+  const maxSell = Math.max(0, ...videos.map(sellRate));
   const scores = new Map<string, number>();
 
   for (const v of videos) {
@@ -86,7 +98,9 @@ export function scoreVideos(videos: RankableVideo[], signals: ViewerSignals, now
     let locAffinity = 0;
     if (v.locationId) locAffinity = v.locationId === signals.locationId ? 1 : Math.min(1, (signals.locationWeights.get(v.locationId) ?? 0) / maxLoc);
 
-    let score = W_LOCATION * locAffinity + W_FRESH * fresh + W_QUALITY * quality + W_FOLLOWING * following + W_CREATOR * creatorAffinity + W_TAGS * tagAffinity;
+    const sell = maxSell > 0 ? sellRate(v) / maxSell : 0;
+
+    let score = W_SELL * sell + W_LOCATION * locAffinity + W_FRESH * fresh + W_QUALITY * quality + W_FOLLOWING * following + W_CREATOR * creatorAffinity + W_TAGS * tagAffinity;
     if (signals.viewedIds.has(v.id)) score -= VIEWED_PENALTY;
     scores.set(v.id, score);
   }

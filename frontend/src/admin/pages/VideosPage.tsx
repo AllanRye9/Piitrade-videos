@@ -1,10 +1,12 @@
+import { ProductDraft, draftsFromOwn, draftsToPayload } from '../../productDrafts';
+import ProductListEditor from '../../components/ProductListEditor';
 import { useEffect, useState } from 'react';
 import { Pencil, Play, Trash2 } from 'lucide-react';
 import { adminApi, VideoRecord } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useDebounced, useFetch } from '../hooks';
 import { mediaUrl } from '../../config';
-import { LocationSelect, formatDuration } from '../shared';
+import { LocationSelect, SiteSelect, formatDuration } from '../shared';
 import {
   Badge, ConfirmDialog, EmptyState, ErrorState, Field, FormModal, IconButton, Modal, PageHeader, Pagination, SearchInput, Select, Spinner, Table, Td, Th, Toolbar, fmtDate, fmtNum, inputCls, useToast,
 } from '../ui';
@@ -84,12 +86,14 @@ function EditVideo({ video, onClose, onSaved }: { video: VideoRecord; onClose: (
   const [title, setTitle] = useState(video.title);
   const [description, setDescription] = useState(video.description);
   const [locationId, setLocationId] = useState(video.locationId ?? '');
+  const { data: siteData } = useFetch(() => adminApi.siteOptions(), []);
+  const [drafts, setDrafts] = useState<ProductDraft[]>(() => draftsFromOwn(video.products ?? []));
   return (
     <FormModal
       title="Edit video"
       onClose={onClose}
       onSubmit={async () => {
-        await adminApi.updateVideo(video.id, { title, description, locationId: locationId || null });
+        await adminApi.updateVideo(video.id, { title, description, locationId: locationId || null, products: draftsToPayload(drafts) });
         toast('Video updated');
         onSaved();
       }}
@@ -103,6 +107,10 @@ function EditVideo({ video, onClose, onSaved }: { video: VideoRecord; onClose: (
       <Field label="Location">
         <LocationSelect form value={locationId} onChange={setLocationId} />
       </Field>
+      <div className="space-y-2">
+        <div className="text-sm font-medium text-white/80">Products</div>
+        <ProductListEditor value={drafts} onChange={setDrafts} sites={siteData?.sites ?? []} durationSec={video.duration} />
+      </div>
     </FormModal>
   );
 }

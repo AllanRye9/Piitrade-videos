@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Eye, Film, Flag, Heart, MapPin, MessageSquare, ShieldCheck, ShoppingBag, Users } from 'lucide-react';
+import { Eye, Film, Flag, Globe, Heart, MapPin, MessageSquare, ShieldCheck, ShoppingBag, Users, Wallet } from 'lucide-react';
 import { adminApi } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useFetch } from '../hooks';
@@ -46,6 +46,8 @@ export default function DashboardPage() {
             {s.comments && <Stat label="Comments" value={fmtNum(s.comments.total)} icon={MessageSquare} to="comments" />}
             {s.reports && <Stat label="Reported videos" value={fmtNum(s.reports.openVideos)} sub={s.reports.openVideos ? 'Needs review' : 'All clear'} icon={Flag} to="reports" alert={s.reports.openVideos > 0} />}
             {s.products && <Stat label="Products" value={fmtNum(s.products.total)} icon={ShoppingBag} to="products" />}
+            {s.sites && <Stat label="Sites" value={fmtNum(s.sites.total)} icon={Globe} to="sites" />}
+            {s.attribution && <Stat label="Shop taps (7 days)" value={fmtNum(s.attribution.clicksThisWeek)} sub={`${s.attribution.salesThisWeek} sale(s) · ${s.attribution.pendingPayouts} pending`} icon={Wallet} to="earnings" alert={s.attribution.pendingPayouts > 0} />}
             {s.locations && <Stat label="Locations" value={fmtNum(s.locations.total)} icon={MapPin} to="locations" />}
             {s.admins && <Stat label="Admins" value={fmtNum(s.admins.total)} icon={ShieldCheck} to="admins" />}
           </div>

@@ -2,19 +2,22 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { api } from '../api';
-import type { VisualSearchResult } from '../types';
+import type { SiteSearchSummary, VisualSearchResult } from '../types';
 import Sheet from '../components/Sheet';
 import { ErrorText, Icon } from '../components/ui';
 import { mediaUrl } from '../config';
 import { useApp } from '../state/AppContext';
+import { useSites } from '../state/sites';
 import { colors, radius, space } from '../theme';
 
-/** "Find on Piitrade" — type what you saw in the video, get matching marketplace listings. */
+/** "Find products" — type what you saw in the video, get matching listings from every connected shop. */
 export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
   const { closeSheet } = useApp();
   const [query, setQuery] = useState((initialQuery || '').replace(/^#/, ''));
   const [results, setResults] = useState<VisualSearchResult[] | null>(null);
   const [browseUrl, setBrowseUrl] = useState<string | null>(null);
+  const [siteSummaries, setSiteSummaries] = useState<SiteSearchSummary[] | null>(null);
+  const connected = useSites();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +29,7 @@ export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
       const res = await api.marketplaceSearch(q.trim());
       setResults(res.results);
       setBrowseUrl(res.browseUrl ?? null);
+      setSiteSummaries(res.sites ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Search failed');
     } finally {
@@ -33,13 +37,16 @@ export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
     }
   }, []);
 
+  // One "See all" link per shop: from the search when it ran, else the connected shops.
+  const seeAll = (siteSummaries && siteSummaries.length > 0 ? siteSummaries : connected).map((s) => ({ key: s.slug, name: s.name, url: s.browseUrl }));
+
   useEffect(() => {
     if (query.trim()) search(query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <Sheet title="Find on Piitrade" onClose={closeSheet} maxHeight={0.88} fill>
+    <Sheet title="Find products" onClose={closeSheet} maxHeight={0.88} fill>
       <View style={styles.searchRow}>
         <View style={styles.box}>
           <Icon name="search" size={18} color={colors.textMuted} />
@@ -52,15 +59,22 @@ export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
         <FlatList
           style={{ flex: 1 }}
           data={results}
-          keyExtractor={(r) => r.id}
+          keyExtractor={(r) => `${r.site?.slug ?? ''}:${r.id}`}
           contentContainerStyle={{ padding: space.lg, gap: space.md }}
-          ListEmptyComponent={<Text style={styles.empty}>No listings matched “{query}”.</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>No products matched “{query}”.</Text>}
           ListFooterComponent={
-            browseUrl ? (
-              <Pressable onPress={() => Linking.openURL(browseUrl)} style={styles.browse}>
-                <Text style={styles.browseText}>See all results on Piitrade</Text>
-              </Pressable>
-            ) : undefined
+            <View>
+              {seeAll.map((s) => (
+                <Pressable key={s.key} onPress={() => Linking.openURL(s.url)} style={styles.browse}>
+                  <Text style={styles.browseText}>See all on {s.name}</Text>
+                </Pressable>
+              ))}
+              {seeAll.length === 0 && browseUrl ? (
+                <Pressable onPress={() => Linking.openURL(browseUrl)} style={styles.browse}>
+                  <Text style={styles.browseText}>See all results</Text>
+                </Pressable>
+              ) : null}
+            </View>
           }
           renderItem={({ item }) => (
             <Pressable onPress={() => Linking.openURL(item.listingUrl)} style={styles.card}>
@@ -70,6 +84,7 @@ export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
                   {item.name}
                 </Text>
                 <Text style={styles.price}>{item.price}</Text>
+                {seeAll.length > 1 && item.site ? <Text style={styles.meta}>{item.site.name}</Text> : null}
                 {item.location ? (
                   <Text style={styles.meta} numberOfLines={1}>
                     {item.location}

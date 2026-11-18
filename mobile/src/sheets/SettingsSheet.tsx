@@ -4,7 +4,8 @@ import Constants from 'expo-constants';
 import { api } from '../api';
 import Sheet from '../components/Sheet';
 import { Avatar, Button, ErrorText, Icon, SectionLabel, TextField } from '../components/ui';
-import { WEB_URL, piitradeUrl } from '../config';
+import { WEB_URL } from '../config';
+import { useSites } from '../state/sites';
 import { pickAvatar } from '../lib/pickers';
 import { useApp, useProfile } from '../state/AppContext';
 import { mutedStore, profileStore, setMuted } from '../state/stores';
@@ -12,7 +13,8 @@ import { colors, radius, space } from '../theme';
 
 /** Account, profile editing, sound and legal — all in one popup. */
 export default function SettingsSheet() {
-  const { closeSheet, email, signOut } = useApp();
+  const sites = useSites();
+  const { closeSheet, email, signOut, openSheet } = useApp();
   const profile = useProfile();
   const muted = useSyncExternalStore(mutedStore.subscribe, () => mutedStore.get().muted);
 
@@ -124,6 +126,15 @@ export default function SettingsSheet() {
         </View>
 
         <View style={styles.group}>
+          <SectionLabel>Creator</SectionLabel>
+          <Pressable style={styles.row} onPress={() => openSheet({ type: 'earnings' })} accessibilityRole="button">
+            <Icon name="wallet-outline" />
+            <Text style={[styles.rowText, { flex: 1 }]}>Earnings</Text>
+            <Icon name="chevron-forward" size={18} color={colors.textFaint} />
+          </Pressable>
+        </View>
+
+        <View style={styles.group}>
           <SectionLabel>Playback</SectionLabel>
           <View style={styles.row}>
             <Icon name={muted ? 'volume-mute' : 'volume-high'} />
@@ -152,10 +163,12 @@ export default function SettingsSheet() {
 
         <View style={styles.group}>
           <SectionLabel>About</SectionLabel>
-          <Pressable style={styles.row} onPress={() => Linking.openURL(piitradeUrl('/'))}>
-            <Icon name="storefront-outline" />
-            <Text style={styles.rowText}>Open Piitrade marketplace</Text>
-          </Pressable>
+          {sites.map((s) => (
+            <Pressable key={s.id} style={styles.row} onPress={() => Linking.openURL(s.homeUrl)}>
+              <Icon name="storefront-outline" />
+              <Text style={styles.rowText}>Open {s.name}</Text>
+            </Pressable>
+          ))}
           {[['Terms of Service', '/legal/terms'], ['Privacy Policy', '/legal/privacy'], ['Copyright (DMCA)', '/legal/dmca']].map(([label, path]) => (
             <Pressable key={path} style={styles.row} onPress={() => Linking.openURL(`${WEB_URL}${path}`)}>
               <Icon name="document-text-outline" />

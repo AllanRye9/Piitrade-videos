@@ -18,6 +18,9 @@ import { requireAccount } from '../middleware/requireAccount';
 import { decodeCursor, encodeCursor, olderThan } from '../lib/cursor';
 import { RANK_POOL_SIZE, ViewerSignals, decodeRankCursor, encodeRankCursor, rankVideos } from '../lib/feedRank';
 import { removeStoredFile } from './admin/helpers';
+import { getSiteSync } from '../lib/sites';
+import { fitPlanToDuration, loadProductsFor, productCreateData, resolveProductPlan, ProductPlan, PublicProduct } from '../lib/videoProducts';
+import { productLinkForDisplay, siteHomeUrl } from '../lib/siteUrls';
 
 const router = Router();
 
@@ -41,6 +44,11 @@ type VideoRecord = {
   createdAt: Date;
   uploaderSessionId?: string | null;
   hashtags?: string[];
+  siteId?: string | null;
+  productUrl?: string | null;
+  productTitle?: string | null;
+  /** Filled in by attachProducts() before serialising. */
+  products?: Array<{ id: string; siteId: string; url: string; title: string | null; startMs: number; endMs: number | null; x: number | null; y: number | null }>;
 };
 
 type StateRecord = { videoId: string; liked: boolean; favorited: boolean; saved: boolean };
@@ -89,6 +97,20 @@ export function serialize(video: VideoRecord, state?: StateRecord, uploader?: Up
     liked: state?.liked ?? false,
     favorited: state?.favorited ?? false,
     saved: state?.saved ?? false,
+    // The connected site this video promotes and, when set, the exact product
+    // page on it (always on that site's domain — enforced at write time).
+    site: (() => {
+      const s = getSiteSync(video.siteId);
+      return s ? { slug: s.slug, name: s.name, url: siteHomeUrl(s) } : null;
+    })(),
+    // Older app builds read this single link (the first product).
+    product: video.productUrl ? { url: productLinkForDisplay(video.productUrl), title: video.productTitle || null } : null,
+    // Every pinned product, in display order. `go` is the tracked link (open it
+    // relative to the site root); `url` is the direct link, a fallback only.
+    products: (video.products ?? []).map((p): PublicProduct => {
+      const s = getSiteSync(p.siteId);
+      return { id: p.id, title: p.title, url: productLinkForDisplay(p.url), site: s ? { slug: s.slug, name: s.name } : null, go: `/go/${video.id}/${p.id}`, startMs: p.startMs, endMs: p.endMs, x: p.x, y: p.y };
+    }),
     // Only ever the uploader's *public* handle/displayName/avatar —
     // never uploaderSessionId itself, which stays server-side so a
     // viewer can't be tracked across videos by session id.
@@ -96,6 +118,12 @@ export function serialize(video: VideoRecord, state?: StateRecord, uploader?: Up
       ? { handle: uploader.handle, displayName: uploader.displayName, avatar: uploader.avatar, isOwn: !!uploader.isOwn, isFollowing: !!uploader.isFollowing }
       : null,
   };
+}
+
+/** Loads the pinned products for these videos (one query) so serialize() can include them. */
+export async function attachProducts(videos: VideoRecord[]): Promise<void> {
+  const map = await loadProductsFor(videos.map((v) => v.id));
+  for (const v of videos) v.products = map.get(v.id) ?? [];
 }
 
 /**
@@ -187,6 +215,24 @@ async function loadViewerSignals(sessionId: string, snapshot: Date): Promise<Vie
   return signals;
 }
 
+/** Taps and sales per video over the last 90 days, for the "sells" ranking signal. Best-effort: ranking works without it. */
+async function loadSellThrough(videoIds: string[]): Promise<Map<string, { clicks: number; conversions: number }>> {
+  const out = new Map<string, { clicks: number; conversions: number }>();
+  if (videoIds.length === 0) return out;
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  try {
+    const [clicks, convs] = await Promise.all([
+      prisma.click.groupBy({ by: ['videoId'], where: { videoId: { in: videoIds }, createdAt: { gte: since } }, _count: { _all: true } }),
+      prisma.conversion.groupBy({ by: ['videoId'], where: { videoId: { in: videoIds }, createdAt: { gte: since }, status: { not: 'reversed' } }, _count: { _all: true } }),
+    ]);
+    for (const c of clicks as Array<{ videoId: string; _count: { _all: number } }>) out.set(c.videoId, { clicks: c._count._all, conversions: 0 });
+    for (const c of convs as Array<{ videoId: string; _count: { _all: number } }>) out.set(c.videoId, { clicks: out.get(c.videoId)?.clicks ?? 0, conversions: c._count._all });
+  } catch (err) {
+    console.error('sell-through lookup failed:', err instanceof Error ? err.message : err);
+  }
+  return out;
+}
+
 router.get('/', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(req.query.limit) || DEFAULT_PAGE_SIZE));
@@ -206,6 +252,14 @@ router.get('/', async (req: Request, res: Response) => {
       prisma.video.findMany({ where: { createdAt: { lte: snapshot } }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: RANK_POOL_SIZE }),
       loadViewerSignals(sessionId, snapshot),
     ]);
+    const sell = await loadSellThrough((pool as VideoRecord[]).map((v) => v.id));
+    for (const v of pool as Array<VideoRecord & { clicks?: number; conversions?: number }>) {
+      const s = sell.get(v.id);
+      if (s) {
+        v.clicks = s.clicks;
+        v.conversions = s.conversions;
+      }
+    }
     const ranked = rankVideos(pool as VideoRecord[], signals, snapshotMs);
     const page = ranked.slice(offset, offset + limit);
     const end = offset + limit;
@@ -220,6 +274,7 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
+    await attachProducts(page);
     const uploaderMap = await fetchUploadersFor(page, sessionId);
     res.json({
       videos: page.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
@@ -238,6 +293,7 @@ router.get('/', async (req: Request, res: Response) => {
   const page = hasMore ? videos.slice(0, limit) : videos;
 
   const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
+  await attachProducts(page);
   const uploaderMap = await fetchUploadersFor(page, sessionId);
   res.json({
     videos: page.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
@@ -277,6 +333,7 @@ router.get('/trending', async (req: Request, res: Response) => {
   const ordered = ids.map((id: string) => videoMap.get(id)).filter((v: VideoRecord | undefined): v is VideoRecord => !!v);
 
   const stateMap = await fetchStatesFor(ids, sessionId);
+  await attachProducts(ordered);
   const uploaderMap = await fetchUploadersFor(ordered, sessionId);
   res.json({
     videos: ordered.map((v: VideoRecord) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)),
@@ -352,6 +409,7 @@ router.get('/search', async (req: Request, res: Response) => {
   const videos: VideoRecord[] = scored.slice(0, MAX_PAGE_SIZE).map((x: { v: SearchCandidate }) => x.v);
 
   const stateMap = await fetchStatesFor(videos.map((v) => v.id), sessionId);
+  await attachProducts(videos);
   const uploaderMap = await fetchUploadersFor(videos, sessionId);
   res.json({ videos: videos.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)) });
 });
@@ -377,6 +435,7 @@ router.get('/hashtag/:tag', async (req: Request, res: Response) => {
   const page = hasMore ? videos.slice(0, limit) : videos;
 
   const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
+  await attachProducts(page);
   const uploaderMap = await fetchUploadersFor(page, sessionId);
   res.json({
     tag,
@@ -446,6 +505,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   await recordView(sessionId, video.id); // once per session, not once per refresh/crawler hit
   const fresh: VideoRecord = (await prisma.video.findUnique({ where: { id: video.id } })) ?? video;
   const stateMap = await fetchStatesFor([video.id], sessionId);
+  await attachProducts([fresh]);
   const uploaderMap = await fetchUploadersFor([fresh], sessionId);
   res.json({ video: serialize(fresh, stateMap.get(video.id), fresh.uploaderSessionId ? uploaderMap.get(fresh.uploaderSessionId) : null) });
 });
@@ -486,6 +546,16 @@ router.post('/', requireAccount, uploadLimiter, uploadVideoWithAudio, async (req
   const sessionId = getSessionId(req);
   const title = String(req.body.title || 'Untitled').slice(0, 200);
   const description = String(req.body.description || '').slice(0, 1000);
+
+  // Which connected site / product page this video promotes (optional). Checked
+  // up front so a bad link is rejected before any transcoding work.
+  let plan: ProductPlan | null;
+  try {
+    plan = await resolveProductPlan(req.body);
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
 
   // Read the duration first, before doing any (comparatively expensive)
   // transcode/poster work — an over-length or unreadable clip is
@@ -642,9 +712,11 @@ router.post('/', requireAccount, uploadLimiter, uploadVideoWithAudio, async (req
       duration,
       uploaderSessionId: sessionId !== 'anonymous' ? sessionId : null,
       hashtags: extractHashtags(title, description),
+      ...productCreateData(plan && fitPlanToDuration(plan, duration * 1000)),
     },
   });
 
+  await attachProducts([video]);
   const uploaderMap = await fetchUploadersFor([video], sessionId);
   res.status(201).json({ video: serialize(video, undefined, video.uploaderSessionId ? uploaderMap.get(video.uploaderSessionId) : null) });
 });

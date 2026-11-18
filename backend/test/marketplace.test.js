@@ -30,7 +30,11 @@ const path = require('path');
 // stubbed out rather than requiring a real Postgres + generated client
 // just to run these tests.
 const dbPath = path.resolve(__dirname, '../dist/db.js');
-require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma: {} } };
+// Sites are admin-managed rows; the tests control which exist via SITES.
+const mk = (over) => ({ id: over.slug, name: over.slug, siteUrl: `https://${over.slug}.example`, apiUrl: '', apiType: 'piitrade', country: '', currency: 'UGX', listingPath: '/listings/{id}', searchPath: '/listings?q={q}', sellPath: '', active: true, position: 0, ...over });
+const SITE = mk({ slug: 'shop-one', name: 'Shop One', apiUrl: 'https://fake-marketplace.test' });
+let SITES = [SITE];
+require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma: { site: { findMany: async () => SITES } } } };
 
 const FAKE_CATALOG = [
   {
@@ -116,35 +120,41 @@ const FAKE_CATALOG = [
 const realFetch = global.fetch;
 global.fetch = async (url, init) => {
   const u = new URL(url);
+  if (u.hostname === 'fake-second.test') {
+    // A second marketplace with one item, to prove results from several sites are merged.
+    return { ok: true, status: 200, headers: { getSetCookie: () => [] }, json: async () => ({ listings: [{ id: 'b1', title: 'Wooden Dining Chair (second shop)', description: '', price: 99, currency: 'USD', status: 'ACTIVE', productImages: [] }] }) };
+  }
+  if (u.hostname === 'fake-broken.test') return { ok: false, status: 500, headers: { getSetCookie: () => [] }, json: async () => ({ message: 'boom' }) };
   if (u.hostname !== 'fake-marketplace.test') return realFetch(url, init);
   const q = (u.searchParams.get('q') || '').toLowerCase();
   const listings = FAKE_CATALOG.filter((l) => l.title.toLowerCase().includes(q) || l.description.toLowerCase().includes(q));
   return { ok: true, status: 200, headers: { getSetCookie: () => [] }, json: async () => ({ listings, pagination: {} }) };
 };
-process.env.MARKETPLACE_API = 'https://fake-marketplace.test';
 
-const { searchProductsWithFallback } = require('../dist/lib/marketplace.js');
+const { searchProductsWithFallback, searchSites } = require('../dist/lib/marketplace.js');
+const { invalidateSites } = require('../dist/lib/sites.js');
+const useSites = (list) => { SITES = list; invalidateSites(); };
 
 test('finds the real listing when the AI text leads with a word not in the title (the bug that was fixed)', async () => {
-  const outcome = await searchProductsWithFallback('Vintage Wooden Dining Chair with Carved Legs');
+  const outcome = await searchProductsWithFallback(SITE, 'Vintage Wooden Dining Chair with Carved Legs');
   assert.ok(outcome.results.some((r) => r.id === '1'), 'expected the Wooden Dining Chair listing to be found');
   assert.ok(outcome.matchedQuery && outcome.matchedQuery.length < 'Vintage Wooden Dining Chair with Carved Legs'.length);
 });
 
 test('finds the real listing when the AI text trails with words not in the title', async () => {
-  const outcome = await searchProductsWithFallback('Genuine Samsung Galaxy Charger Adapter Brand New');
+  const outcome = await searchProductsWithFallback(SITE, 'Genuine Samsung Galaxy Charger Adapter Brand New');
   assert.equal(outcome.results.length, 1);
   assert.equal(outcome.results[0].id, '3');
 });
 
 test('an already-close query matches on the first attempt (no unnecessary fallback)', async () => {
-  const outcome = await searchProductsWithFallback('Office Chair');
+  const outcome = await searchProductsWithFallback(SITE, 'Office Chair');
   assert.equal(outcome.attempts.length, 1);
   assert.equal(outcome.results[0].id, '2');
 });
 
 test('a genuinely nonexistent item exhausts the ladder and returns empty, not an error', async () => {
-  const outcome = await searchProductsWithFallback('Antique Grandfather Clock Mahogany');
+  const outcome = await searchProductsWithFallback(SITE, 'Antique Grandfather Clock Mahogany');
   assert.equal(outcome.results.length, 0);
   assert.equal(outcome.matchedQuery, null);
   assert.ok(outcome.attempts.length > 1);
@@ -152,7 +162,7 @@ test('a genuinely nonexistent item exhausts the ladder and returns empty, not an
 });
 
 test('a single-word query does not produce redundant duplicate attempts', async () => {
-  const outcome = await searchProductsWithFallback('Chair');
+  const outcome = await searchProductsWithFallback(SITE, 'Chair');
   assert.equal(outcome.attempts.length, 1);
 });
 
@@ -166,7 +176,7 @@ test('a single-word query does not produce redundant duplicate attempts', async 
 // preferring a specific multi-word match over a broad single-word one
 // that would also pull in unrelated items sharing that one word.
 test('prefers a precise multi-word match over a noisier single-word one when both would match', async () => {
-  const outcome = await searchProductsWithFallback('Rustic Wooden Dining Chair');
+  const outcome = await searchProductsWithFallback(SITE, 'Rustic Wooden Dining Chair');
   const ids = outcome.results.map((r) => r.id).sort();
   // "Wooden Dining Chair" (id '1') is the correct, specific match via
   // the suffix tier. Falling straight to the single word "Wooden"
@@ -177,12 +187,12 @@ test('prefers a precise multi-word match over a noisier single-word one when bot
 });
 
 test('sold/inactive listings are never returned', async () => {
-  const outcome = await searchProductsWithFallback('Leather Sofa');
+  const outcome = await searchProductsWithFallback(SITE, 'Leather Sofa');
   assert.equal(outcome.results.length, 0);
 });
 
 test('optional listing details are mapped when present and a price drop shows the original price', async () => {
-  const outcome = await searchProductsWithFallback('Mountain Bike');
+  const outcome = await searchProductsWithFallback(SITE, 'Mountain Bike');
   assert.equal(outcome.results.length, 1);
   const r = outcome.results[0];
   assert.equal(r.price, 'UGX 700,000');
@@ -194,7 +204,7 @@ test('optional listing details are mapped when present and a price drop shows th
 });
 
 test('a listing with none of the optional fields still maps cleanly', async () => {
-  const outcome = await searchProductsWithFallback('Office Chair');
+  const outcome = await searchProductsWithFallback(SITE, 'Office Chair');
   const r = outcome.results[0];
   assert.equal(r.location, undefined);
   assert.equal(r.condition, undefined);
@@ -203,7 +213,7 @@ test('a listing with none of the optional fields still maps cleanly', async () =
 });
 
 test('bare stopwords are never tried as their own candidate', async () => {
-  const outcome = await searchProductsWithFallback('a chair with the legs');
+  const outcome = await searchProductsWithFallback(SITE, 'a chair with the legs');
   const triedBareStopword = outcome.attempts.some((a) => ['a', 'with', 'the'].includes(a.query.toLowerCase()));
   assert.equal(triedBareStopword, false);
 });
@@ -260,11 +270,12 @@ test('GET /api/marketplace/search with a matching (but shortened-needed) query r
   assert.equal(body.results[0].id, '3');
   assert.equal(body.results[0].name, 'Samsung Galaxy Charger');
   assert.equal(body.results[0].price, 'UGX 35,000');
-  // piitrade.com is a classifieds site: every result must open the
-  // listing there (no cart/checkout), and carry the "see all" link.
-  assert.match(body.results[0].listingUrl, /^https:\/\/piitrade\.com\/listings\/3\?/);
+  // Every result must open the listing on ITS site (no cart/checkout) and
+  // carry the "see all" link — built from the admin-managed site, not a constant.
+  assert.match(body.results[0].listingUrl, /^https:\/\/shop-one\.example\/listings\/3\?/);
   assert.match(body.results[0].listingUrl, /utm_source=piitrade_videos/);
-  assert.match(body.browseUrl, /^https:\/\/piitrade\.com\/listings\?q=/);
+  assert.deepEqual(body.results[0].site, { slug: 'shop-one', name: 'Shop One' });
+  assert.match(body.browseUrl, /^https:\/\/shop-one\.example\/listings\?q=/);
   assert.notEqual(body.matchedQuery, 'Genuine Samsung Galaxy Charger Adapter Brand New');
 });
 
@@ -292,4 +303,57 @@ test('the old cart/checkout/account routes no longer exist (piitrade.com is a cl
 test('an unknown path under the marketplace router returns HTTP 404', async () => {
   const res = await realFetch(`${base}/api/marketplace/does-not-exist`);
   assert.equal(res.status, 404);
+});
+
+// --- multiple sites ---
+
+test('searchSites merges results from every site, each tagged with and linked to its own site', async () => {
+  const two = mk({ slug: 'shop-two', name: 'Shop Two', siteUrl: 'https://two.example', apiUrl: 'https://fake-second.test', currency: 'USD', listingPath: '/p/{id}' });
+  useSites([SITE, two]);
+  const out = await searchSites('Wooden Dining Chair');
+  const bySite = Object.fromEntries(out.results.map((r) => [r.site.slug, r]));
+  assert.equal(bySite['shop-one'].id, '1');
+  assert.match(bySite['shop-one'].listingUrl, /^https:\/\/shop-one\.example\/listings\/1\?/);
+  assert.equal(bySite['shop-two'].id, 'b1');
+  assert.match(bySite['shop-two'].listingUrl, /^https:\/\/two\.example\/p\/b1\?/);
+  assert.equal(bySite['shop-two'].price, 'USD 99');
+  assert.deepEqual(out.sites.map((s) => [s.slug, s.count]), [['shop-one', 1], ['shop-two', 1]]);
+  assert.equal(out.results[0].site.slug, 'shop-one', 'round-robin: first site first');
+});
+
+test('a broken site does not break the others, and a link-only site contributes just its browse link', async () => {
+  const broken = mk({ slug: 'broken', apiUrl: 'https://fake-broken.test' });
+  const linkOnly = mk({ slug: 'plain', name: 'Plain Shop', apiType: 'link-only', siteUrl: 'https://plain.example', searchPath: '/s?term={q}' });
+  useSites([SITE, broken, linkOnly]);
+  const out = await searchSites('Office Chair');
+  assert.equal(out.results.length, 1);
+  const summary = Object.fromEntries(out.sites.map((s) => [s.slug, s]));
+  assert.equal(summary.broken.error, 'boom');
+  assert.equal(summary.broken.count, 0);
+  assert.equal(summary.plain.linkOnly, true);
+  assert.match(summary.plain.browseUrl, /^https:\/\/plain\.example\/s\?term=Office\+Chair/);
+});
+
+test('searching one site by slug, inactive sites, and "no sites yet"', async () => {
+  const two = mk({ slug: 'shop-two', siteUrl: 'https://two.example', apiUrl: 'https://fake-second.test' });
+  useSites([SITE, two, mk({ slug: 'off', apiUrl: 'https://fake-marketplace.test', active: false })]);
+  const only = await searchSites('Wooden Dining Chair', 'shop-two');
+  assert.deepEqual(only.sites.map((s) => s.slug), ['shop-two']);
+  const all = await searchSites('Wooden Dining Chair');
+  assert.ok(!all.sites.some((s) => s.slug === 'off'), 'inactive sites are never searched');
+  useSites([]);
+  await assert.rejects(() => searchSites('anything'), /No sites are connected/);
+  useSites([SITE]);
+});
+
+test('GET /api/marketplace/sites lists active sites with ready-made links', async () => {
+  useSites([mk({ slug: 'shop-one', name: 'Shop One', apiUrl: 'https://fake-marketplace.test', sellPath: '/sell' }), mk({ slug: 'off', active: false })]);
+  const res = await realFetch(`${base}/api/marketplace/sites`);
+  const body = await res.json();
+  assert.equal(res.status, 200);
+  assert.equal(body.sites.length, 1);
+  assert.equal(body.sites[0].slug, 'shop-one');
+  assert.match(body.sites[0].sellUrl, /^https:\/\/shop-one\.example\/sell\?/);
+  assert.equal(body.sites[0].searchable, true);
+  useSites([SITE]);
 });

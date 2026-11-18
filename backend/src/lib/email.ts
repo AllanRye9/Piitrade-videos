@@ -25,7 +25,9 @@ interface SendEmailInput {
 
 export async function sendEmail(input: SendEmailInput): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || 'Piitrade <no-reply@piitrade.com>';
+  // EMAIL_FROM wins; otherwise send from no-reply@ the site's own domain (SITE_URL) — never a hardcoded one.
+  const siteHost = process.env.SITE_URL ? (() => { try { return new URL(process.env.SITE_URL!).hostname.replace(/^www\./, ''); } catch { return ''; } })() : '';
+  const from = process.env.EMAIL_FROM || (siteHost ? `Piitrade Videos <no-reply@${siteHost}>` : 'Piitrade Videos <onboarding@resend.dev>');
 
   if (!apiKey) {
     console.warn(

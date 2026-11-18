@@ -15,6 +15,10 @@ import accountsRouter from './routes/accounts';
 import accountRouter from './routes/account';
 import notificationsRouter from './routes/notifications';
 import seoRouter from './routes/seo';
+import attributionRouter from './routes/attribution';
+import embedRouter from './routes/embed';
+import videoProductsRouter from './routes/videoProducts';
+import { seedLegacySite, startSiteRefresh } from './lib/sites';
 import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
 
@@ -27,9 +31,9 @@ const PORT = Number(process.env.PORT) || 4000;
 const allowedOrigins = process.env.ALLOWED_ORIGIN
   ? [
       ...process.env.ALLOWED_ORIGIN.split(',').map((origin) => origin.trim()),
+      // This site's own public origin, and the Capacitor/Android WebView origin.
+      ...(process.env.SITE_URL ? [process.env.SITE_URL.replace(/\/+$/, '')] : []),
       'https://localhost',
-      'https://piitrade.com',
-      'https://yotweek.com',
     ]
   : true;
 
@@ -38,12 +42,21 @@ const allowedOrigins = process.env.ALLOWED_ORIGIN
 // cross-origin (e.g. if the frontend is served from a different host).
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(compression());
+// Meant to be used from other people's sites (iframes, oEmbed, shop widgets), so mounted before the CORS allow-list.
+app.use(embedRouter);
 app.use(
   cors({
     origin: allowedOrigins,
   })
 );
-app.use(express.json());
+// The raw body of attribution postbacks is kept: shops sign it (HMAC) and we verify it byte for byte.
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      if ((req as express.Request).originalUrl?.startsWith('/api/attribution/')) (req as any).rawBody = buf;
+    },
+  })
+);
 
 // Uploaded files are named with random UUIDs and never overwritten in
 // place, so it's safe to let browsers/CDNs cache them aggressively.
@@ -52,7 +65,11 @@ app.use('/uploads', express.static(UPLOAD_ROOT, { maxAge: '7d', immutable: true 
 // Crawler-facing routes at the site root: /robots.txt, /sitemap.xml, /v/:id (see routes/seo.ts).
 app.use(seoRouter);
 
+// /go/:videoId/:productId (tracked Shop links) and /api/attribution/*, /api/earnings.
+app.use(attributionRouter);
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.use('/api/videos', videoProductsRouter);
 app.use('/api/videos', videosRouter);
 app.use('/api/visual-search', visualSearchRouter);
 app.use('/api/auth', authRouter);
@@ -79,6 +96,8 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   console.error(err);
   res.status(500).json({ error: 'Internal server error' });
 });
+
+seedLegacySite().finally(startSiteRefresh);
 
 app.listen(PORT, () => {
   console.log(`Piitrade backend listening on port ${PORT}`);

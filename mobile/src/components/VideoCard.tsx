@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Animated, Easing, GestureResponderEvent, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Animated, Easing, GestureResponderEvent, Linking, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
-import type { Video } from '../types';
+import type { Video, VideoProductPin } from '../types';
+import { activeAt } from '../lib/productDrafts';
 import { WEB_URL, mediaUrl } from '../config';
 import { useApp } from '../state/AppContext';
 import { mutedStore, setMuted } from '../state/stores';
 import { colors, space } from '../theme';
 import { Avatar, Icon, formatCount } from './ui';
+import { hostOf } from '../state/sites';
 
 interface Props {
   video: Video;
@@ -126,6 +128,14 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     p.timeUpdateEventInterval = 0.25;
   });
 
+  // Products pinned to the video; refreshed after the creator edits them.
+  const [products, setProducts] = useState<VideoProductPin[]>(video.products ?? []);
+  const [legacyProduct, setLegacyProduct] = useState(video.product ?? null);
+  const [nowMs, setNowMs] = useState(0);
+  const refreshProducts = useCallback(() => {
+    api.getVideo(video.id).then((r) => { setProducts(r.video.products ?? []); setLegacyProduct(r.video.product ?? null); }).catch(() => {});
+  }, [video.id]);
+
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [liked, setLiked] = useState(video.liked);
@@ -210,6 +220,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     const sub = player.addListener('timeUpdate', ({ currentTime }) => {
       const d = player.duration || video.duration || 0;
       setProgress(d > 0 ? Math.min(1, currentTime / d) : 0);
+      setNowMs(Math.floor(currentTime * 4) * 250);
     });
     return () => sub.remove();
   }, [active, player, video.duration]);
@@ -259,7 +270,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     // Sharing a link is harmless and drives growth — open to guests.
     const url = `${WEB_URL}/v/${video.id}`;
     try {
-      const res = await Share.share({ message: `${video.title || 'Watch this on Piitrade Videos'}\n${url}`, url, title: video.title || 'Piitrade video' });
+      const res = await Share.share({ message: `${video.title || 'Watch this on Piitrade Videos'}\n${url}`, url, title: video.title || 'Video' });
       if (res.action === Share.sharedAction) {
         setShareCount((c) => c + 1);
         api.shareVideo(video.id).catch(() => {});
@@ -349,7 +360,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={onSurfacePress}
-        onLongPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true) })}
+        onLongPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true), onProductsChanged: refreshProducts })}
         delayLongPress={450}
         accessibilityLabel={paused ? 'Play video' : 'Pause video'}
       />
@@ -412,7 +423,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
         <RailButton size={sz.icon} a11y="Comments" icon="chatbubble-ellipses-outline" label={formatCount(commentCount)} onPress={onComments} />
         <RailButton size={sz.icon} a11y={saved ? 'Remove bookmark' : 'Bookmark'} icon={saved ? 'bookmark' : 'bookmark-outline'} color={saved ? colors.brandSoft : colors.text} onPress={onSave} />
         <RailButton size={sz.icon} a11y="Share" icon="arrow-redo-outline" label={formatCount(shareCount)} onPress={onShare} />
-        <RailButton size={sz.icon - 4} a11y="More" icon="ellipsis-horizontal" onPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true) })} />
+        <RailButton size={sz.icon - 4} a11y="More" icon="ellipsis-horizontal" onPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true), onProductsChanged: refreshProducts })} />
       </View>
 
       <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: bottomInset + BOTTOM_MARGIN, paddingRight: RAIL_WIDTH + SIDE_MARGIN * 2 }]}>
@@ -431,14 +442,31 @@ export default function VideoCard({ video, active, preload = false, suspended = 
             </Text>
           </Pressable>
         ) : null}
+        {/* Products for this moment of the video. Links go through /go so the tap is counted. */}
+        {activeAt(products, nowMs).map((p) => (
+          <Pressable key={p.id} onPress={() => Linking.openURL(mediaUrl(p.go) || p.url)} accessibilityRole="link" accessibilityLabel={p.title || `Shop on ${p.site?.name ?? hostOf(p.url)}`} style={styles.shopChip}>
+            <Icon name="cart-outline" size={14} color={colors.text} />
+            <Text style={styles.shopText} numberOfLines={1}>
+              {p.title || `Shop on ${p.site?.name ?? hostOf(p.url)}`}
+            </Text>
+          </Pressable>
+        ))}
+        {products.length === 0 && legacyProduct ? (
+          <Pressable onPress={() => Linking.openURL(legacyProduct.url)} accessibilityRole="link" accessibilityLabel={legacyProduct.title || `Shop on ${video.site?.name ?? hostOf(legacyProduct.url)}`} style={styles.shopChip}>
+            <Icon name="cart-outline" size={14} color={colors.text} />
+            <Text style={styles.shopText} numberOfLines={1}>
+              {legacyProduct.title || `Shop on ${video.site?.name ?? hostOf(legacyProduct.url)}`}
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={() => openSheet({ type: 'find', initialQuery: video.hashtags[0] || video.title })}
           accessibilityRole="button"
-          accessibilityLabel="Find this on Piitrade"
+          accessibilityLabel="Find the products in this video"
           style={styles.findChip}
         >
           <Icon name="bag-handle-outline" size={14} color={colors.text} />
-          <Text style={styles.findText}>Find on Piitrade</Text>
+          <Text style={styles.findText}>Find products</Text>
         </Pressable>
       </View>
 
@@ -465,6 +493,8 @@ const styles = StyleSheet.create({
   title: { fontWeight: '700' },
   desc: { color: 'rgba(255,255,255,0.95)', fontSize: 14, lineHeight: 19, ...shadow },
   tag: { color: colors.brandSoft, fontWeight: '700' },
+  shopChip: { alignSelf: 'flex-start', maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, height: 32, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.brand },
+  shopText: { color: colors.text, fontSize: 13, fontWeight: '800', flexShrink: 1 },
   findChip: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, height: 30, paddingHorizontal: 12, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.35)' },
   findText: { color: colors.text, fontSize: 12.5, fontWeight: '700' },
   errorCard: { alignItems: 'center', gap: 8, backgroundColor: 'rgba(20,20,20,0.85)', paddingVertical: 18, paddingHorizontal: 24, borderRadius: 16 },

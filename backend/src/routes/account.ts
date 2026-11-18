@@ -1,3 +1,4 @@
+import { resolveOrigin } from '../lib/seo';
 import { Router, Request, Response } from 'express';
 import { randomBytes, createHash } from 'crypto';
 import { prisma } from '../db';
@@ -189,13 +190,14 @@ router.post('/forgot-password', authLimiter, async (req: Request, res: Response)
       data: { userId: user.id, tokenHash: hashToken(rawToken), expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
     });
 
-    const appUrl = (process.env.APP_URL || 'https://piitrade.com').replace(/\/+$/, '');
+    // The site the user is on — APP_URL / SITE_URL if configured, else the request's own host (never a hardcoded domain).
+    const appUrl = (process.env.APP_URL || resolveOrigin(process.env.SITE_URL, req.header('x-forwarded-proto'), req.header('x-forwarded-host') || req.header('host'))).replace(/\/+$/, '');
     const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
     await sendEmail({
       to: user.email,
-      subject: 'Reset your Piitrade password',
+      subject: 'Reset your Piitrade Videos password',
       text: `Reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.`,
-      html: `<p>Reset your Piitrade password by clicking the link below. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+      html: `<p>Reset your Piitrade Videos password by clicking the link below. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
     });
   }
 

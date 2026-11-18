@@ -14,8 +14,8 @@ const REASONS: { id: 'spam' | 'inappropriate' | 'copyright' | 'other'; label: st
   { id: 'other', label: 'Something else' },
 ];
 
-export default function MoreSheet({ video, onDeleted }: { video: Video; onDeleted?: () => void }) {
-  const { closeSheet, requireAuth } = useApp();
+export default function MoreSheet({ video, onDeleted, onProductsChanged }: { video: Video; onDeleted?: () => void; onProductsChanged?: () => void }) {
+  const { closeSheet, requireAuth, openSheet } = useApp();
   const [step, setStep] = useState<'menu' | 'report' | 'done' | 'confirmDelete'>('menu');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -49,6 +49,12 @@ export default function MoreSheet({ video, onDeleted }: { video: Video; onDelete
   return (
     <Sheet title={step === 'report' ? 'Report video' : step === 'confirmDelete' ? 'Delete video?' : 'More'} onClose={closeSheet} maxHeight={0.7}>
       <View style={styles.body}>
+        {step === 'menu' && video.uploader?.isOwn && (
+          <Pressable style={styles.item} onPress={() => { closeSheet(); openSheet({ type: 'products', video, onSaved: onProductsChanged }); }}>
+            <Icon name="bag-handle-outline" color={colors.brandSoft} />
+            <Text style={styles.itemText}>Products in this video</Text>
+          </Pressable>
+        )}
         {step === 'menu' && video.uploader?.isOwn && (
           <Pressable style={styles.item} onPress={() => setStep('confirmDelete')}>
             <Icon name="trash-outline" color={colors.danger} />
