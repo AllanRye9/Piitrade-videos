@@ -257,7 +257,7 @@ export default function VideoCard({ video, active }: Props) {
   async function handleShare(e: React.MouseEvent) {
     e.stopPropagation();
     const url = `${window.location.origin}/v/${video.id}`;
-    const shareData = { title: video.title || 'Video', text: 'Watch this on Piitrade Videos', url };
+    const shareData = { title: video.title || 'Video', text: 'Watch this on Yotweek', url };
 
     try {
       if (navigator.share) {
@@ -376,7 +376,7 @@ export default function VideoCard({ video, active }: Props) {
     dismissSearchHint();
     const el = videoRef.current;
     if (!el) return;
-    // Pause for the whole find-on-Piitrade flow. Only resumed again
+    // Pause for the whole find-products flow. Only resumed again
     // by resumeWatching(), on cancel or close — never permanently.
     wasPlayingRef.current = !el.paused;
     el.pause();
@@ -523,7 +523,7 @@ export default function VideoCard({ video, active }: Props) {
               cy="36"
               r="30"
               fill="none"
-              stroke="url(#piitradeHoldGradient)"
+              stroke="url(#yotweekHoldGradient)"
               strokeWidth="4"
               strokeLinecap="round"
               strokeDasharray={2 * Math.PI * 30}
@@ -531,7 +531,7 @@ export default function VideoCard({ video, active }: Props) {
               transform="rotate(-90 36 36)"
             />
             <defs>
-              <linearGradient id="piitradeHoldGradient" x1="0" y1="0" x2="72" y2="72">
+              <linearGradient id="yotweekHoldGradient" x1="0" y1="0" x2="72" y2="72">
                 <stop offset="0%" stopColor="#F55906" />
                 <stop offset="100%" stopColor="#FFB347" />
               </linearGradient>

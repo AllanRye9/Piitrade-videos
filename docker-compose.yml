@@ -39,7 +39,7 @@ services:
       MARKETPLACE_COUNTRY: ${MARKETPLACE_COUNTRY:-}
       MARKETPLACE_DEFAULT_CURRENCY: ${MARKETPLACE_DEFAULT_CURRENCY:-}
       PIITRADE_SITE_URL: ${PIITRADE_SITE_URL:-}
-      # Public origin of THIS site (canonical URLs, sitemap, share previews), e.g. https://videos.piitrade.com
+      # Public origin of THIS site (canonical URLs, sitemap, share previews), e.g. https://videos.yotweek.com
       SITE_URL: ${SITE_URL:-}
       # Who may frame the embeddable player (space-separated origins; blank = anyone)
       EMBED_FRAME_ANCESTORS: ${EMBED_FRAME_ANCESTORS:-}

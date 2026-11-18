@@ -195,9 +195,9 @@ router.post('/forgot-password', authLimiter, async (req: Request, res: Response)
     const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
     await sendEmail({
       to: user.email,
-      subject: 'Reset your Piitrade Videos password',
+      subject: 'Reset your Yotweek password',
       text: `Reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.`,
-      html: `<p>Reset your Piitrade Videos password by clicking the link below. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+      html: `<p>Reset your Yotweek password by clicking the link below. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
     });
   }
 

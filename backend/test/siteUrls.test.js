@@ -34,13 +34,13 @@ test('path templates must be on-site paths with their placeholders', () => {
 
 test('listing / search / sell / home URLs fill templates, encode input and add attribution', () => {
   const s = site();
-  assert.equal(u.listingUrlFor(s, 'a b/1'), 'https://shop.example.com/listings/a%20b%2F1?utm_source=piitrade_videos&utm_medium=video');
-  assert.equal(u.searchUrlFor(s, 'red shoes & more'), 'https://shop.example.com/listings?q=red+shoes+%26+more&utm_source=piitrade_videos&utm_medium=video');
-  assert.equal(u.searchUrlFor(s, '  '), 'https://shop.example.com/listings?utm_source=piitrade_videos&utm_medium=video');
-  assert.equal(u.sellUrlFor(s), 'https://shop.example.com/sell?utm_source=piitrade_videos&utm_medium=video');
+  assert.equal(u.listingUrlFor(s, 'a b/1'), 'https://shop.example.com/listings/a%20b%2F1?utm_source=yotweek&utm_medium=video');
+  assert.equal(u.searchUrlFor(s, 'red shoes & more'), 'https://shop.example.com/listings?q=red+shoes+%26+more&utm_source=yotweek&utm_medium=video');
+  assert.equal(u.searchUrlFor(s, '  '), 'https://shop.example.com/listings?utm_source=yotweek&utm_medium=video');
+  assert.equal(u.sellUrlFor(s), 'https://shop.example.com/sell?utm_source=yotweek&utm_medium=video');
   assert.equal(u.sellUrlFor(site({ sellPath: '' })), null);
   assert.match(u.siteHomeUrl(s), /^https:\/\/shop\.example\.com\/\?utm_source=/);
-  assert.equal(u.listingUrlFor(site({ siteUrl: 'https://x.com/store' }), '9'), 'https://x.com/store/listings/9?utm_source=piitrade_videos&utm_medium=video');
+  assert.equal(u.listingUrlFor(site({ siteUrl: 'https://x.com/store' }), '9'), 'https://x.com/store/listings/9?utm_source=yotweek&utm_medium=video');
 });
 
 test('urlBelongsToSite / matchSiteByUrl: same host, www and subdomains only', () => {
@@ -61,6 +61,6 @@ test('normalizeProductUrl', () => {
 });
 
 test('productLinkForDisplay keeps existing utm params', () => {
-  assert.match(u.productLinkForDisplay('https://x.com/p'), /utm_source=piitrade_videos/);
+  assert.match(u.productLinkForDisplay('https://x.com/p'), /utm_source=yotweek/);
   assert.equal(new URL(u.productLinkForDisplay('https://x.com/p?utm_source=mine')).searchParams.get('utm_source'), 'mine');
 });

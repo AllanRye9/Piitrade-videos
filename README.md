@@ -1,4 +1,4 @@
-# Piitrade Videos
+# Yotweek
 
 | Folder | What it is |
 | --- | --- |
@@ -27,7 +27,7 @@ npx expo run:android        # or: npx expo run:ios  (macOS)
 
 ### APK in GitHub Actions
 `.github/workflows/android-apk.yml` runs `expo prebuild` + `gradlew assembleRelease` and uploads
-`piitrade-videos-apk`. Set repository **variable** `API_BASE_URL` (and optionally `WEB_URL`), then run
+`yotweek-apk`. Set repository **variable** `API_BASE_URL` (and optionally `WEB_URL`), then run
 the workflow. That APK is signed with the debug keystore — fine for sideloading/testing.
 For Play Store / App Store builds use EAS (`mobile/eas.json`): `npx eas-cli build -p android|ios --profile production`.
 
@@ -67,14 +67,14 @@ does not need CORS. Serving the bucket from a custom domain also lets Cloudflare
 
 ## Known gaps
 * Crop-to-search visual search, watermarked downloads and a live music preview in the upload popup exist on the
-  web app only; the mobile app has typed "Find on Piitrade" search instead.
+  web app only; the mobile app has typed "Find products" search instead.
 * The rest of the web app (feed, profile…) still requires login; only `/v/:id` is public.
 
 ## Shoppable video: attribution, embeds, product moments
 
 Full contract for shops: [`docs/OPEN_SHOP_SPEC.md`](docs/OPEN_SHOP_SPEC.md). A WooCommerce plugin draft is in `integrations/woocommerce/`.
 
-- **Attribution & payouts:** every Shop button opens `/go/:videoId/:productId`, which logs the tap and forwards to the shop with `?pv_click=<token>`. Shops report paid orders to `POST /api/attribution/conversion` (HMAC-signed with the site's postback secret, shown in Admin → Sites). Each sale becomes a ledger entry for the creator (`commissionPct` of the sale): pending → approved → paid, or reversed. Review them in **Admin → Earnings**. The app only records the amounts; sending money is done by the operator. Creators see their ledger in Settings → Earnings. Videos that actually sell rank a little higher in "For you".
+- **Attribution & payouts:** every Shop button opens `/go/:videoId/:productId`, which logs the tap and forwards to the shop with `?yw_click=<token>`. Shops report paid orders to `POST /api/attribution/conversion` (HMAC-signed with the site's postback secret, shown in Admin → Sites). Each sale becomes a ledger entry for the creator (`commissionPct` of the sale): pending → approved → paid, or reversed. Review them in **Admin → Earnings**. The app only records the amounts; sending money is done by the operator. Creators see their ledger in Settings → Earnings. Videos that actually sell rank a little higher in "For you".
 - **Embeds:** `/embed/:id` (iframe player), `/api/oembed`, `/widget.js` (videos on a shop's product page) and `/track.js` (remembers the click on the shop). Limit framing with `EMBED_FRAME_ANCESTORS`.
 - **Product moments:** a video can have up to 8 products, each optionally shown only between two times and placed on the frame. Creators edit them from a video's ⋯ menu ("Products in this video"), where AI can suggest matches from a few frames.
 - **Deploy:** run `npx prisma migrate deploy` (adds `VideoProduct`, `Click`, `Conversion`, and `Site.commissionPct`/`postbackSecret`; existing single product links become one product each). nginx/Vercel route `/go`, `/embed`, `/widget.js`, `/track.js` to the backend. Grant admins `attribution.view` / `attribution.edit` as needed.
@@ -104,6 +104,6 @@ The frontend is a client-rendered SPA, so the backend (`backend/src/routes/seo.t
 | `/sitemap.xml` | Home, legal pages and up to 5,000 newest videos (Google video sitemap). Videos with open reports are left out. Cached 10 min. |
 | `/robots.txt` | Blocks `/const/`, `/admin`, `/api/`, `/reset-password`; points at the sitemap. |
 
-Set `SITE_URL` (e.g. `https://videos.piitrade.com`) so canonical URLs and the sitemap use your public origin; otherwise it is derived from the request host. `SPA_SHELL_URL` is where the backend fetches the built `index.html` (defaults to `http://frontend/index.html` in docker-compose). If the backend is unreachable, nginx falls back to the plain SPA.
+Set `SITE_URL` (e.g. `https://videos.yotweek.com`) so canonical URLs and the sitemap use your public origin; otherwise it is derived from the request host. `SPA_SHELL_URL` is where the backend fetches the built `index.html` (defaults to `http://frontend/index.html` in docker-compose). If the backend is unreachable, nginx falls back to the plain SPA.
 
 In the app, `src/seo.ts` / `src/RouteSeo.tsx` keep the tags in sync for in-app navigation (Googlebot runs JS). Admin, password-reset and sign-in-gated screens are `noindex`; nginx also sends `X-Robots-Tag: noindex` for the admin paths.

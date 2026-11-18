@@ -25,7 +25,7 @@ test('parseVideoUrl accepts /v and /embed links on our origins only', () => {
 });
 
 test('tracking params are stripped from stored product links', () => {
-  assert.equal(U.stripTrackingParams('https://s.example/p/1?utm_source=a&utm_medium=b&pv_click=zz&color=red#frag'), 'https://s.example/p/1?color=red');
+  assert.equal(U.stripTrackingParams('https://s.example/p/1?utm_source=a&utm_medium=b&yw_click=zz&color=red#frag'), 'https://s.example/p/1?color=red');
 });
 
 test('product URL variants cover trailing-slash spellings and ignore tracking', () => {

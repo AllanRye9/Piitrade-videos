@@ -81,8 +81,8 @@ export default function AdminLayout() {
   const sidebar = (
     <div className="h-full flex flex-col bg-neutral-900 border-r border-white/10">
       <div className="h-14 shrink-0 flex items-center gap-2.5 px-5 border-b border-white/10">
-        <span className="w-7 h-7 rounded-lg bg-brand-orange grid place-items-center text-white font-extrabold text-sm">P</span>
-        <span className="text-white font-bold">Piitrade Admin</span>
+        <img src="/logo.png" alt="" className="h-7 w-auto" />
+        <span className="text-white font-bold">Yotweek Admin</span>
       </div>
       {nav}
       <div className="p-3 border-t border-white/10">

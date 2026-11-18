@@ -85,7 +85,7 @@ function sync(){var t=v.currentTime*1000;chips.forEach(function(c){var s=+c.data
 v.addEventListener('timeupdate',sync);v.addEventListener('seeked',sync);sync();
 var counted=false;
 v.addEventListener('playing',function(){if(counted)return;setTimeout(function(){if(counted||v.paused)return;counted=true;
-try{var k='pv_embed_sid',id=localStorage.getItem(k);if(!id){id='emb-'+Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem(k,id)}
+try{var k='yw_embed_sid',id=localStorage.getItem(k);if(!id){id='emb-'+Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem(k,id)}
 fetch('/api/videos/${video.id}/view',{method:'POST',headers:{'X-Session-Id':id}}).catch(function(){})}catch(e){}},3000)});`;
 
   res.type('html').send(page(nonce, video.title || SITE_NAME, body, script));
@@ -174,7 +174,7 @@ router.get('/api/public/videos', open, async (req: Request, res: Response) => {
 });
 
 // ── /widget.js — drop-in carousel for a shop's product page ──────────────────
-//   <div data-piitrade-videos data-product-url="https://shop.example/listings/123"></div>
+//   <div data-yotweek-videos data-product-url="https://shop.example/listings/123"></div>
 //   <script async src="https://videos.example/widget.js"></script>
 router.get('/widget.js', open, (req: Request, res: Response) => {
   const base = JSON.stringify(originOf(req));
@@ -196,21 +196,21 @@ function mount(el){
       }).join('')+'</div>';
     }).catch(function(){});
 }
-function run(){[].forEach.call(document.querySelectorAll('[data-piitrade-videos]'),mount)}
+function run(){[].forEach.call(document.querySelectorAll('[data-yotweek-videos]'),mount)}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',run);else run();
 })();`);
 });
 
 // ── /track.js — shop-side: remember which video sent the visitor ─────────────
-// Saves ?pv_click=<token> (added by our /go links) into a first-party cookie for 30 days. At checkout the shop's
-// server reads that cookie and reports the sale (see docs/OPEN_SHOP_SPEC.md). window.PiitradeVideos.click() returns it.
+// Saves ?yw_click=<token> (added by our /go links) into a first-party cookie for 30 days. At checkout the shop's
+// server reads that cookie and reports the sale (see docs/OPEN_SHOP_SPEC.md). window.Yotweek.click() returns it.
 router.get('/track.js', open, (_req: Request, res: Response) => {
   res.type('application/javascript').set('Cache-Control', 'public, max-age=3600').send(`(function(){
-var K='pv_click',DAYS=30;
-function read(){var m=document.cookie.match(/(?:^|; )pv_click=([^;]+)/);if(m)return decodeURIComponent(m[1]);try{return localStorage.getItem(K)}catch(e){return null}}
+var K='yw_click',DAYS=30;
+function read(){var m=document.cookie.match(/(?:^|; )yw_click=([^;]+)/);if(m)return decodeURIComponent(m[1]);try{return localStorage.getItem(K)}catch(e){return null}}
 try{var t=new URLSearchParams(location.search).get(K);
 if(t&&/^[A-Za-z0-9_-]{8,64}$/.test(t)){document.cookie=K+'='+encodeURIComponent(t)+'; max-age='+(DAYS*86400)+'; path=/; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');try{localStorage.setItem(K,t)}catch(e){}}}catch(e){}
-window.PiitradeVideos={click:read};
+window.Yotweek={click:read};
 })();`);
 });
 

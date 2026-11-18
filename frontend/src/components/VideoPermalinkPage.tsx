@@ -26,7 +26,7 @@ export default function VideoPermalinkPage() {
     video
       ? {
           title: video.title || 'Video',
-          description: video.description || `Watch "${video.title}" on Piitrade Videos.`,
+          description: video.description || `Watch "${video.title}" on Yotweek.`,
           canonical,
           image: video.poster ? abs(video.poster) : null,
           ogType: 'video.other',

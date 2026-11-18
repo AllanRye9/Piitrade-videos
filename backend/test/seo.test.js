@@ -30,7 +30,7 @@ test('resolveOrigin prefers SITE_URL, else the request host', () => {
 });
 
 test('video meta + injection escapes user text and replaces the shell defaults', () => {
-  const shell = '<html><head><title>Piitrade Videos</title><meta name="description" content="old" /><meta property="og:title" content="old" data-seo /></head><body><div id="root"></div></body></html>';
+  const shell = '<html><head><title>Yotweek</title><meta name="description" content="old" /><meta property="og:title" content="old" data-seo /></head><body><div id="root"></div></body></html>';
   const html = seo.injectHead(shell, seo.videoMeta(ORIGIN, video()));
   assert.equal((html.match(/<title/g) || []).length, 1);
   assert.ok(!html.includes('content="old"'));

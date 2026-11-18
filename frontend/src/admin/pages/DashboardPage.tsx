@@ -26,7 +26,7 @@ export default function DashboardPage() {
 
   return (
     <>
-      <PageHeader title={`Welcome${admin?.name ? `, ${admin.name}` : ''}`} subtitle="Here’s what’s happening on Piitrade Videos." />
+      <PageHeader title={`Welcome${admin?.name ? `, ${admin.name}` : ''}`} subtitle="Here’s what’s happening on Yotweek." />
       {loading && !s && <Spinner />}
       {error && <ErrorState message={error} onRetry={reload} />}
       {s && (

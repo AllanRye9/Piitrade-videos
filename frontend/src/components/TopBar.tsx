@@ -130,13 +130,9 @@ export default function TopBar({ mode, onModeChange, onSearch, onUploadClick, on
           </>
         ) : (
           <>
-            <Link to="/" aria-label="Piitrade Videos home" className="flex items-center gap-2 shrink-0">
-              <span className="w-8 h-8 rounded-lg bg-brand-orange flex items-center justify-center text-white font-extrabold text-lg leading-none">
-                P
-              </span>
-              <span className="hidden sm:inline text-white font-bold text-[15px] tracking-tight">
-                Piitrade <span className="text-white/50 font-semibold">Videos</span>
-              </span>
+            <Link to="/" aria-label="Yotweek home" className="flex items-center gap-2 shrink-0">
+              <img src="/logo.png" alt="" className="h-8 w-auto" width={38} height={32} />
+              <span className="hidden sm:inline text-white font-bold text-[15px] tracking-tight">Yotweek</span>
             </Link>
 
             {/* Latest / Trending live here, in the bar — never on the video. */}

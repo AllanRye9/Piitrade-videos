@@ -1,6 +1,6 @@
 {
-  "name": "Piitrade Videos",
-  "short_name": "Piitrade",
+  "name": "Yotweek",
+  "short_name": "Yotweek",
   "description": "Creative short videos that link to products — watch, discover creators, and find what you see in the shops.",
   "start_url": "/",
   "display": "standalone",
@@ -8,7 +8,8 @@
   "theme_color": "#0a0a0a",
   "orientation": "portrait",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

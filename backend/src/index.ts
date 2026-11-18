@@ -100,5 +100,5 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 seedLegacySite().finally(startSiteRefresh);
 
 app.listen(PORT, () => {
-  console.log(`Piitrade backend listening on port ${PORT}`);
+  console.log(`Yotweek backend listening on port ${PORT}`);
 });

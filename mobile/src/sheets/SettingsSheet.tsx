@@ -175,7 +175,7 @@ export default function SettingsSheet() {
               <Text style={styles.rowText}>{label}</Text>
             </Pressable>
           ))}
-          <Text style={styles.version}>Piitrade Videos {Constants.expoConfig?.version ?? ''}</Text>
+          <Text style={styles.version}>Yotweek {Constants.expoConfig?.version ?? ''}</Text>
         </View>
       </ScrollView>
     </Sheet>

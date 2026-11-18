@@ -273,7 +273,7 @@ test('GET /api/marketplace/search with a matching (but shortened-needed) query r
   // Every result must open the listing on ITS site (no cart/checkout) and
   // carry the "see all" link — built from the admin-managed site, not a constant.
   assert.match(body.results[0].listingUrl, /^https:\/\/shop-one\.example\/listings\/3\?/);
-  assert.match(body.results[0].listingUrl, /utm_source=piitrade_videos/);
+  assert.match(body.results[0].listingUrl, /utm_source=yotweek/);
   assert.deepEqual(body.results[0].site, { slug: 'shop-one', name: 'Shop One' });
   assert.match(body.browseUrl, /^https:\/\/shop-one\.example\/listings\?q=/);
   assert.notEqual(body.matchedQuery, 'Genuine Samsung Galaxy Charger Adapter Brand New');

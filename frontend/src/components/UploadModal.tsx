@@ -308,7 +308,7 @@ export default function UploadModal({ onClose }: Props) {
               <div className="flex items-start gap-2 rounded-lg bg-brand-orange/10 border border-brand-orange/30 px-3 py-2">
                 <Scissors size={16} className="text-brand-orange shrink-0 mt-0.5" />
                 <p className="text-white/80 text-xs">
-                  Videos on Piitrade can be up to {MAX_VIDEO_SECONDS} seconds. Yours is {Math.round(sourceDuration)}s —
+                  Videos on Yotweek can be up to {MAX_VIDEO_SECONDS} seconds. Yours is {Math.round(sourceDuration)}s —
                   choose the part to post.
                 </p>
               </div>

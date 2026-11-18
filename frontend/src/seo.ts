@@ -9,7 +9,7 @@ import { useEffect } from 'react';
  * `data-seo` so the server-injected ones are replaced rather than duplicated.
  */
 
-export const SITE_NAME = 'Piitrade Videos';
+export const SITE_NAME = 'Yotweek';
 export const DEFAULT_DESCRIPTION = 'Creative short videos that link to the products you see. Watch, then find the item on the shop.';
 
 export interface SeoMeta {

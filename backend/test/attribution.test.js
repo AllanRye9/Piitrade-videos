@@ -4,17 +4,17 @@ const A = require('../dist/lib/attribution.js');
 const F = require('../dist/lib/feedRank.js');
 
 test('redirect URL adds utm + click token without overriding existing params', () => {
-  const u = new URL(A.buildRedirectUrl('https://shop.example/listings/1?utm_source=mine&color=red', 'tok123', 'vid1', 'piitrade_videos'));
+  const u = new URL(A.buildRedirectUrl('https://shop.example/listings/1?utm_source=mine&color=red', 'tok123', 'vid1', 'yotweek'));
   assert.equal(u.searchParams.get('utm_source'), 'mine');
   assert.equal(u.searchParams.get('utm_medium'), 'video');
   assert.equal(u.searchParams.get('utm_campaign'), 'video-vid1');
   assert.equal(u.searchParams.get('color'), 'red');
-  assert.equal(u.searchParams.get('pv_click'), 'tok123');
+  assert.equal(u.searchParams.get('yw_click'), 'tok123');
 });
 
 test('a stale click token in the stored link is replaced, not duplicated', () => {
-  const u = new URL(A.buildRedirectUrl('https://shop.example/p?pv_click=old', 'new', 'v', 'x'));
-  assert.deepEqual(u.searchParams.getAll('pv_click'), ['new']);
+  const u = new URL(A.buildRedirectUrl('https://shop.example/p?yw_click=old', 'new', 'v', 'x'));
+  assert.deepEqual(u.searchParams.getAll('yw_click'), ['new']);
 });
 
 test('tokens are unique and url-safe', () => {

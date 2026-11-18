@@ -45,7 +45,7 @@ export default function AuthSheet({ reason }: { reason?: string }) {
     }
   }
 
-  const title = mode === 'signup' ? 'Create your account' : mode === 'login' ? 'Log in to Piitrade' : 'Reset your password';
+  const title = mode === 'signup' ? 'Create your account' : mode === 'login' ? 'Log in to Yotweek' : 'Reset your password';
 
   return (
     <Sheet title={title} onClose={closeSheet} maxHeight={0.92}>

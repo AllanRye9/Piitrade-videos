@@ -46,7 +46,7 @@ function VideoThumb({ video, onOpen }: { video: Video; onOpen: (v: Video) => voi
 
 export default function HashtagPage() {
   const { tag } = useParams<{ tag: string }>();
-  useSeo({ title: tag ? `#${tag} videos` : 'Hashtag', description: tag ? `Short videos tagged #${tag} on Piitrade Videos.` : undefined, noindex: true });
+  useSeo({ title: tag ? `#${tag} videos` : 'Hashtag', description: tag ? `Short videos tagged #${tag} on Yotweek.` : undefined, noindex: true });
   const [videos, setVideos] = useState<Video[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

@@ -4,7 +4,7 @@ export default function PrivacyPage() {
   return (
     <LegalLayout title="Privacy Policy" lastUpdated="[DATE]">
       <p>
-        This Privacy Policy explains what information Piitrade Videos ("the Service," "we," "us") collects, how we
+        This Privacy Policy explains what information Yotweek ("the Service," "we," "us") collects, how we
         use it, and the choices you have. It's written to reflect what the Service actually does, not generic
         boilerplate — if a feature described here doesn't exist yet, it isn't listed.
       </p>

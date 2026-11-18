@@ -45,7 +45,7 @@ function VideoThumb({ video, onOpen }: { video: Video; onOpen: (v: Video) => voi
 
 export default function AccountPage() {
   const { handle } = useParams<{ handle: string }>();
-  useSeo({ title: handle ? `@${handle}` : 'Creator', description: handle ? `Videos by @${handle} on Piitrade Videos.` : undefined, noindex: true });
+  useSeo({ title: handle ? `@${handle}` : 'Creator', description: handle ? `Videos by @${handle} on Yotweek.` : undefined, noindex: true });
   const [account, setAccount] = useState<AccountSummary | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);

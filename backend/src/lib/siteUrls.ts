@@ -27,7 +27,7 @@ export interface SiteLike {
 export const API_TYPES = ['piitrade', 'link-only'] as const;
 export type ApiType = (typeof API_TYPES)[number];
 
-export const UTM_SOURCE = 'piitrade_videos';
+export const UTM_SOURCE = 'yotweek';
 
 export class SiteValidationError extends Error {}
 
@@ -151,7 +151,7 @@ export function normalizeProductUrl(raw: unknown): string {
 export function stripTrackingParams(raw: string): string {
   try {
     const url = new URL(raw);
-    for (const k of [...url.searchParams.keys()]) if (k.startsWith('utm_') || k === 'pv_click') url.searchParams.delete(k);
+    for (const k of [...url.searchParams.keys()]) if (k.startsWith('utm_') || k === 'yw_click') url.searchParams.delete(k);
     url.hash = '';
     return url.toString();
   } catch {

@@ -335,7 +335,7 @@ model SessionProfile {
 //
 // This used to link an anonymous browser session to a piitrade.com
 // account so the in-video cart could place orders. piitrade.com is now
-// a classifieds marketplace (no cart, no orders), so Piitrade Videos
+// a classifieds marketplace (no cart, no orders), so Yotweek
 // simply sends viewers to the listing on piitrade.com instead and
 // stores no marketplace credentials at all.
 //
@@ -417,7 +417,7 @@ model VideoProduct {
 }
 
 // One tap on a "Shop" link, logged by GET /go/:videoId/:productId. `token` is
-// appended to the shop URL (?pv_click=) so the shop can report the sale back.
+// appended to the shop URL (?yw_click=) so the shop can report the sale back.
 // Plain ids (no FKs): a click is history and must outlive the video or site.
 model Click {
   id               String   @id @default(cuid())

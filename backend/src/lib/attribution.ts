@@ -4,14 +4,14 @@
  * live in routes/attribution.ts.
  *
  * Flow: a viewer taps Shop → GET /go/:videoId/:productId logs a Click and sends
- * them to the shop with ?pv_click=<token>. When that visitor buys, the shop's
+ * them to the shop with ?yw_click=<token>. When that visitor buys, the shop's
  * server calls POST /api/attribution/conversion (signed with the site's
  * postback secret) with the token; that creates a Conversion, which is the
  * creator's ledger entry (commission = site.commissionPct of the sale).
  */
 import crypto from 'crypto';
 
-export const CLICK_PARAM = 'pv_click';
+export const CLICK_PARAM = 'yw_click';
 /** How long after a click a sale is still credited to the video. */
 export const ATTRIBUTION_WINDOW_DAYS = 30;
 /** Repeat taps on the same product by the same viewer inside this window reuse one click. */

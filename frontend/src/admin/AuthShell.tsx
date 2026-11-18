@@ -6,8 +6,8 @@ export default function AuthShell({ title, subtitle, children }: { title: string
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-center gap-2.5 mb-6">
-          <span className="w-9 h-9 rounded-xl bg-brand-orange grid place-items-center text-white font-extrabold">P</span>
-          <span className="text-white font-bold text-lg">Piitrade Admin</span>
+          <img src="/logo.png" alt="" className="h-9 w-auto" />
+          <span className="text-white font-bold text-lg">Yotweek Admin</span>
         </div>
         <div className="bg-neutral-900 border border-white/10 rounded-2xl p-6 space-y-4">
           <div>

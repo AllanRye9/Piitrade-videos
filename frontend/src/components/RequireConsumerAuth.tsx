@@ -7,7 +7,7 @@ interface Props {
 }
 
 /**
- * Login/register is now the first step to using Piitrade Videos at
+ * Login/register is now the first step to using Yotweek at
  * all — this wraps every consumer route (everything except /admin/*,
  * which has its own separate AdminAuthProvider) and shows AuthGate
  * until getAccountEmail() says this browser has a signed-in account.

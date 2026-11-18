@@ -9,7 +9,7 @@ import { SITE_NAME, absoluteUrl, staticPageMeta, buildRobots, buildSitemap, inje
  * permalink /v/:id. The reverse proxy (nginx.conf / vercel.json) forwards
  * exactly those paths here; everything else is the static SPA.
  *
- *   SITE_URL       public origin of the site, e.g. https://videos.piitrade.com
+ *   SITE_URL       public origin of the site, e.g. https://videos.yotweek.com
  *                  (falls back to the request's own host)
  *   SPA_SHELL_URL  where to fetch the built index.html from
  *                  (default: `${SITE_URL}/index.html`, or http://frontend/index.html)

@@ -270,7 +270,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     // Sharing a link is harmless and drives growth — open to guests.
     const url = `${WEB_URL}/v/${video.id}`;
     try {
-      const res = await Share.share({ message: `${video.title || 'Watch this on Piitrade Videos'}\n${url}`, url, title: video.title || 'Video' });
+      const res = await Share.share({ message: `${video.title || 'Watch this on Yotweek'}\n${url}`, url, title: video.title || 'Video' });
       if (res.action === Share.sharedAction) {
         setShareCount((c) => c + 1);
         api.shareVideo(video.id).catch(() => {});

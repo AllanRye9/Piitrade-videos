@@ -80,8 +80,8 @@ router.get('/go/:videoId/:productId', async (req: Request, res: Response) => {
 });
 
 // POST /api/attribution/conversion — a shop reports a sale (server to server).
-//   headers: X-Piitrade-Site: <site slug>, X-Piitrade-Signature: sha256=<hex HMAC-SHA256 of the raw body, keyed with the site's postback secret>
-//   body:    { click: "<pv_click token>", orderId: "A-1001", amount: 49.99, currency: "USD" }
+//   headers: X-Yotweek-Site: <site slug>, X-Yotweek-Signature: sha256=<hex HMAC-SHA256 of the raw body, keyed with the site's postback secret>
+//   body:    { click: "<yw_click token>", orderId: "A-1001", amount: 49.99, currency: "USD" }
 //            or { click, orderId, status: "reversed" } to cancel a sale that was refunded.
 const postbackLimiter = rateLimit({
   windowMs: 60_000,
@@ -93,7 +93,7 @@ const postbackLimiter = rateLimit({
 });
 
 async function siteForSignedRequest(req: Request) {
-  const slug = String(req.header('x-piitrade-site') || '').trim();
+  const slug = String(req.header('x-yotweek-site') || '').trim();
   const site = slug ? (await prisma.site.findUnique({ where: { slug } })) : null;
   return site as { id: string; slug: string; currency: string; commissionPct: number; postbackSecret: string } | null;
 }
@@ -102,7 +102,7 @@ router.post('/api/attribution/conversion', postbackLimiter, async (req: Request,
   const site = await siteForSignedRequest(req);
   const raw: Buffer | undefined = (req as any).rawBody;
   // Same answer for "no such site" and "bad signature" so slugs can't be probed.
-  if (!site || !raw || !verifySignature(site.postbackSecret, raw, req.header('x-piitrade-signature'))) {
+  if (!site || !raw || !verifySignature(site.postbackSecret, raw, req.header('x-yotweek-signature'))) {
     throw new HttpError(401, 'Invalid site or signature');
   }
 
@@ -163,7 +163,7 @@ router.post('/api/attribution/conversion', postbackLimiter, async (req: Request,
   }
 });
 
-// GET /api/attribution/report?days=30 — a shop's own numbers. Authorization: Bearer <postback secret>, X-Piitrade-Site: <slug>.
+// GET /api/attribution/report?days=30 — a shop's own numbers. Authorization: Bearer <postback secret>, X-Yotweek-Site: <slug>.
 router.get('/api/attribution/report', postbackLimiter, async (req: Request, res: Response) => {
   const site = await siteForSignedRequest(req);
   const bearer = (req.header('authorization') || '').replace(/^Bearer\s+/i, '');
