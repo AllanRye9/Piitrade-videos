@@ -10,7 +10,7 @@
 | UTM + click token | `withClickParams` (`utm_*` and `pv_click`) |
 | Trending ranking | `lib/feedRank.ts` (the codebase only had a raw-SQL trending; there is no "For you" feed or location boost) |
 | Server-rendered permalink + SEO | `/v/:id` with Open Graph, Twitter player, oEmbed discovery and `VideoObject` JSON-LD (`lib/embedPages.ts`) |
-| Multi-site parallel search (`searchSites`) | **Not built.** Marketplace search is still the single configured marketplace. |
+| Multi-site parallel search (`searchSites`) | **Built** (`backend/src/lib/searchSites.ts`). Typed search, visual search and AI product suggestions query every active shop that has a listing API, in parallel with a per-shop time budget; a failing shop is reported (`shops.failed`) and skipped, results are interleaved shop by shop and tagged with `shop`, and the apps name the shop on each result when more than one answered. With no shop registered it falls back to the single `MARKETPLACE_API` marketplace as before. A shop's own `url` is honoured only on its registered host. The "See all results" link still opens piitrade.com. Search endpoints are rate limited per session (30/min), the shop list is cached for 15 s (and dropped when Admin → Shops changes), and a shop's result ids are namespaced (`<shopId>:<id>`) so two shops with the same listing id can't collide. |
 
 ## Feature 1 — Attribution and payouts: done
 `GET /go/:videoId/:productId?` (+ `?url=` for non-pinned links), `POST /api/attribution/click` (app), `POST /api/attribution/conversion` (HMAC-SHA256 over `timestamp.rawBody`, ±5 min, idempotent per `(site, orderId)`, 30-day window, self-referral earns nothing), ledger (`PayoutEntry`, status machine pending→approved→paid/reversed), creator earnings API, admin Attribution + Payouts pages, permissions `sites.*`, `attribution.view`, `payouts.view|manage`, audit-logged status changes, conversion-rate ranking signal. Money is stored in minor units as BIGINT.
@@ -20,18 +20,21 @@
 ## Feature 2 — Embeds and distribution: mostly done
 Done: `/embed/:id` (iframe-able via explicit CSP `frame-ancestors`, muted autoplay, product chips in their windows, no cookies), `/api/oembed`, `/embed.js` widget + `/api/embed/by-product`, open listing spec + validator (`docs/LISTING_SPEC.md`, Test connection), share = permalink, "Share embed code" for creators, deep links (`piitrade://v/<id>` and, when `EXPO_PUBLIC_WEB_URL` is https, App Links/Universal Links via `app.config.js`).
 
+**Per-site embed allow-list (added later):** Admin → Shops → "Allowed embed sites" (migration `20250120000000_site_embed_origins`, column `Site.embedOrigins`, default empty = open). `/embed/:id` now sends a per-video `frame-ancestors`: open unless a shop the video carries has a list, in which case a site must be allowed by every restricting shop (each shop's own website and this app always allowed), plus the global `EMBED_FRAME_ANCESTORS` as an extra narrowing. Rules live in `backend/src/lib/embedOrigins.ts`; see `docs/EMBEDS.md`. The migration SQL was hand-written (Prisma can't run offline here), so run `prisma migrate deploy` and a `prisma generate` on your side.
+
 Not done / deviations:
 * **Shopify and WooCommerce plugins — not built.** The listing contract they would expose is documented.
-* **Per-site embed allow-list** — a single global `EMBED_FRAME_ANCESTORS` setting instead.
 * "Copy embed code" uses the system share sheet (`Share`) rather than `expo-clipboard`, to avoid adding a native dependency that I could not install/test for SDK 58.
 
 ## Feature 3 — Shoppable moments: done for mobile + admin, partial elsewhere
-Done: `VideoProduct` (start/end, optional hotspot, ordering), validation (shop domain, times inside the clip, hotspot 0–1, ≤8 per video), creator endpoints (`GET/PUT /api/videos/:id/products`, `POST …/suggest-products`), products accepted at upload, `products` on every video payload, JSON-LD `about`, admin product editor on the video edit dialog, mobile overlay (chips by time window; memoised so position updates only re-render when the visible set changes; hotspots are placed on the actual picture rectangle, correct for letterboxed videos), mobile tagging sheet (More → "Pin products to this video").
+Done on web, mobile and admin: `VideoProduct` (start/end, optional hotspot, ordering), validation (shop domain, times inside the clip, hotspot 0–1, ≤8 per video), creator endpoints (`GET/PUT /api/videos/:id/products`, `POST …/suggest-products`), products accepted at upload, `products` on every video payload, JSON-LD `about`, admin product editor on the video edit dialog, mobile overlay (chips by time window; memoised so position updates only re-render when the visible set changes; hotspots are placed on the actual picture rectangle, correct for letterboxed videos), mobile tagging sheet (More → "Pin products to this video").
 
 Not done / deviations:
 * AI suggestions are **after upload** (`/api/videos/:id/suggest-products`, ≤3 keyframes, ≤3 AI calls per request, heavy-upload rate limit) rather than on the picked clip before upload — the clip is not on the server yet at that point. Requires `AI_SEARCH` and `MARKETPLACE_API`; otherwise it answers 503 and the sheet says so.
 * The mobile tagging sheet uses −/+ steppers for the time window (no slider dependency) and does not place hotspots; hotspots are supported by the API and the overlay but there is no UI to position them yet.
-* The **web consumer upload modal** has no tagging UI (admin has one).
+* **Web consumer app (added later):** playback tags in `VideoCard` (`ProductChips`, time windows, hotspots placed on the real picture rectangle, memoised on the visible set), tap-to-save with a `SavedItemsPanel` (Open goes through the attribution click log), a "Shop products" section in the upload dialog (link, label, time window; sent with the upload), and More → "Pin products to this video" (`ProductsPanel`, with AI suggestions) for your own videos. Viewing analytics (`analytics.ts`: watch time and tag impressions) now also come from the web, so the guardrail and the funnel cover web viewers too. Hotspots still have no placement UI on any client.
+* Web upload pins are timed against the clip **as posted** (the server now checks them against the trimmed length, not the source length).
+* **Fixed:** saving pins from the app (and now the web) used to erase hotspots set elsewhere, because the creator's product list omitted `x`/`y` and saving replaces the whole list. The list now returns them and both clients send them back unchanged.
 * "Migrate the legacy single `productUrl`" — there was none in this codebase.
 
 ## Saved items (added after the original three features)
@@ -41,30 +44,14 @@ Why: the goal is to sell partners' visibility without interrupting viewing. Tapp
 * Partners see **Saves** next to clicks and sales in Admin → Attribution.
 * Mobile: tag-tap saves (optimistic, with offline/error messages), `SavedItemsSheet`, entry under Settings → Shopping.
 * **Viewing guardrail + partner funnel** (done after Saved items): `docs/GUARDRAIL.md`. Randomized hold-out, aggregated watch-time stats, a verdict with a confidence range and a minimum-data rule, and the tags-shown → saved → opened → sold funnel per shop (Admin → Attribution).
-* Not covered: the web embed/widget chips still link out through `/go` (there is no saved list on the web); there is no saved-items badge or reminder notification yet.
-
-## Audit against GLOBAL_POSITIONING.md (instruction by instruction)
-
-**Not done**
-* Shopify and WooCommerce plugins (Feature 2).
-* A **shop-facing** dashboard. Shops cannot log in; the numbers are in the admin (Attribution, Payouts) only (Feature 1).
-* Creator earnings on the **web profile** (Feature 1) — app only.
-* Per-shop allow-list for who may embed the player; one global `EMBED_FRAME_ANCESTORS` setting instead (Feature 2).
-* Product tagging inside the **upload flow**: mobile `UploadSheet` "Products" step and web `UploadModal` (Feature 3). Mobile tags after upload via More → "Pin products"; the API already accepts `products` at upload but no screen sends them.
-* Product tags/overlay in the **web consumer app** (`VideoCard`, types, api) — mobile and admin only (Feature 3, "update both together").
-* Hotspot **placement** UI, and the in-video **crop-and-search** fallback on mobile (mobile Find is a text search) (Feature 3).
-* Click-tracking text in the **privacy policy** (`PrivacyPage.tsx` does not mention it; only the Earnings sheet has a note), automated **retention** deletion, and cookie/**consent** handling — documented in `docs/ATTRIBUTION.md`, not implemented (Feature 1).
-* `mobile/src/state/sites.ts` (the app reads shops straight from `GET /api/marketplace/sites` where it needs them).
-* Multi-catalog `searchSites`, a "For you" feed and location boost — the foundation described did not exist in the code provided.
-* EAS preview build and on-device testing.
-
-**Done on purpose differently:** the app logs taps with `POST /api/attribution/click` (a session id must not go in a URL) instead of opening `/go`; embed code is shared with the system share sheet (no `expo-clipboard`); AI suggestions run after upload; a tag tap now *saves* the item first (Saved items) and the product opens later through the attribution redirect.
-
-**Everything else in the document is implemented and tested**, including: `/go` redirect with UTM and click token, HMAC-signed idempotent conversion postbacks, the creator ledger and status workflow, admin permissions and audit log, conversion-aware ranking, embed page, oEmbed, shop widget, SEO permalink and JSON-LD, listing spec and Test connection, deep links, `VideoProduct` with time windows and hotspots, validation, admin product editor, and the mobile overlay.
-
-A real-browser check was run against the real routes behind `helmet` (15 assertions): the widget on a different-origin shop page found the right video from the page's product URL and framed the player; chips showed and hid in their time windows (including "until the end"); chip links went through `/go` and produced a 302 with `pv_click`/UTM and a correct click record; the permalink forbids third-party framing while the embed allows it; oEmbed and JSON-LD present; no script errors. (The script is not shipped.)
+* Not covered: the web embed/widget chips still link out through `/go` (they don't save); there is no saved-items badge or reminder notification yet. Saved items on the web follow the browser's session the same way they do for guests in the app.
 
 ## Verification
 Backend: `tsc` clean; 137 tests, including an HTTP-level flow (click → redirect → signed postback → replay → tamper → expiry → self-referral) against an in-memory database. Schema validated with Prisma's own parser; **all migrations applied on a real PostgreSQL engine (PGlite)** and the new constraints exercised (idempotent order id, restricted shop delete, click survives video delete, product cascade, single primary admin). Mobile: `tsc` clean; pure product logic tested under Node. Admin UI: built and screenshotted.
 
-**Not verified:** the mobile screens on a device or emulator; AI suggestions and `ffmpeg` keyframe extraction against a real video; behaviour behind your actual proxy/CDN; a shop's real postbacks.
+Web: `tsc -b` clean, production build succeeds, pure logic (`npm run test:logic` in `frontend/`) tested under Node. **Not verified:** the new web screens in a browser (chips, saving, panels, upload section); the mobile screens on a device or emulator; AI suggestions and `ffmpeg` keyframe extraction against a real video; behaviour behind your actual proxy/CDN; a shop's real postbacks.
+
+## Deployment (Railway, api.yotweek.com)
+* The API is `https://api.yotweek.com` (Railway). No Render URL remains in the code, docs or build output.
+* Web: `src/config.ts` uses `https://api.yotweek.com` whenever the page is served from `yotweek.com` or `www.yotweek.com`, ignoring any older `VITE_API_BASE_URL` baked into the build; other hosts (the Android app, previews) use `VITE_API_BASE_URL`, which `frontend/.env.production` sets. Mobile: `EXPO_PUBLIC_API_BASE_URL`, defaulting to the same API.
+* CORS (`backend/src/lib/cors.ts`): with `ALLOWED_ORIGIN` unset every origin may call (as before). When set, those origins plus `yotweek.com`, `www.yotweek.com`, `piitrade.com`, `www.piitrade.com`, the Android/iOS WebView origins and local development ports are allowed. Preflights are cached for a day.

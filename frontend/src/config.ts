@@ -1,18 +1,19 @@
 /**
- * When the frontend and backend are served from the same origin (the
- * default Docker Compose setup — nginx proxies /api and /uploads to
- * the backend container), this stays empty and every request is a
- * plain relative path.
+ * Where the API lives.
  *
- * When they're deployed separately (e.g. this frontend on Vercel and
- * the backend on Railway/Render/Fly/a VPS, since Vercel's serverless
- * functions can't run a stateful Postgres+ffmpeg backend), set
- * VITE_API_BASE_URL at build time to the backend's full origin, e.g.
- * `https://piitrade.com` (no trailing slash). Every API call and
- * every video/poster/product-image URL will then resolve against it
- * instead of the frontend's own origin.
+ * - On the live site (yotweek.com) it is always https://api.yotweek.com, whatever was baked in at build
+ *   time, so a stale VITE_API_BASE_URL in the hosting settings can't point the site at a dead backend.
+ * - Everywhere else (the Android app, previews, local builds) it is VITE_API_BASE_URL, the backend's full
+ *   origin with no trailing slash. The Android app runs from https://localhost and must set it.
+ * - When the frontend and backend share an origin (Docker Compose with nginx proxying /api and /uploads)
+ *   it stays empty and every request is a plain relative path.
+ *
+ * Every API call and every video/poster/product-image URL resolves against it.
  */
-export const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+import { resolveApiBase } from './apiBase';
+
+export { PRODUCTION_API_BASE } from './apiBase';
+export const API_BASE = resolveApiBase(import.meta.env.VITE_API_BASE_URL, typeof location === 'undefined' ? undefined : location.hostname);
 
 /** Resolves a backend-relative path (e.g. `/uploads/videos/x.mp4`) against API_BASE. */
 export function mediaUrl(path: string | null | undefined): string | undefined {

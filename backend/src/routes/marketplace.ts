@@ -1,13 +1,14 @@
 import { Router, Request, Response } from 'express';
 import { HttpError } from '../lib/httpError';
 import { prisma } from '../db';
-import * as marketplace from '../lib/marketplace';
 import { toSearchResultDto, browseUrlFor } from '../lib/marketplace';
+import { searchSites } from '../lib/searchSites';
+import { searchLimiter } from '../middleware/rateLimit';
 
 const router = Router();
 
-// GET /api/marketplace/search?q=<text> — manual, user-typed search of
-// the piitrade.com classifieds.
+// GET /api/marketplace/search?q=<text> — manual, user-typed search across every
+// connected shop (see lib/searchSites.ts; one failing shop never blocks the rest).
 //
 // Independent of the AI-identify pipeline in visualSearch.ts: this
 // lets a viewer type their own words and search the marketplace
@@ -21,15 +22,15 @@ const router = Router();
 // is nothing to buy or check out here — each result's `listingUrl`
 // opens the listing on piitrade.com, and `browseUrl` opens the full
 // result set there.
-router.get('/search', async (req: Request, res: Response) => {
+router.get('/search', searchLimiter, async (req: Request, res: Response) => {
   const q = req.query.q;
   if (typeof q !== 'string' || !q.trim()) {
     throw new HttpError(400, 'q query parameter is required');
   }
   console.log(`[Marketplace] manual search: "${q}"`);
-  const outcome = await marketplace.searchProductsWithFallback(q);
-  const results = outcome.results.slice(0, 12).map((p) => toSearchResultDto(p, q));
-  res.json({ results, matchedQuery: outcome.matchedQuery, browseUrl: browseUrlFor(outcome.matchedQuery || q) });
+  const outcome = await searchSites(q);
+  const results = outcome.results.map((p) => toSearchResultDto(p, q));
+  res.json({ results, matchedQuery: outcome.matchedQuery, browseUrl: browseUrlFor(outcome.matchedQuery || q), shops: { searched: outcome.searched, failed: outcome.failed } });
 });
 
 // GET /api/marketplace/sites — the connected shops (public fields only). The app reads this so newly

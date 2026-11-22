@@ -78,3 +78,14 @@ export const eventsLimiter = rateLimit({
   keyGenerator: (req) => req.header('x-session-id')?.trim() || (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
   message: { error: 'Too many requests.' },
 });
+
+// Typed and visual product search. Each call can fan out to every connected shop (and visual search also
+// calls the AI model), so one session gets a modest allowance: plenty for real browsing, not for scripting.
+export const searchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: keyBySession,
+  message: { error: 'Too many searches — please wait a moment and try again.' },
+});

@@ -154,6 +154,8 @@ export interface SiteRecord {
   currency: string;
   commissionPct: number;
   active: boolean;
+  /** Sites allowed to embed videos carrying this shop's products, one origin per line; empty = anywhere. */
+  embedOrigins: string;
   createdAt: string;
   secretHint: string;
   clicks?: number;

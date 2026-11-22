@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import type { Video } from '../types';
+import type { Video, VideoProduct } from '../types';
 import { api } from '../api';
 import { mediaUrl } from '../config';
 import CropOverlay from './CropOverlay';
 import SearchResultsPanel from './SearchResultsPanel';
 import VideoMoreSheet from './VideoMoreSheet';
 import CommentModal from './CommentModal';
+import ProductChips from './ProductChips';
+import SavedItemsPanel from './SavedItemsPanel';
+import ProductsPanel from './ProductsPanel';
+import { activeProducts, frameRect } from '../productLogic';
+import { track } from '../analytics';
 import type { VisualSearchResult } from '../types';
 import { getMuted, setMuted as setSharedMuted, subscribeMuted } from '../soundPreference';
 import { renderWatermarkedVideo, triggerBlobDownload } from '../videoWatermark';
@@ -82,6 +87,7 @@ export default function VideoCard({ video, active }: Props) {
   const [identification, setIdentification] = useState<string | null>(null);
   const [matchedQuery, setMatchedQuery] = useState<string | null>(null);
   const [browseUrl, setBrowseUrl] = useState<string | null>(null);
+  const [unavailableShops, setUnavailableShops] = useState<string[]>([]);
 
   // Long-press-to-download control: holding the video for
   // LONG_PRESS_MS shows a filling ring, then triggers the same
@@ -160,6 +166,128 @@ export default function VideoCard({ video, active }: Props) {
     const t = setTimeout(() => setShowSearchHint(false), 4000);
     return () => clearTimeout(t);
   }, [active, showSearchHint]);
+
+  // ---- Shoppable moments: product tags that appear in their time windows ----
+  const [products, setProducts] = useState<VideoProduct[]>(video.products ?? []);
+  const [savedIds, setSavedIds] = useState<Set<string>>(() => new Set((video.products ?? []).filter((p) => p.saved).map((p) => p.id)));
+  const [currentMs, setCurrentMs] = useState(0);
+  const [box, setBox] = useState({ w: 0, h: 0, vw: 0, vh: 0 });
+  const [showSaved, setShowSaved] = useState(false);
+  const [showPins, setShowPins] = useState(false);
+  const [productNote, setProductNote] = useState<string | null>(null);
+  const isOwn = !!video.uploader?.isOwn;
+
+  useEffect(() => {
+    setProducts(video.products ?? []);
+    setSavedIds(new Set((video.products ?? []).filter((p) => p.saved).map((p) => p.id)));
+  }, [video.id, video.products]);
+
+  useEffect(() => {
+    if (!active) setCurrentMs(0);
+  }, [active]);
+
+  // Track the player's size so hotspots land on the picture itself (the video is letterboxed).
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => setBox((b) => ({ ...b, w: el.clientWidth, h: el.clientHeight, vw: el.videoWidth || b.vw, vh: el.videoHeight || b.vh }));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [video.id]);
+
+  const sortedProducts = useMemo(() => [...products].sort((a, b) => a.startMs - b.startMs), [products]);
+  // Re-render the tags only when the set of visible products changes, not on every playback update.
+  const activeKey = activeProducts(sortedProducts, currentMs)
+    .map((p) => p.id)
+    .join(',');
+  const visibleProducts = useMemo(() => (activeKey ? sortedProducts.filter((p) => activeKey.split(',').includes(p.id)) : []), [activeKey, sortedProducts]);
+  const frame = useMemo(() => frameRect(box.w, box.h, box.vw, box.vh), [box]);
+
+  // ---- Viewing analytics (feeds the "do tags hurt viewing?" guardrail) ----
+  // One 'watch' event each time this card is the active one, carrying how long it really played
+  // (paused, hidden-tab and covered time doesn't count).
+  const [pageVisible, setPageVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden');
+  useEffect(() => {
+    const onVis = () => setPageVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+  const watchRef = useRef<{ startedAt: number | null; ms: number }>({ startedAt: null, ms: 0 });
+  const impressedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!active) return;
+    watchRef.current = { startedAt: null, ms: 0 };
+    impressedRef.current.clear();
+    return () => {
+      const w = watchRef.current;
+      const ms = w.ms + (w.startedAt !== null ? Date.now() - w.startedAt : 0);
+      w.startedAt = null;
+      if (ms >= 500) {
+        const dur = Math.round((videoRef.current?.duration || video.duration || 0) * 1000);
+        track({ type: 'watch', videoId: video.id, watchedMs: Math.round(ms), durationMs: dur > 0 ? dur : undefined });
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, video.id]);
+  const shouldPlay = active && playing && pageVisible;
+  useEffect(() => {
+    if (!shouldPlay) return;
+    watchRef.current.startedAt = Date.now();
+    return () => {
+      const w = watchRef.current;
+      if (w.startedAt !== null) {
+        w.ms += Date.now() - w.startedAt;
+        w.startedAt = null;
+      }
+    };
+  }, [shouldPlay]);
+  // A tag counts as shown once per viewing, the first time it appears on screen.
+  useEffect(() => {
+    if (!active || !shouldPlay) return;
+    for (const p of visibleProducts) {
+      if (impressedRef.current.has(p.id)) continue;
+      impressedRef.current.add(p.id);
+      track({ type: 'chip', videoId: video.id, productId: p.id });
+    }
+  }, [active, shouldPlay, visibleProducts, video.id]);
+
+  // Tapping a tag saves it and the video keeps playing; a saved tag opens the list.
+  async function handleProductTap(p: VideoProduct) {
+    if (savedIds.has(p.id)) {
+      setShowSaved(true);
+      return;
+    }
+    setSavedIds((s) => new Set(s).add(p.id));
+    try {
+      await api.saveProduct(video.id, p.id);
+    } catch (e) {
+      setSavedIds((s) => {
+        const n = new Set(s);
+        n.delete(p.id);
+        return n;
+      });
+      setProductNote(e instanceof Error ? e.message : 'Could not save that item');
+      setTimeout(() => setProductNote(null), 3500);
+    }
+  }
+
+  // A stable identity for the memoised tags: an inline arrow would be a new prop on every render
+  // (about four a second while playing) and defeat the memo.
+  const tapRef = useRef(handleProductTap);
+  tapRef.current = handleProductTap;
+  const onTagTap = useCallback((p: VideoProduct) => void tapRef.current(p), []);
+
+  async function reloadProducts() {
+    try {
+      const r = await api.getVideo(video.id);
+      setProducts(r.video.products ?? []);
+      setSavedIds(new Set((r.video.products ?? []).filter((p) => p.saved).map((p) => p.id)));
+    } catch {
+      // the creator's next feed refresh will pick the change up
+    }
+  }
 
   const wasPlayingRef = useRef(false);
 
@@ -380,6 +508,7 @@ export default function VideoCard({ video, active }: Props) {
       setIdentification(res.identification ?? null);
       setMatchedQuery(res.matchedQuery ?? null);
       setBrowseUrl(res.browseUrl ?? null);
+      setUnavailableShops((res.shops?.failed ?? []).map((f) => f.name));
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -404,6 +533,7 @@ export default function VideoCard({ video, active }: Props) {
       setSearchResults(res.results);
       setMatchedQuery(res.matchedQuery ?? null);
       setBrowseUrl(res.browseUrl ?? null);
+      setUnavailableShops((res.shops?.failed ?? []).map((f) => f.name));
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : 'Search failed');
     } finally {
@@ -445,9 +575,15 @@ export default function VideoCard({ video, active }: Props) {
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onLoadedMetadata={(e) => {
+          const el = e.currentTarget;
+          setBox((b) => ({ ...b, vw: el.videoWidth, vh: el.videoHeight }));
+        }}
         onTimeUpdate={(e) => {
           const el = e.currentTarget;
           if (el.duration > 0) setProgress(el.currentTime / el.duration);
+          // Only worth a re-render when there are tags whose window could open or close.
+          if (products.length > 0) setCurrentMs(Math.round(el.currentTime * 1000));
         }}
         className="h-full w-full object-contain"
       />
@@ -547,6 +683,14 @@ export default function VideoCard({ video, active }: Props) {
           <span className="bg-black/60 text-white text-xs font-medium rounded-full px-3 py-1.5 whitespace-nowrap">
             Tap for sound 🔊
           </span>
+        </div>
+      )}
+
+      {/* Shop tags for the current moment (shoppable moments). */}
+      <ProductChips products={visibleProducts} frame={frame} saved={savedIds} onTap={onTagTap} />
+      {productNote && (
+        <div role="status" className="absolute left-1/2 top-16 -translate-x-1/2 rounded-full bg-black/75 px-3 py-1.5 text-xs text-white">
+          {productNote}
         </div>
       )}
 
@@ -672,6 +816,9 @@ export default function VideoCard({ video, active }: Props) {
           onFavorite={() => handleFavorite()}
           onDownload={downloadWithWatermark}
           onReport={submitReport}
+          isOwn={isOwn}
+          onPinProducts={() => setShowPins(true)}
+          onOpenSaved={() => setShowSaved(true)}
           onClose={() => setShowMore(false)}
         />
       )}
@@ -692,10 +839,13 @@ export default function VideoCard({ video, active }: Props) {
           identification={identification}
           matchedQuery={matchedQuery}
           browseUrl={browseUrl}
+          unavailableShops={unavailableShops}
           onManualSearch={handleManualSearch}
           onClose={resumeWatching}
         />
       )}
+      {showSaved && <SavedItemsPanel onClose={() => setShowSaved(false)} />}
+      {showPins && <ProductsPanel video={video} onSaved={() => void reloadProducts()} onClose={() => setShowPins(false)} />}
       {showComments && (
         <CommentModal videoId={video.id} onClose={() => setShowComments(false)} onCommentPosted={setCommentCount} />
       )}

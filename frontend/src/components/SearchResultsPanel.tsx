@@ -14,6 +14,8 @@ interface Props {
   matchedQuery?: string | null;
   /** "See all results" on piitrade.com. */
   browseUrl?: string | null;
+  /** Shops that could not be searched this time; the others answered. */
+  unavailableShops?: string[];
   /** Manual, user-typed search — independent of the AI crop-to-identify flow.
    *  Doubles as a way to directly verify whether an item exists on the
    *  marketplace at all. */
@@ -44,7 +46,7 @@ function ListingImage({ src, alt }: { src: string | undefined; alt: string }) {
  * It's a sheet, not a full screen, so the paused video stays visible
  * above it.
  */
-export default function SearchResultsPanel({ loading, error, results, identification, matchedQuery, browseUrl, onManualSearch, onClose }: Props) {
+export default function SearchResultsPanel({ loading, error, results, identification, matchedQuery, browseUrl, unavailableShops, onManualSearch, onClose }: Props) {
   const [manualQuery, setManualQuery] = useState('');
 
   function submitManualSearch(e: React.FormEvent) {
@@ -55,6 +57,8 @@ export default function SearchResultsPanel({ loading, error, results, identifica
 
   const showShortenedNotice = matchedQuery && identification && matchedQuery !== identification;
   const seeAllUrl = browseUrl || piitradeUrl('/listings');
+  // Name the shop on each card only when the results come from more than one.
+  const showShop = new Set((results ?? []).map((r) => r.shop?.id).filter(Boolean)).size > 1;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/60" onClick={onClose}>
@@ -100,6 +104,11 @@ export default function SearchResultsPanel({ loading, error, results, identifica
             <p className="text-white/40 text-[11px] text-center mb-2">Showing matches for “{matchedQuery}”</p>
           )}
 
+          {!loading && !error && unavailableShops && unavailableShops.length > 0 && (
+            <p role="status" className="text-white/50 text-xs pb-2">
+              Couldn’t reach {unavailableShops.join(', ')} just now, so these results may be incomplete.
+            </p>
+          )}
           {!loading && !error && results && results.length === 0 && (
             <div className="flex flex-col items-center text-center py-8 gap-3">
               <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center">
@@ -138,6 +147,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
                           </span>
                         )}
                         {r.condition && <span>{r.condition}</span>}
+                        {showShop && r.shop && <span className="truncate max-w-[8rem] text-white/70">{r.shop.name}</span>}
                         {r.storeName && <span className="truncate max-w-[8rem]">{r.storeName}</span>}
                         {r.verifiedSeller && (
                           <span className="flex items-center gap-0.5 text-brand-amber">

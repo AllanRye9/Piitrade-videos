@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
+import { api } from '../api';
 import type { TrimRange } from '../api';
+import type { ProductPin, SiteInfo } from '../types';
 import { isUploadBusy, startUpload } from '../uploadManager';
 import { useAudioSync } from '../useAudioSync';
 import type { AudioPreview } from '../useAudioSync';
 import { MAX_VIDEO_SECONDS } from '../config';
 import VideoTrimmer from './VideoTrimmer';
 import AudioPanel from './AudioPanel';
+import ProductsEditor from './ProductsEditor';
 import type { AudioSelection } from './AudioPanel';
-import { X, Plus, Scissors, UploadCloud } from 'lucide-react';
+import { X, Plus, Scissors, UploadCloud, ShoppingBag, ChevronDown } from 'lucide-react';
 
 interface Props {
   onClose: () => void;
@@ -58,6 +61,16 @@ export default function UploadModal({ onClose }: Props) {
   const [trim, setTrim] = useState<TrimRange | null>(null);
   // Length of the chosen video as the browser reads it (null if it can't).
   const [probedDuration, setProbedDuration] = useState<number | null>(null);
+
+  // Shop products pinned to the video (optional). Sent with the upload and checked by the server
+  // before any processing, so a bad link fails fast.
+  const [pins, setPins] = useState<ProductPin[]>([]);
+  const [sites, setSites] = useState<SiteInfo[]>([]);
+  const [showProducts, setShowProducts] = useState(false);
+  const [pinNote, setPinNote] = useState<string | null>(null);
+  useEffect(() => {
+    api.getSites().then((r) => setSites(r.sites)).catch(() => {});
+  }, []);
 
   // Audio added to the video, if any.
   const [audio, setAudio] = useState<AudioSelection | null>(null);
@@ -209,6 +222,7 @@ export default function UploadModal({ onClose }: Props) {
       title: title || 'Untitled',
       description,
       trim: needsTrim ? trim : null,
+      products: pins.length ? pins.map((p) => ({ url: p.url, title: p.title.trim(), startMs: p.startMs, endMs: p.endMs })) : undefined,
       audio: audio
         ? {
             file: audio.file,
@@ -255,6 +269,21 @@ export default function UploadModal({ onClose }: Props) {
 
   const uploading = false; // uploads run in the background once Post is tapped
   const clipLength = needsTrim ? trimLength : probedDuration;
+
+  // Pin times are measured on the clip as posted. If the trim changes so that a pin no longer fits,
+  // fit it (or drop it if it would start after the end) rather than failing the upload later.
+  useEffect(() => {
+    if (!clipLength || clipLength <= 0) return;
+    const maxMs = Math.round(clipLength * 1000);
+    setPins((cur) => {
+      const next = cur
+        .filter((p) => p.startMs <= maxMs - 1000)
+        .map((p) => (p.endMs !== null && p.endMs > maxMs ? { ...p, endMs: maxMs } : p));
+      const changed = next.length !== cur.length || next.some((p, i) => p !== cur[i]);
+      if (changed) setPinNote('Some pinned products were adjusted to fit your trimmed clip.');
+      return changed ? next : cur;
+    });
+  }, [clipLength]);
   const audioPreview: AudioPreview | null = audio
     ? { url: audio.url, start: audio.start, videoVolume: audio.videoVolume, audioVolume: audio.audioVolume }
     : null;
@@ -350,6 +379,31 @@ export default function UploadModal({ onClose }: Props) {
               onChange={setAudio}
               onRemove={dropAudio}
             />
+          )}
+
+          {file && (
+            <div className="rounded-xl border border-white/10">
+              <button
+                type="button"
+                onClick={() => setShowProducts((v) => !v)}
+                aria-expanded={showProducts}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+              >
+                <span className="flex items-center gap-2 text-sm text-white">
+                  <ShoppingBag size={16} className="text-brand-amber" />
+                  Shop products{pins.length ? ` (${pins.length})` : ''}
+                  <span className="text-xs text-white/40">optional</span>
+                </span>
+                <ChevronDown size={16} className={`text-white/50 transition-transform ${showProducts ? 'rotate-180' : ''}`} />
+              </button>
+              {showProducts && (
+                <div className="border-t border-white/10 p-3">
+                  <ProductsEditor pins={pins} onChange={setPins} sites={sites} durationMs={clipLength ? Math.round(clipLength * 1000) : null} />
+                  {pinNote && <p role="status" className="mt-2 text-xs text-brand-amber">{pinNote}</p>}
+                  <p className="mt-2 text-[11px] text-white/40">AI suggestions are available after the video is posted: open More → Pin products.</p>
+                </div>
+              )}
+            </div>
           )}
 
           <div className="space-y-1">

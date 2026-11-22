@@ -3,7 +3,9 @@ import { prisma } from '../db';
 import { uploadImage } from '../middleware/upload';
 import { computeImageHash, hammingDistance, similarityScore } from '../lib/phash';
 import { identifyImage } from '../lib/aiSearch';
-import { searchProductsWithFallback, toSearchResultDto, browseUrlFor } from '../lib/marketplace';
+import { toSearchResultDto, browseUrlFor } from '../lib/marketplace';
+import { searchSites, searchConfigured } from '../lib/searchSites';
+import { searchLimiter } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -14,12 +16,12 @@ const router = Router();
  * than partially failing, so the search feature keeps working either
  * way (see README "Visual search modes").
  */
-function marketplacePipelineEnabled(): boolean {
-  return Boolean(process.env.AI_SEARCH && process.env.MARKETPLACE_API);
+async function marketplacePipelineEnabled(): Promise<boolean> {
+  return Boolean(process.env.AI_SEARCH) && (await searchConfigured());
 }
 
 // POST /api/visual-search  (multipart: image)
-router.post('/', uploadImage.single('image'), async (req: Request, res: Response) => {
+router.post('/', searchLimiter, uploadImage.single('image'), async (req: Request, res: Response) => {
   const file = req.file;
   if (!file) {
     res.status(400).json({ error: 'No image uploaded' });
@@ -28,8 +30,8 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
 
   console.log(`[VisualSearch] received ${file.size} byte ${file.mimetype} selection`);
 
-  if (marketplacePipelineEnabled()) {
-    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> MARKETPLACE_API search (with query-shortening fallback)');
+  if (await marketplacePipelineEnabled()) {
+    console.log('[VisualSearch] pipeline: AI_SEARCH identify -> connected-shop search (with query-shortening fallback)');
     // 1. Ask the configured AI service what the cropped selection shows.
     const identification = await identifyImage(file.buffer, file.mimetype);
     // 2. Ask the marketplace whether it carries anything matching that
@@ -37,8 +39,8 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
     //    matching, so a multi-word AI description is retried against
     //    progressively shorter prefixes until something actually
     //    matches — see searchProductsWithFallback for why.
-    const outcome = await searchProductsWithFallback(identification.text);
-    const results = outcome.results.slice(0, 12).map((p) => toSearchResultDto(p, identification.text));
+    const outcome = await searchSites(identification.text);
+    const results = outcome.results.map((p) => toSearchResultDto(p, identification.text));
     console.log(
       `[VisualSearch] returning ${results.length} result(s) for "${identification.text}"` +
         (outcome.matchedQuery && outcome.matchedQuery !== identification.text ? ` (matched on shortened query "${outcome.matchedQuery}")` : '')
@@ -48,6 +50,7 @@ router.post('/', uploadImage.single('image'), async (req: Request, res: Response
       identification: identification.text,
       matchedQuery: outcome.matchedQuery,
       browseUrl: browseUrlFor(outcome.matchedQuery || identification.text),
+      shops: { searched: outcome.searched, failed: outcome.failed },
     });
     return;
   }

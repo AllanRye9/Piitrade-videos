@@ -1,3 +1,5 @@
+import { invalidateShopCache } from '../../lib/searchSites';
+import { normalizeOriginsInput } from '../../lib/embedOrigins';
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
@@ -20,6 +22,7 @@ function serialize(s: any, counts?: { clicks: number; conversions: number }) {
     currency: s.currency,
     commissionPct: s.commissionPct,
     active: s.active,
+    embedOrigins: s.embedOrigins ?? '',
     createdAt: s.createdAt,
     // Never list the whole secret — reveal/rotate are separate, audited actions.
     secretHint: `…${String(s.postbackSecret).slice(-4)}`,
@@ -51,6 +54,7 @@ function clean(body: any, partial: boolean) {
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) throw new HttpError(400, 'Commission must be between 0 and 100');
     d.commissionPct = pct;
   }
+  if (body.embedOrigins !== undefined) d.embedOrigins = normalizeOriginsInput(body.embedOrigins);
   if (body.active !== undefined) d.active = !!body.active;
   return d;
 }
@@ -76,6 +80,7 @@ router.post('/', requirePermission('sites.create'), async (req: AuthedRequest, r
   try {
     const site = await prisma.site.create({ data: { ...data, slug, postbackSecret: secret } });
     audit(req, 'site.create', 'site', site.id, site.name);
+    invalidateShopCache();
     res.status(201).json({ site: serialize(site), postbackSecret: secret });
   } catch (err: any) {
     if (err?.code === 'P2002') throw new HttpError(409, 'A shop with that slug already exists');
@@ -89,6 +94,7 @@ router.patch('/:id', requirePermission('sites.edit'), async (req: AuthedRequest,
   try {
     const site = await prisma.site.update({ where: { id: req.params.id }, data });
     audit(req, 'site.update', 'site', site.id, `${site.name}: ${Object.keys(data).join(', ')}`);
+    invalidateShopCache();
     res.json({ site: serialize(site) });
   } catch (err: any) {
     if (err?.code === 'P2025') throw new HttpError(404, 'Shop not found');
@@ -158,6 +164,7 @@ router.delete('/:id', requirePermission('sites.delete'), async (req: AuthedReque
   }
   await prisma.site.delete({ where: { id: site.id } });
   audit(req, 'site.delete', 'site', site.id, site.name);
+  invalidateShopCache();
   res.status(204).send();
 });
 

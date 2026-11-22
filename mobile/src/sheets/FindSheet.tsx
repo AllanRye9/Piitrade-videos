@@ -17,6 +17,7 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
   const [query, setQuery] = useState((initialQuery || '').replace(/^#/, ''));
   const [results, setResults] = useState<VisualSearchResult[] | null>(null);
   const [browseUrl, setBrowseUrl] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +33,7 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
       const res = await api.marketplaceSearch(q.trim());
       setResults(res.results);
       setBrowseUrl(res.browseUrl ?? null);
+      setUnavailable((res.shops?.failed ?? []).map((f) => f.name));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Search failed');
     } finally {
@@ -43,6 +45,9 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
     if (query.trim()) search(query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Name the shop on each row only when the results come from more than one.
+  const showShop = new Set((results ?? []).map((r) => r.shop?.id).filter(Boolean)).size > 1;
 
   return (
     <Sheet title="Find on Piitrade" onClose={closeSheet} maxHeight={0.88} fill>
@@ -60,6 +65,7 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
           data={results}
           keyExtractor={(r) => r.id}
           contentContainerStyle={{ padding: space.lg, gap: space.md }}
+          ListHeaderComponent={unavailable.length ? <Text style={styles.note}>Couldn’t reach {unavailable.join(', ')} just now, so these results may be incomplete.</Text> : undefined}
           ListEmptyComponent={<Text style={styles.empty}>No listings matched “{query}”.</Text>}
           ListFooterComponent={
             browseUrl ? (
@@ -76,9 +82,9 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
                   {item.name}
                 </Text>
                 <Text style={styles.price}>{item.price}</Text>
-                {item.location ? (
+                {item.location || (showShop && item.shop) ? (
                   <Text style={styles.meta} numberOfLines={1}>
-                    {item.location}
+                    {[showShop ? item.shop?.name : null, item.location].filter(Boolean).join(' · ')}
                   </Text>
                 ) : null}
               </View>
@@ -95,6 +101,7 @@ const styles = StyleSheet.create({
   searchRow: { paddingHorizontal: space.lg, paddingBottom: space.sm },
   box: { flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.surfaceRaised, borderRadius: radius.pill, paddingHorizontal: space.lg, height: 44 },
   input: { flex: 1, color: colors.text, fontSize: 16, paddingVertical: 0 },
+  note: { color: colors.textMuted, fontSize: 12, marginBottom: space.sm },
   empty: { color: colors.textFaint, textAlign: 'center', marginTop: 30 },
   card: { flexDirection: 'row', gap: space.md, alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: radius.md, padding: space.md },
   img: { width: 64, height: 64, borderRadius: radius.sm, backgroundColor: colors.surfaceHigh },

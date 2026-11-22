@@ -102,7 +102,7 @@ export default function ProductsSheet({ video }: { video: Video }) {
     setSaving(true);
     setError(null);
     try {
-      await api.setProducts(video.id, list.map((p) => ({ url: p.url, title: p.title.trim(), startMs: p.startMs, endMs: p.endMs })));
+      await api.setProducts(video.id, list.map((p) => ({ url: p.url, title: p.title.trim(), startMs: p.startMs, endMs: p.endMs, x: p.x ?? null, y: p.y ?? null })));
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save');

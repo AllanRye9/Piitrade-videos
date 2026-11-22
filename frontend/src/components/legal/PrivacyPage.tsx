@@ -30,11 +30,27 @@ export default function PrivacyPage() {
         relevant session/account so the Service can display counts and personalize what you see.
       </p>
 
+      <p>
+        <strong>Shop link clicks and sales.</strong> Videos can carry links to products on partner shops. When you
+        tap one, we record the click (which video, which product and shop, and the time), using a one-way hash of your
+        session identifier and, for visitors without an account, a one-way hash of your IP address, never the raw
+        values. We add a random click token to the link. If you then buy from that shop, the shop may report the order
+        back to us (order reference and amount) so we can credit the creator of the video. We never receive your
+        payment details or your account details on the shop. When you view a video embedded on another website, no
+        cookies are set by us.
+      </p>
+      <p>
+        <strong>Saved items.</strong> If you save a product tag to look at later, we keep a copy of its link and title
+        against your session or account so the list is available when you return.
+      </p>
+
       <h2>2. How we use this information</h2>
       <ul>
         <li>To operate core features: the video feed, uploads, comments, follows, and notifications;</li>
         <li>To let you recover access to your account (password reset) and keep your handle/videos across devices;</li>
         <li>To show you matching listings from the Piitrade Marketplace when you search from a video;</li>
+        <li>To measure which videos lead to shop visits and sales, to show partner shops aggregate results, and to calculate commission owed to creators;</li>
+        <li>To check that product tags do not reduce viewing: a random share of viewers is shown no tags and their watch time is compared in aggregate;</li>
         <li>To review content reported through the in-app report feature;</li>
         <li>To maintain the security and reliability of the Service, including rate-limiting abuse.</li>
       </ul>
@@ -52,6 +68,11 @@ export default function PrivacyPage() {
           delivery for password resets, and an AI service used to identify products in a cropped video frame when
           you use visual search) — each only for that specific purpose;
         </li>
+        <li>
+          <strong>Partner shops</strong> — when you tap a product link you leave this app and the shop's own privacy
+          policy applies. The shop sees the link you followed, including our click token, and receives aggregate
+          click, save and sales figures from us, not your identity;
+        </li>
         <li>Authorities, where required by law.</li>
       </ul>
 
@@ -60,6 +81,8 @@ export default function PrivacyPage() {
         <li>You can edit or remove your display name, avatar, and bio at any time in Settings;</li>
         <li>You can delete individual videos and comments you've posted;</li>
         <li>You can request deletion of your account by contacting us (see below);</li>
+        <li>You can remove items from your saved list at any time;</li>
+        <li>You can avoid click tracking by not tapping product links;</li>
         <li>You can clear your browser's local storage to reset your anonymous session identifier at any time.</li>
       </ul>
 

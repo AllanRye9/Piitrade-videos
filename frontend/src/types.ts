@@ -4,9 +4,74 @@ export interface VideoUploader {
   handle: string;
   displayName: string | null;
   avatar: string | null;
+  /** The signed-in viewer is this creator. */
+  isOwn?: boolean;
+}
+
+/** A shop product pinned to a video. Taps go through the attribution redirect, so no destination URL is exposed here. */
+export interface VideoProduct {
+  id: string;
+  title: string;
+  /** Shop name, e.g. "Piitrade". */
+  site: string;
+  /** Shop host, e.g. "piitrade.com". */
+  host: string;
+  startMs: number;
+  /** null = until the video ends. */
+  endMs: number | null;
+  /** Hotspot as 0..1 fractions of the picture; null = docked above the caption. */
+  x: number | null;
+  y: number | null;
+  /** The viewer already saved this product. */
+  saved?: boolean;
+}
+
+/** A product pin as a creator edits it (includes the destination link). */
+export interface ProductPin {
+  url: string;
+  title: string;
+  startMs: number;
+  endMs: number | null;
+  x?: number | null;
+  y?: number | null;
+}
+
+export interface ProductSuggestion {
+  /** Which connected shop the match is from. */
+  shop?: string;
+  title: string;
+  url: string;
+  image: string;
+  price: string;
+  startMs: number;
+  endMs: number;
+}
+
+export interface SiteInfo {
+  id: string;
+  name: string;
+  slug: string;
+  baseUrl: string;
+  country: string;
+  currency: string;
+}
+
+/** One entry in the viewer's Saved items list. */
+export interface SavedItem {
+  id: string;
+  title: string;
+  url: string;
+  host: string;
+  site: string;
+  videoId: string | null;
+  videoTitle: string | null;
+  poster: string | null;
+  createdAt: string;
 }
 
 export interface Video {
+  /** Products pinned to this video (empty/absent for older videos). */
+  products?: VideoProduct[];
   id: string;
   title: string;
   description: string;
@@ -78,6 +143,8 @@ export interface VisualSearchResult {
   storeName?: string;
   verifiedSeller?: boolean;
   featured?: boolean;
+  /** Which connected shop the listing is from (absent for the demo catalog). */
+  shop?: { id: string; name: string };
   /** Only present for the local perceptual-hash fallback, where it's a real similarity score. */
   match?: number;
 }
@@ -89,6 +156,8 @@ export interface MarketplaceSearchResponse {
   matchedQuery?: string | null;
   /** "See all results" on piitrade.com. */
   browseUrl?: string;
+  /** Which connected shops were searched and which could not be reached this time. */
+  shops?: { searched: Array<{ id: string; name: string; count: number }>; failed: Array<{ id: string; name: string }> };
 }
 
 export interface AppNotification {

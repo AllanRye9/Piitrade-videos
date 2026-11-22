@@ -48,6 +48,9 @@ export interface ProductPin {
   title: string;
   startMs: number;
   endMs: number | null;
+  /** Hotspot (0..1 of the frame). Not editable in the app yet, but sent back unchanged so saving never erases one. */
+  x?: number | null;
+  y?: number | null;
 }
 
 export interface ProductSuggestion {
@@ -149,6 +152,8 @@ export interface VisualSearchResult {
   storeName?: string;
   verifiedSeller?: boolean;
   featured?: boolean;
+  /** Which connected shop the listing is from (absent for the demo catalog). */
+  shop?: { id: string; name: string };
   /** Only present for the local perceptual-hash fallback, where it's a real similarity score. */
   match?: number;
 }
@@ -160,6 +165,8 @@ export interface MarketplaceSearchResponse {
   matchedQuery?: string | null;
   /** "See all results" on piitrade.com. */
   browseUrl?: string;
+  /** Which connected shops were searched and which could not be reached this time. */
+  shops?: { searched: Array<{ id: string; name: string; count: number }>; failed: Array<{ id: string; name: string }> };
 }
 
 export interface AdminUser {

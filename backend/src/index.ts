@@ -1,6 +1,7 @@
 import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
+import { corsOptions } from './lib/cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import multer from 'multer';
@@ -32,25 +33,14 @@ const app = express();
 // is exposed directly, or a larger number for extra proxies (e.g. a CDN in front of nginx).
 app.set('trust proxy', Number(process.env.TRUST_PROXY ?? 1));
 const PORT = Number(process.env.PORT) || 4000;
-const allowedOrigins = process.env.ALLOWED_ORIGIN
-  ? [
-      ...process.env.ALLOWED_ORIGIN.split(',').map((origin) => origin.trim()),
-      'https://localhost',
-      'https://piitrade.com',
-      'https://yotweek.com',
-    ]
-  : true;
 
 // Security headers. Cross-origin resource policy is relaxed for
 // /uploads since video/image files there are meant to be embedded
 // cross-origin (e.g. if the frontend is served from a different host).
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(compression());
-app.use(
-  cors({
-    origin: allowedOrigins,
-  })
-);
+// Browser origins allowed to call the API (see lib/cors.ts). Set ALLOWED_ORIGIN to add more.
+app.use(cors(corsOptions()));
 // The raw bytes are kept for the conversion postback: its HMAC signature is computed over them.
 app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
 

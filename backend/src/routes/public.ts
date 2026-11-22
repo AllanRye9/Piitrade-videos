@@ -3,6 +3,7 @@ import cors from 'cors';
 import { prisma } from '../db';
 import { HttpError } from '../lib/httpError';
 import { normalizeProductUrl } from '../lib/attribution';
+import { resolveFrameAncestors, ShopEmbedRule } from '../lib/embedOrigins';
 import { embedPageHtml, oembedJson, permalinkPageHtml, videoIdFromUrl, widgetScript, PageCtx, PageProduct, PageVideo } from '../lib/embedPages';
 import { resolveAssetUrl } from './videos';
 import { redirectLimiter } from '../middleware/rateLimit';
@@ -29,10 +30,10 @@ function ctxFor(req: Request): PageCtx {
 
 const absolute = (u: string, origin: string) => (/^https?:\/\//i.test(u) ? u : `${origin}${u}`);
 
-async function loadPage(id: string, ctx: PageCtx): Promise<{ video: PageVideo; products: PageProduct[] } | null> {
+async function loadPage(id: string, ctx: PageCtx): Promise<{ video: PageVideo; products: PageProduct[]; embedRules: ShopEmbedRule[] } | null> {
   const v: any = await prisma.video.findUnique({
     where: { id },
-    include: { products: { where: { site: { active: true } }, orderBy: [{ position: 'asc' }, { startMs: 'asc' }] } },
+    include: { products: { where: { site: { active: true } }, orderBy: [{ position: 'asc' }, { startMs: 'asc' }], include: { site: { select: { baseUrl: true, embedOrigins: true } } } } },
   });
   if (!v) return null;
   const profile = v.uploaderSessionId ? await prisma.sessionProfile.findUnique({ where: { sessionId: v.uploaderSessionId }, select: { handle: true } }) : null;
@@ -57,11 +58,13 @@ async function loadPage(id: string, ctx: PageCtx): Promise<{ video: PageVideo; p
       likes: v.likes,
     },
     products: v.products.map((p: any) => ({ id: p.id, title: p.title, host: host(p.url), startMs: p.startMs, endMs: p.endMs ?? null })),
+    // One rule per shop the video carries (not per product), for the embed allow-list.
+    embedRules: [...new Map<string, ShopEmbedRule>(v.products.map((p: any) => [p.site.baseUrl, { baseUrl: p.site.baseUrl, embedOrigins: p.site.embedOrigins }])).values()],
   };
 }
 
-function pageHeaders(res: Response, opts: { framable: boolean }) {
-  const ancestors = opts.framable ? process.env.EMBED_FRAME_ANCESTORS || '*' : "'self'";
+function pageHeaders(res: Response, opts: { framable: boolean; embedRules?: ShopEmbedRule[] }) {
+  const ancestors = opts.framable ? resolveFrameAncestors(process.env.EMBED_FRAME_ANCESTORS, opts.embedRules ?? []) : "'self'";
   res.removeHeader('X-Frame-Options'); // helmet's default would block every third-party iframe
   res.set('Content-Security-Policy', ["default-src 'none'", 'media-src * data: blob:', 'img-src * data:', "style-src 'unsafe-inline'", "script-src 'unsafe-inline'", `frame-ancestors ${ancestors}`, "base-uri 'none'", "form-action 'none'"].join('; '));
   res.set('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -75,7 +78,7 @@ router.get('/embed/:id', redirectLimiter, async (req: Request, res: Response) =>
   const ctx = ctxFor(req);
   const page = await loadPage(req.params.id, ctx);
   if (!page) return void notFound(res);
-  pageHeaders(res, { framable: true });
+  pageHeaders(res, { framable: true, embedRules: page.embedRules });
   res.type('html').send(embedPageHtml(page.video, page.products, ctx));
 });
 

@@ -26,6 +26,9 @@ export function validateListingsResponse(body: unknown): { ok: boolean; issues: 
     if (l?.price === undefined || l?.price === null || (typeof l.price !== 'number' && typeof l.price !== 'string')) {
       issues.push({ level: 'error', message: `${at}.price must be a number or string` });
     }
+    if (l?.url !== undefined && (typeof l.url !== 'string' || !/^https?:\/\//.test(l.url))) {
+      issues.push({ level: 'warning', message: `${at}.url should be an absolute http(s) URL on your website; it will be ignored` });
+    }
     const img = l?.productImages?.[0]?.cdnUrl ?? l?.images?.[0];
     if (typeof img !== 'string' || !/^https?:\/\//.test(img)) issues.push({ level: 'warning', message: `${at} has no image URL (productImages[0].cdnUrl or images[0])` });
   });

@@ -376,6 +376,9 @@ model Site {
   commissionPct  Float    @default(0)
   postbackSecret String
   active         Boolean  @default(true)
+  // Sites allowed to embed videos that carry this shop's products, one origin per line (see lib/embedOrigins.ts).
+  // Empty = this shop does not restrict embedding.
+  embedOrigins   String   @default("")
   createdAt      DateTime @default(now())
 
   products    VideoProduct[]

@@ -1,5 +1,6 @@
 import { HttpError } from './httpError';
 import { listingUrl, searchUrl } from './piitrade';
+import { hostMatchesSite } from './attribution';
 
 /**
  * Client for the Piitrade classifieds marketplace's backend API, used
@@ -43,6 +44,8 @@ import { listingUrl, searchUrl } from './piitrade';
  */
 
 const REQUEST_TIMEOUT_MS = 15_000;
+/** Per-shop budget when several shops are searched at once: a slow shop must not hold up the rest. */
+const SHOP_TIMEOUT_MS = 5_000;
 const DEFAULT_CURRENCY = process.env.MARKETPLACE_DEFAULT_CURRENCY || 'UGX';
 
 /** A listing from piitrade.com as shown on a result card in the video feed. */
@@ -63,25 +66,44 @@ export interface MarketplaceProduct {
   storeName?: string;
   verifiedSeller?: boolean;
   featured?: boolean;
+  /** Which connected shop this listing is from (set by searchSites). */
+  shop?: { id: string; name: string };
 }
 
-function baseUrl(): string {
-  const url = process.env.MARKETPLACE_API;
-  if (!url) throw new HttpError(503, 'Marketplace is not configured (set MARKETPLACE_API)');
+/**
+ * One connected shop whose listing API can be searched (a row of Admin → Shops). Without a target every
+ * function in this file behaves as it always did: it talks to the single MARKETPLACE_API marketplace.
+ */
+export interface ShopTarget {
+  id: string;
+  name: string;
+  /** The shop's website origin; product links must be on this host. */
+  baseUrl: string;
+  /** The shop's listing API base (see docs/LISTING_SPEC.md). */
+  apiBase: string;
+  country: string;
+  currency: string;
+}
+
+function baseUrl(target?: ShopTarget): string {
+  const url = target ? target.apiBase : process.env.MARKETPLACE_API;
+  if (!url) throw new HttpError(503, target ? `${target.name} has no listing API set` : 'Marketplace is not configured (set MARKETPLACE_API)');
   return url.replace(/\/+$/, '');
 }
 
-async function request(path: string, init: RequestInit): Promise<Response> {
+async function request(path: string, init: RequestInit, target?: ShopTarget): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), target ? SHOP_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
+  const who = target ? target.name : 'Piitrade marketplace';
   try {
-    return await fetch(`${baseUrl()}${path}`, { ...init, signal: controller.signal });
+    // A registered shop's API base is admin-entered, so redirects are refused (they could lead to an internal host).
+    return await fetch(`${baseUrl(target)}${path}`, { ...init, ...(target ? { redirect: 'error' as const } : {}), signal: controller.signal });
   } catch (err) {
     if (err instanceof HttpError) throw err;
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new HttpError(504, 'Piitrade marketplace timed out');
+      throw new HttpError(504, `${who} timed out`);
     }
-    throw new HttpError(502, 'Could not reach the Piitrade marketplace');
+    throw new HttpError(502, `Could not reach ${who}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -104,11 +126,11 @@ async function readError(res: Response): Promise<string | undefined> {
  * into that fallback. This is the one place that decides what ends up
  * in a listing's `image` field.
  */
-export function resolveMarketplaceImageUrl(raw: string | null | undefined): string {
+export function resolveMarketplaceImageUrl(raw: string | null | undefined, target?: ShopTarget): string {
   if (!raw) return '';
   if (/^https?:\/\//i.test(raw)) return raw;
   if (raw.startsWith('//')) return `https:${raw}`;
-  const base = baseUrl();
+  const base = baseUrl(target);
   return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
 }
 
@@ -149,6 +171,8 @@ interface RawListing {
   currency?: string;
   status?: string;
   images?: string[];
+  /** Optional absolute product page URL (on the shop's own host). Default: {baseUrl}/listings/{id}. */
+  url?: unknown;
   productImages?: Array<{ cdnUrl: string | null }>;
   // Optional enrichment — names are best-effort, absence is fine.
   location?: unknown;
@@ -163,17 +187,41 @@ interface RawListing {
   storeName?: unknown;
 }
 
-function toResult(l: RawListing): MarketplaceProduct {
+/** UTM tags so a shop's own analytics can attribute visits that came from a video. */
+function withUtm(raw: string): string {
+  const u = new URL(raw);
+  u.searchParams.set('utm_source', 'piitrade_videos');
+  u.searchParams.set('utm_medium', 'video');
+  return u.toString();
+}
+
+/**
+ * Where a result opens. A registered shop may supply its own `url`, but only if it is on the shop's
+ * registered host (a listing can't send viewers somewhere else); otherwise {baseUrl}/listings/{id}.
+ */
+export function shopListingUrl(target: ShopTarget, id: string, explicit?: unknown): string {
+  if (typeof explicit === 'string' && hostMatchesSite(explicit, target.baseUrl)) {
+    try {
+      return withUtm(explicit);
+    } catch {
+      // fall through to the default
+    }
+  }
+  return withUtm(`${target.baseUrl.replace(/\/+$/, '')}/listings/${encodeURIComponent(id)}`);
+}
+
+function toResult(l: RawListing, target?: ShopTarget): MarketplaceProduct {
   const originalPrice = firstNumber(l.originalPrice, l.compareAtPrice);
   const condition = firstString(l.condition);
   return {
-    id: l.id,
+    // Two shops can both have a listing "1", so a shop's results are namespaced (the apps use the id as a list key).
+    id: target ? `${target.id}:${l.id}` : String(l.id),
     name: l.title,
-    price: formatPrice(l.price, l.currency),
-    originalPrice: originalPrice !== undefined && originalPrice > l.price ? formatPrice(originalPrice, l.currency) : undefined,
-    image: resolveMarketplaceImageUrl(l.productImages?.find((img) => img.cdnUrl)?.cdnUrl || l.images?.[0]),
+    price: formatPrice(l.price, l.currency || target?.currency),
+    originalPrice: originalPrice !== undefined && originalPrice > l.price ? formatPrice(originalPrice, l.currency || target?.currency) : undefined,
+    image: resolveMarketplaceImageUrl(l.productImages?.find((img) => img.cdnUrl)?.cdnUrl || l.images?.[0], target),
     description: l.description || '',
-    listingUrl: listingUrl(l.id),
+    listingUrl: target ? shopListingUrl(target, String(l.id), l.url) : listingUrl(l.id),
     location: firstString(l.location, l.city),
     condition: condition ? titleCase(condition) : undefined,
     sellerName: firstString(l.user?.name),
@@ -199,6 +247,8 @@ export interface MarketplaceSearchResultDto {
   storeName?: string;
   verifiedSeller?: boolean;
   featured?: boolean;
+  /** Which connected shop the listing is from; absent for the single-marketplace and demo-catalog paths. */
+  shop?: { id: string; name: string };
   /** Only set by the local perceptual-hash fallback, where it is a real similarity score. */
   match?: number;
 }
@@ -222,6 +272,7 @@ export function toSearchResultDto(p: MarketplaceProduct, category: string): Mark
     storeName: p.storeName,
     verifiedSeller: p.verifiedSeller,
     featured: p.featured,
+    shop: p.shop,
   };
 }
 
@@ -230,17 +281,23 @@ export function browseUrlFor(query: string): string {
   return searchUrl(query);
 }
 
-export async function searchProducts(query: string): Promise<MarketplaceProduct[]> {
+export async function searchProducts(query: string, target?: ShopTarget): Promise<MarketplaceProduct[]> {
   const params = new URLSearchParams({ q: query, sort: 'relevance', limit: '12' });
-  if (process.env.MARKETPLACE_COUNTRY) params.set('country', process.env.MARKETPLACE_COUNTRY);
+  const country = target ? target.country : process.env.MARKETPLACE_COUNTRY;
+  if (country) params.set('country', country);
   const path = `/api/listings?${params.toString()}`;
-  console.log(`[Marketplace] GET ${path}`);
+  const tag = target ? `[Marketplace:${target.name}]` : '[Marketplace]';
+  console.log(`${tag} GET ${path}`);
   const startedAt = Date.now();
 
-  const res = await request(path, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const res = await request(
+    path,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    },
+    target
+  );
   console.log(`[Marketplace] responded ${res.status} in ${Date.now() - startedAt}ms`);
 
   if (!res.ok) {
@@ -249,15 +306,19 @@ export async function searchProducts(query: string): Promise<MarketplaceProduct[
     throw new HttpError(res.status === 401 || res.status === 403 ? res.status : 502, message);
   }
 
-  const data = (await res.json()) as { listings?: RawListing[] };
-  const listings = Array.isArray(data.listings) ? data.listings : [];
+  const data = (await res.json().catch(() => null)) as { listings?: RawListing[] } | null;
+  // Other shops' APIs are not trusted to be well-formed: cap what is read and drop anything unusable.
+  const listings = (Array.isArray(data?.listings) ? data!.listings! : []).slice(0, 24).filter((l) => l && typeof l === 'object' && l.id !== undefined && l.id !== null && typeof l.title === 'string');
 
   // A sold/expired/removed ad is a dead end for someone who just
   // watched a video of it — only surface listings that are live. A
   // listing with no status field at all is assumed live (the search
   // endpoint is itself expected to return active ads).
   const live = listings.filter((l) => !l.status || l.status === 'ACTIVE');
-  const results = live.map(toResult);
+  const results = live.map((l) => {
+    const r = toResult(l, target);
+    return target ? { ...r, shop: { id: target.id, name: target.name } } : r;
+  });
 
   console.log(
     `[Marketplace] ${results.length} live listing(s) for "${query}"` +
@@ -337,12 +398,18 @@ function buildQueryLadder(rawQuery: string): string[] {
   return Array.from(new Set(candidates)).slice(0, MAX_LADDER_ATTEMPTS);
 }
 
-export async function searchProductsWithFallback(rawQuery: string): Promise<MarketplaceSearchOutcome> {
+export async function searchProductsWithFallback(rawQuery: string, target?: ShopTarget, opts?: { deadline?: number }): Promise<MarketplaceSearchOutcome> {
+  // Every shop gets the full ladder (a shorter one misses real matches — see above), but when many shops
+  // are searched at once each one also has a deadline, so a slow shop can't hold the whole search up.
   const ladder = buildQueryLadder(rawQuery);
   const attempts: Array<{ query: string; count: number }> = [];
 
   for (const candidate of ladder) {
-    const results = await searchProducts(candidate);
+    if (opts?.deadline !== undefined && attempts.length > 0 && Date.now() > opts.deadline) {
+      console.log(`[Marketplace] ${target?.name ?? 'marketplace'}: stopped trying shorter queries (time budget used up)`);
+      break;
+    }
+    const results = await searchProducts(candidate, target);
     attempts.push({ query: candidate, count: results.length });
     if (results.length > 0) {
       if (candidate !== ladder[0]) {

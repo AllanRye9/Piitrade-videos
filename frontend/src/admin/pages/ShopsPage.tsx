@@ -14,6 +14,7 @@ function SiteForm({ initial, onClose, onSaved, onCreated }: { initial?: SiteReco
   const [currency, setCurrency] = useState(initial?.currency ?? '');
   const [commissionPct, setCommissionPct] = useState(String(initial?.commissionPct ?? 5));
   const [active, setActive] = useState(initial?.active ?? true);
+  const [embedOrigins, setEmbedOrigins] = useState(initial?.embedOrigins ?? '');
 
   return (
     <FormModal
@@ -21,7 +22,7 @@ function SiteForm({ initial, onClose, onSaved, onCreated }: { initial?: SiteReco
       size="lg"
       onClose={onClose}
       onSubmit={async () => {
-        const data = { name, baseUrl, apiBase, country, currency, commissionPct: Number(commissionPct), active };
+        const data = { name, baseUrl, apiBase, country, currency, commissionPct: Number(commissionPct), embedOrigins, active };
         if (initial) {
           await adminApi.updateSite(initial.id, data);
           toast('Shop updated');
@@ -55,6 +56,16 @@ function SiteForm({ initial, onClose, onSaved, onCreated }: { initial?: SiteReco
           <input required type="number" min={0} max={100} step="0.1" value={commissionPct} onChange={(e) => setCommissionPct(e.target.value)} className={inputCls} />
         </Field>
       </div>
+      <Field label="Allowed embed sites" hint="Optional. One per line, e.g. https://blog.example.com or https://*.example.com. Leave empty to let videos carrying this shop’s products be embedded anywhere. The shop’s own website is always allowed.">
+        <textarea
+          rows={3}
+          value={embedOrigins}
+          onChange={(e) => setEmbedOrigins(e.target.value)}
+          placeholder={'https://blog.example.com\nhttps://*.partner.example'}
+          spellCheck={false}
+          className={`${inputCls} font-mono text-xs`}
+        />
+      </Field>
       <label className="flex items-center gap-2 text-sm text-white/75 select-none">
         <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="accent-brand-orange" /> Active (inactive shops can’t be linked to and their redirects stop)
       </label>

@@ -38,7 +38,7 @@ jobs:
 
       - name: Validate backend URL
         working-directory: .
-        run: test -n "$EXPO_PUBLIC_API_BASE_URL" || { echo 'Set the API_BASE_URL repository variable (Settings → Secrets and variables → Actions → Variables), e.g. https://api.example.com' >&2; exit 1; }
+        run: test -n "$EXPO_PUBLIC_API_BASE_URL" || { echo 'Set the API_BASE_URL repository variable (Settings → Secrets and variables → Actions → Variables), e.g. https://api.yotweek.com' >&2; exit 1; }
 
       - uses: actions/setup-node@v4
         with:
@@ -53,7 +53,7 @@ jobs:
 
       - uses: android-actions/setup-android@v3
         with:
-          packages: platform-tools
+          packages: platform-tools platforms;android-37 build-tools;37.0.0 ndk;27.1.12297006
 
       - uses: gradle/actions/setup-gradle@v4
 

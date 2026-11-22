@@ -21,7 +21,7 @@ import { attachProducts, loadActiveSites, replaceVideoProducts } from '../lib/vi
 import { CleanProduct, validateProducts } from '../lib/shoppable';
 import { extractKeyframes } from '../lib/keyframes';
 import { identifyImage } from '../lib/aiSearch';
-import { searchProductsWithFallback } from '../lib/marketplace';
+import { searchSites, searchConfigured } from '../lib/searchSites';
 import { scoreVideo } from '../lib/feedRank';
 
 const router = Router();
@@ -443,7 +443,8 @@ const createVideo = async (req: Request, res: Response) => {
       cleanup();
       throw new HttpError(400, 'products must be valid JSON', { code: 'INVALID_PRODUCTS' });
     }
-    const checked = validateProducts(parsed, await loadActiveSites(), sourceDuration);
+    // Pin times are relative to the video as posted, so they're checked against the kept section, not the source.
+    const checked = validateProducts(parsed, await loadActiveSites(), keep.length);
     if ('error' in checked) {
       cleanup();
       throw new HttpError(400, checked.error, { code: 'INVALID_PRODUCTS' });
@@ -692,7 +693,7 @@ async function loadOwnedVideo(req: Request): Promise<VideoRecord> {
 router.get('/:id/products', requireAccount, async (req: Request, res: Response) => {
   const video = await loadOwnedVideo(req);
   const rows = await prisma.videoProduct.findMany({ where: { videoId: video.id }, orderBy: [{ position: 'asc' }, { startMs: 'asc' }] });
-  res.json({ products: rows.map((p: any) => ({ id: p.id, url: p.url, title: p.title, startMs: p.startMs, endMs: p.endMs ?? null })) });
+  res.json({ products: rows.map((p: any) => ({ id: p.id, url: p.url, title: p.title, startMs: p.startMs, endMs: p.endMs ?? null, x: p.x ?? null, y: p.y ?? null })) });
 });
 
 // PUT /api/videos/:id/products  { products: [{ url, title?, startMs?, endMs?, x?, y? }] } — creator replaces the pinned products.
@@ -710,7 +711,7 @@ router.put('/:id/products', requireAccount, writeLimiter, async (req: Request, r
 // Cost is bounded: ≤3 AI calls per request, and the heavy-upload rate limit applies.
 router.post('/:id/suggest-products', requireAccount, uploadLimiter, async (req: Request, res: Response) => {
   const video = await loadOwnedVideo(req);
-  if (!process.env.AI_SEARCH || !process.env.MARKETPLACE_API) {
+  if (!process.env.AI_SEARCH || !(await searchConfigured())) {
     throw new HttpError(503, 'Product suggestions are not configured on this server', { code: 'SUGGESTIONS_UNAVAILABLE' });
   }
   const input = /^https?:\/\//i.test(video.filename) ? video.filename : path.join(VIDEOS_DIR, path.basename(video.filename));
@@ -718,15 +719,16 @@ router.post('/:id/suggest-products', requireAccount, uploadLimiter, async (req: 
   const frames = await extractKeyframes(input, durationSec);
 
   const seen = new Set<string>();
-  const suggestions: Array<{ title: string; url: string; image: string; price: string; startMs: number; endMs: number }> = [];
+  const suggestions: Array<{ shop?: string; title: string; url: string; image: string; price: string; startMs: number; endMs: number }> = [];
   for (const f of frames) {
     try {
       const ident = await identifyImage(f.jpeg, 'image/jpeg');
-      const outcome = await searchProductsWithFallback(ident.text);
+      const outcome = await searchSites(ident.text);
       for (const p of outcome.results.slice(0, 3)) {
         if (seen.has(p.listingUrl)) continue;
         seen.add(p.listingUrl);
         suggestions.push({
+          shop: p.shop?.name,
           title: p.name,
           url: p.listingUrl,
           image: p.image,

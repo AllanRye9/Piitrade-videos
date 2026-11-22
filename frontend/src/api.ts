@@ -5,7 +5,7 @@ import type {
   MarketplaceSearchResponse,
   AccountSummary,
   AppNotification,
-  TrendingHashtag,
+  TrendingHashtag, SavedItem, ProductPin, ProductSuggestion, SiteInfo
 } from './types';
 import { API_BASE } from './config';
 
@@ -175,12 +175,30 @@ export const api = {
 
   getVideo: (id: string) => request<{ video: Video }>(`/api/videos/${id}`),
 
-  uploadVideo: (file: File, title: string, description: string, onProgress?: (pct: number) => void, trim?: TrimRange | null, audio?: AudioUpload | null) => {
+  /** Logs a product tap and returns the destination with attribution params (the session id stays in a header, never a URL). */
+  clickThrough: (videoId: string, target: { productId?: string; url?: string }) =>
+    request<{ url: string }>('/api/attribution/click', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, ...target }) }),
+  /** Saves a pinned product to the viewer's list. Idempotent; works for guests (no sign-in prompt). */
+  saveProduct: (videoId: string, productId: string) =>
+    request<{ saved: boolean; id: string; count: number }>('/api/saved-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, productId }) }),
+  getSavedItems: () => request<{ items: SavedItem[] }>('/api/saved-items'),
+  deleteSavedItem: (id: string) => request<void>(`/api/saved-items/${id}`, { method: 'DELETE' }),
+  /** Batched viewing analytics (watch time, tag impressions). Best-effort; see analytics.ts. */
+  sendEvents: (events: unknown[]) =>
+    request<{ accepted: number }>('/api/events', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }) }),
+  getSites: () => request<{ sites: SiteInfo[] }>('/api/marketplace/sites'),
+  getMyProducts: (videoId: string) => request<{ products: ProductPin[] }>(`/api/videos/${videoId}/products`),
+  setProducts: (videoId: string, products: ProductPin[]) =>
+    request<{ products: unknown[] }>(`/api/videos/${videoId}/products`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ products }) }),
+  suggestProducts: (videoId: string) => request<{ suggestions: ProductSuggestion[] }>(`/api/videos/${videoId}/suggest-products`, { method: 'POST' }),
+
+  uploadVideo: (file: File, title: string, description: string, onProgress?: (pct: number) => void, trim?: TrimRange | null, audio?: AudioUpload | null, products?: ProductPin[]) => {
     return new Promise<{ video: Video }>((resolve, reject) => {
       const form = new FormData();
       form.append('video', file);
       form.append('title', title);
       form.append('description', description);
+      if (products && products.length) form.append('products', JSON.stringify(products));
       if (trim) {
         // Fixed to millisecond precision so the server never sees a
         // float like 12.300000000000001.

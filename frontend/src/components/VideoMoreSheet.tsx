@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bookmark, Download, Flag, X, ChevronLeft } from 'lucide-react';
+import { Bookmark, Download, Flag, X, ChevronLeft, ShoppingBag, Tag } from 'lucide-react';
 
 type ReportReason = 'spam' | 'inappropriate' | 'copyright' | 'other';
 
@@ -10,6 +10,10 @@ interface Props {
   onFavorite: () => void;
   onDownload: () => void;
   onReport: (reason: ReportReason) => void;
+  /** The viewer is this video's creator: offer product pinning. */
+  isOwn?: boolean;
+  onPinProducts?: () => void;
+  onOpenSaved: () => void;
   onClose: () => void;
 }
 
@@ -21,7 +25,7 @@ const REASONS: ReportReason[] = ['spam', 'inappropriate', 'copyright', 'other'];
  * that stack was most of the clutter on the right edge. Opens only
  * when asked for, so the video itself stays clear.
  */
-export default function VideoMoreSheet({ favorited, reported, reportBusy, onFavorite, onDownload, onReport, onClose }: Props) {
+export default function VideoMoreSheet({ favorited, reported, reportBusy, onFavorite, onDownload, onReport, isOwn, onPinProducts, onOpenSaved, onClose }: Props) {
   const [view, setView] = useState<'menu' | 'report'>('menu');
   const row = 'flex items-center gap-3.5 w-full px-4 py-3 text-left hover:bg-white/5 disabled:opacity-50';
 
@@ -71,6 +75,33 @@ export default function VideoMoreSheet({ favorited, reported, reportBusy, onFavo
                 <span className="block text-white/40 text-xs">Saved with a piitrade.com watermark. You can also hold the video for 3 seconds.</span>
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                onOpenSaved();
+                onClose();
+              }}
+              className={row}
+            >
+              <ShoppingBag size={20} className="text-white/60" />
+              <span className="text-white text-sm">Saved items</span>
+            </button>
+            {isOwn && onPinProducts && (
+              <button
+                type="button"
+                onClick={() => {
+                  onPinProducts();
+                  onClose();
+                }}
+                className={row}
+              >
+                <Tag size={20} className="text-white/60" />
+                <span>
+                  <span className="block text-white text-sm">Pin products to this video</span>
+                  <span className="block text-white/40 text-xs">Show shop tags at the right moments and earn commission on sales.</span>
+                </span>
+              </button>
+            )}
             <button type="button" onClick={() => setView('report')} disabled={reported} className={row}>
               <Flag size={20} className={reported ? 'text-brand-orange' : 'text-white/60'} fill={reported ? 'currentColor' : 'none'} />
               <span className="text-white text-sm">{reported ? 'Reported — thank you' : 'Report'}</span>

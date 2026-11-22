@@ -3,7 +3,9 @@
  * JS bundle, so set EXPO_PUBLIC_API_BASE_URL in .env (local) or as the
  * API_BASE_URL repository variable (CI — see .github/workflows/android-apk.yml).
  */
-export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
+/** The production backend (Railway, behind this domain). Used when EXPO_PUBLIC_API_BASE_URL isn't set. */
+export const DEFAULT_API_BASE = 'https://api.yotweek.com';
+export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || DEFAULT_API_BASE).replace(/\/$/, '');
 
 /** The public website — used for share links, legal pages and the password-reset link. */
 export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || API_BASE || 'https://piitrade.com').replace(/\/$/, '');
