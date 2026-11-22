@@ -43,6 +43,27 @@ Why: the goal is to sell partners' visibility without interrupting viewing. Tapp
 * **Viewing guardrail + partner funnel** (done after Saved items): `docs/GUARDRAIL.md`. Randomized hold-out, aggregated watch-time stats, a verdict with a confidence range and a minimum-data rule, and the tags-shown → saved → opened → sold funnel per shop (Admin → Attribution).
 * Not covered: the web embed/widget chips still link out through `/go` (there is no saved list on the web); there is no saved-items badge or reminder notification yet.
 
+## Audit against GLOBAL_POSITIONING.md (instruction by instruction)
+
+**Not done**
+* Shopify and WooCommerce plugins (Feature 2).
+* A **shop-facing** dashboard. Shops cannot log in; the numbers are in the admin (Attribution, Payouts) only (Feature 1).
+* Creator earnings on the **web profile** (Feature 1) — app only.
+* Per-shop allow-list for who may embed the player; one global `EMBED_FRAME_ANCESTORS` setting instead (Feature 2).
+* Product tagging inside the **upload flow**: mobile `UploadSheet` "Products" step and web `UploadModal` (Feature 3). Mobile tags after upload via More → "Pin products"; the API already accepts `products` at upload but no screen sends them.
+* Product tags/overlay in the **web consumer app** (`VideoCard`, types, api) — mobile and admin only (Feature 3, "update both together").
+* Hotspot **placement** UI, and the in-video **crop-and-search** fallback on mobile (mobile Find is a text search) (Feature 3).
+* Click-tracking text in the **privacy policy** (`PrivacyPage.tsx` does not mention it; only the Earnings sheet has a note), automated **retention** deletion, and cookie/**consent** handling — documented in `docs/ATTRIBUTION.md`, not implemented (Feature 1).
+* `mobile/src/state/sites.ts` (the app reads shops straight from `GET /api/marketplace/sites` where it needs them).
+* Multi-catalog `searchSites`, a "For you" feed and location boost — the foundation described did not exist in the code provided.
+* EAS preview build and on-device testing.
+
+**Done on purpose differently:** the app logs taps with `POST /api/attribution/click` (a session id must not go in a URL) instead of opening `/go`; embed code is shared with the system share sheet (no `expo-clipboard`); AI suggestions run after upload; a tag tap now *saves* the item first (Saved items) and the product opens later through the attribution redirect.
+
+**Everything else in the document is implemented and tested**, including: `/go` redirect with UTM and click token, HMAC-signed idempotent conversion postbacks, the creator ledger and status workflow, admin permissions and audit log, conversion-aware ranking, embed page, oEmbed, shop widget, SEO permalink and JSON-LD, listing spec and Test connection, deep links, `VideoProduct` with time windows and hotspots, validation, admin product editor, and the mobile overlay.
+
+A real-browser check was run against the real routes behind `helmet` (15 assertions): the widget on a different-origin shop page found the right video from the page's product URL and framed the player; chips showed and hid in their time windows (including "until the end"); chip links went through `/go` and produced a 302 with `pv_click`/UTM and a correct click record; the permalink forbids third-party framing while the embed allows it; oEmbed and JSON-LD present; no script errors. (The script is not shipped.)
+
 ## Verification
 Backend: `tsc` clean; 137 tests, including an HTTP-level flow (click → redirect → signed postback → replay → tamper → expiry → self-referral) against an in-memory database. Schema validated with Prisma's own parser; **all migrations applied on a real PostgreSQL engine (PGlite)** and the new constraints exercised (idempotent order id, restricted shop delete, click survives video delete, product cascade, single primary admin). Mobile: `tsc` clean; pure product logic tested under Node. Admin UI: built and screenshotted.
 
