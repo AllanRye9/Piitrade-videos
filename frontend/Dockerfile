@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 COPY . .
+ARG VITE_API_BASE_URL
+ARG VITE_PIITRADE_SITE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL VITE_PIITRADE_SITE_URL=$VITE_PIITRADE_SITE_URL
 RUN npm run build
 
 FROM nginx:1.27-alpine
