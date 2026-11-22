@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api';
 import Sheet from '../components/Sheet';
 import { Button, ErrorText, Icon, TextField } from '../components/ui';
 import { WEB_URL } from '../config';
+import { openWebLink } from '../lib/links';
 import { useApp } from '../state/AppContext';
 import { colors, space } from '../theme';
 
@@ -45,7 +46,7 @@ export default function AuthSheet({ reason }: { reason?: string }) {
     }
   }
 
-  const title = mode === 'signup' ? 'Create your account' : mode === 'login' ? 'Log in to Yotweek' : 'Reset your password';
+  const title = mode === 'signup' ? 'Create your account' : mode === 'login' ? 'Log in to Piitrade' : 'Reset your password';
 
   return (
     <Sheet title={title} onClose={closeSheet} maxHeight={0.92}>
@@ -110,11 +111,11 @@ export default function AuthSheet({ reason }: { reason?: string }) {
             {mode === 'signup' && (
               <Text style={styles.fine}>
                 By creating an account you agree to our{' '}
-                <Text style={styles.fineLink} onPress={() => Linking.openURL(`${WEB_URL}/legal/terms`)}>
+                <Text style={styles.fineLink} onPress={() => openWebLink(`${WEB_URL}/legal/terms`)}>
                   Terms
                 </Text>{' '}
                 and{' '}
-                <Text style={styles.fineLink} onPress={() => Linking.openURL(`${WEB_URL}/legal/privacy`)}>
+                <Text style={styles.fineLink} onPress={() => openWebLink(`${WEB_URL}/legal/privacy`)}>
                   Privacy Policy
                 </Text>
                 .

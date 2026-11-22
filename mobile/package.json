@@ -1,5 +1,5 @@
 {
-  "name": "yotweek-mobile",
+  "name": "piitrade-videos-mobile",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
@@ -33,7 +33,8 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "prebuild:android": "expo prebuild --platform android --no-install",
-    "apk": "expo prebuild --platform android --no-install --clean && cd android && ./gradlew assembleRelease"
+    "apk": "expo prebuild --platform android --no-install --clean && cd android && ./gradlew assembleRelease",
+    "test:logic": "node --experimental-strip-types --test test/productLogic.test.mjs test/net.test.mjs test/eventQueue.test.mjs"
   },
   "private": true
 }

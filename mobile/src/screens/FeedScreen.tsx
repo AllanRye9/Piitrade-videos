@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useSyncExternalStore, useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
@@ -6,10 +6,11 @@ import type { Video } from '../types';
 import VideoFeed from '../components/VideoFeed';
 import { Avatar, Button, Icon, IconButton } from '../components/ui';
 import { useApp, useProfile } from '../state/AppContext';
+import { networkStore } from '../state/network';
 import { addRecentSearch } from '../state/stores';
 import { colors, radius, space } from '../theme';
 
-type Mode = 'foryou' | 'latest' | 'trending';
+type Mode = 'latest' | 'trending';
 export const BOTTOM_BAR_HEIGHT = 64;
 
 export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: number) => void }) {
@@ -22,29 +23,45 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [mode, setMode] = useState<Mode>('foryou');
+  const [mode, setMode] = useState<Mode>('latest');
   const [searching, setSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [height, setHeight] = useState(0);
 
-  const loadFeed = useCallback(async (m: Mode) => {
-    setError(null);
-    setSearching(false);
+  const offline = useSyncExternalStore(networkStore.subscribe, networkStore.isOffline);
+
+  // `quiet` = a background retry while the offline screen is up: don't clear the error first (that
+  // flashed "No videos yet"), and don't touch the search state.
+  const loadFeed = useCallback(async (m: Mode, quiet = false) => {
+    if (!quiet) {
+      setError(null);
+      setSearching(false);
+    }
     try {
       if (m === 'trending') {
         const res = await api.getTrendingVideos();
         setVideos(res.videos);
         setNextCursor(null);
       } else {
-        const res = await api.listVideos(null, m === 'foryou' ? 'foryou' : 'latest');
+        const res = await api.listVideos();
         setVideos(res.videos);
         setNextCursor(res.nextCursor);
       }
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load videos');
+      if (!quiet) setError(err instanceof Error ? err.message : 'Failed to load videos');
     }
   }, []);
+
+  // While offline with nothing to show, keep trying in the background and recover on our own.
+  useEffect(() => {
+    if (!error || !offline || searching) return;
+    const t = setInterval(() => {
+      loadFeed(mode, true);
+    }, 8000);
+    return () => clearInterval(t);
+  }, [error, offline, searching, mode, loadFeed]);
 
   useEffect(() => {
     setLoading(true);
@@ -58,15 +75,12 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
   }, [signedIn]);
 
   const loadMore = useCallback(() => {
-    if (mode === 'trending' || searching || loadingMore || !nextCursor) return;
+    if (mode !== 'latest' || searching || loadingMore || !nextCursor) return;
     setLoadingMore(true);
     api
-      .listVideos(nextCursor, mode === 'foryou' ? 'foryou' : 'latest')
+      .listVideos(nextCursor)
       .then((res) => {
-        setVideos((prev) => {
-          const seen = new Set(prev.map((v) => v.id));
-          return [...prev, ...res.videos.filter((v) => !seen.has(v.id))];
-        });
+        setVideos((prev) => [...prev, ...res.videos]);
         setNextCursor(res.nextCursor);
       })
       .catch(() => {})
@@ -116,7 +130,15 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
             <ActivityIndicator color={colors.text} />
           </View>
         )}
-        {height > 0 && !loading && error && (
+        {height > 0 && !loading && error && offline && (
+          <View style={styles.center}>
+            <Icon name="cloud-offline-outline" size={44} color={colors.textMuted} />
+            <Text style={styles.offlineTitle}>You’re offline</Text>
+            <Text style={styles.muted}>Check your connection. We’ll reconnect automatically.</Text>
+            <Button title="Try again" variant="secondary" onPress={() => { setLoading(true); loadFeed(mode).finally(() => setLoading(false)); }} style={{ marginTop: space.md }} />
+          </View>
+        )}
+        {height > 0 && !loading && error && !offline && (
           <View style={styles.center}>
             <Text style={styles.muted}>{error}</Text>
             <Button title="Retry" variant="secondary" onPress={() => { setLoading(true); loadFeed(mode).finally(() => setLoading(false)); }} style={{ marginTop: space.md }} />
@@ -140,6 +162,14 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
           />
         )}
       </View>
+
+      {/* Feed already loaded, connection lost: a quiet pill, nothing that blocks the video. */}
+      {offline && !error && videos.length > 0 && (
+        <View pointerEvents="none" style={[styles.offlinePill, { top: insets.top + 58 }]}>
+          <Icon name="cloud-offline-outline" size={14} color={colors.text} />
+          <Text style={styles.offlinePillText}>You’re offline</Text>
+        </View>
+      )}
 
       {/* Top bar */}
       <View pointerEvents="box-none" style={[styles.top, { paddingTop: insets.top + 4 }]}>
@@ -166,9 +196,9 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
           <View style={styles.topRow}>
             <IconButton name="search" label="Search" onPress={() => setSearchOpen(true)} />
             <View style={styles.modes}>
-              {(['foryou', 'latest', 'trending'] as Mode[]).map((m) => (
+              {(['latest', 'trending'] as Mode[]).map((m) => (
                 <Pressable key={m} onPress={() => setMode(m)} hitSlop={6} accessibilityRole="tab" accessibilityState={{ selected: mode === m }}>
-                  <Text style={[styles.mode, mode === m && styles.modeActive]}>{m === 'foryou' ? 'For you' : m === 'latest' ? 'Latest' : 'Trending'}</Text>
+                  <Text style={[styles.mode, mode === m && styles.modeActive]}>{m === 'latest' ? 'Latest' : 'Trending'}</Text>
                   {mode === m && <View style={styles.modeUnderline} />}
                 </Pressable>
               ))}
@@ -223,6 +253,9 @@ function BarItem({ icon, label, onPress, active, badge }: { icon: React.Componen
 }
 
 const styles = StyleSheet.create({
+  offlineTitle: { color: colors.text, fontSize: 18, fontWeight: '800', marginTop: space.md, marginBottom: 4 },
+  offlinePill: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.6)' },
+  offlinePillText: { color: colors.text, fontSize: 12, fontWeight: '700' },
   root: { flex: 1, backgroundColor: '#000' },
   center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', padding: space.xl },
   muted: { color: colors.textMuted, fontSize: 14, textAlign: 'center' },

@@ -19,20 +19,6 @@ export function LocationSelect({ value, onChange, allLabel, className, form }: {
   );
 }
 
-export function SiteSelect({ value, onChange, noneLabel }: { value: string; onChange: (v: string) => void; noneLabel?: string }) {
-  const { data } = useFetch(() => adminApi.siteOptions(), []);
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls} aria-label="Site">
-      <option value="">{noneLabel ?? 'No site'}</option>
-      {data?.sites.map((s) => (
-        <option key={s.id} value={s.id}>
-          {s.name}
-        </option>
-      ))}
-    </select>
-  );
-}
-
 /** Round avatar with initials fallback. */
 export function MiniAvatar({ src, name, size = 32 }: { src?: string | null; name: string; size?: number }) {
   const [broken, setBroken] = useState(false);

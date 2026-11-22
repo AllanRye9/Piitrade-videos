@@ -104,7 +104,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
   }
 
   const title =
-    mode === 'signup' ? 'Create your account' : mode === 'forgot' || mode === 'forgot-sent' ? 'Reset your password' : mode === 'reset' || mode === 'reset-done' ? 'Choose a new password' : 'Log in to Yotweek';
+    mode === 'signup' ? 'Create your account' : mode === 'forgot' || mode === 'forgot-sent' ? 'Reset your password' : mode === 'reset' || mode === 'reset-done' ? 'Choose a new password' : 'Log in to Piitrade';
 
   return (
     <div className="h-dvh w-full bg-black flex items-center justify-center px-5">
@@ -114,7 +114,7 @@ export default function AuthGate({ onAuthenticated }: Props) {
             P
           </div>
           <h1 className="text-white text-xl font-bold">{title}</h1>
-          {mode === 'login' && <p className="text-white/50 text-sm text-center">Watch, then find the products — log in to continue.</p>}
+          {mode === 'login' && <p className="text-white/50 text-sm text-center">Watch, then find it on Piitrade — log in to continue.</p>}
         </div>
 
         {error && <p className="text-red-400 text-sm text-center mb-4">{error}</p>}

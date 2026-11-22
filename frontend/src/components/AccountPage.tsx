@@ -1,6 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useSeo } from '../seo';
 import type { AccountSummary, Video } from '../types';
 import { api } from '../api';
 import { mediaUrl } from '../config';
@@ -45,7 +44,6 @@ function VideoThumb({ video, onOpen }: { video: Video; onOpen: (v: Video) => voi
 
 export default function AccountPage() {
   const { handle } = useParams<{ handle: string }>();
-  useSeo({ title: handle ? `@${handle}` : 'Creator', description: handle ? `Videos by @${handle} on Yotweek.` : undefined, noindex: true });
   const [account, setAccount] = useState<AccountSummary | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);

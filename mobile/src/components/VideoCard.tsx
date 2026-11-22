@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Animated, Easing, GestureResponderEvent, Linking, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Easing, GestureResponderEvent, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
-import type { Video, VideoProductPin } from '../types';
-import { activeAt } from '../lib/productDrafts';
+import type { Video, VideoProduct } from '../types';
+import { activeProducts, frameRect, type Frame } from '../lib/products';
+import { isNetworkError } from '../lib/net';
+import { track } from '../lib/analytics';
+import { OFFLINE_BODY, OFFLINE_TITLE } from '../lib/links';
 import { WEB_URL, mediaUrl } from '../config';
 import { useApp } from '../state/AppContext';
 import { mutedStore, setMuted } from '../state/stores';
 import { colors, space } from '../theme';
 import { Avatar, Icon, formatCount } from './ui';
-import { hostOf } from '../state/sites';
 
 interface Props {
   video: Video;
@@ -113,6 +115,52 @@ function HeartBurst({ x, y, onDone }: { x: number; y: number; onDone: () => void
   );
 }
 
+/**
+ * Product chips for the current moment. Memoised on the active set, so the ~4 position updates per
+ * second re-render this only when a chip actually appears or disappears.
+ * Chips without a hotspot dock above the caption; chips with one sit on the picture at (x, y).
+ */
+const ProductChips = React.memo(function ProductChips({ products, frame, cardW, onOpen, docked, saved }: { products: VideoProduct[]; frame: Frame; cardW: number; onOpen: (p: VideoProduct) => void; docked: boolean; saved: Set<string> }) {
+  const list = products.filter((p) => (p.x === null || p.y === null) === docked);
+  if (list.length === 0) return null;
+  if (docked) {
+    return (
+      <View style={styles.chipRow}>
+        {list.map((p) => {
+          const isSaved = saved.has(p.id);
+          return (
+            <Pressable
+              key={p.id}
+              onPress={() => onOpen(p)}
+              accessibilityRole="button"
+              accessibilityLabel={isSaved ? `${p.title || p.host} is saved. Open saved items` : `Save ${p.title || p.host} for later`}
+              style={[styles.productChip, isSaved && styles.productChipSaved]}
+            >
+              <Icon name={isSaved ? 'checkmark-circle' : 'bookmark-outline'} size={15} color="#fff" />
+              <Text style={styles.productChipText} numberOfLines={1}>{isSaved ? 'Saved' : p.title || 'Save this item'}</Text>
+              <Text style={styles.productChipHost} numberOfLines={1}>{isSaved ? 'View list' : p.host}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    );
+  }
+  return (
+    <>
+      {list.map((p) => {
+        const px = frame.left + (p.x as number) * frame.width;
+        const py = frame.top + (p.y as number) * frame.height;
+        return (
+          <Pressable key={p.id} onPress={() => onOpen(p)} accessibilityRole="button" accessibilityLabel={saved.has(p.id) ? `${p.title || p.host} is saved` : `Save ${p.title || p.host} for later`} style={[styles.hotspot, { left: Math.min(Math.max(8, px - 14), cardW - 160), top: py - 14 }]}>
+            <View style={[styles.hotDot, saved.has(p.id) && { backgroundColor: colors.success }]} />
+            <Text style={styles.hotText} numberOfLines={1}>{saved.has(p.id) ? 'Saved' : p.title || p.host}</Text>
+          </Pressable>
+        );
+      })}
+    </>
+  );
+});
+
 export default function VideoCard({ video, active, preload = false, suspended = false, height, bottomInset = 0 }: Props) {
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -128,14 +176,6 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     p.timeUpdateEventInterval = 0.25;
   });
 
-  // Products pinned to the video; refreshed after the creator edits them.
-  const [products, setProducts] = useState<VideoProductPin[]>(video.products ?? []);
-  const [legacyProduct, setLegacyProduct] = useState(video.product ?? null);
-  const [nowMs, setNowMs] = useState(0);
-  const refreshProducts = useCallback(() => {
-    api.getVideo(video.id).then((r) => { setProducts(r.video.products ?? []); setLegacyProduct(r.video.product ?? null); }).catch(() => {});
-  }, [video.id]);
-
   const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [liked, setLiked] = useState(video.liked);
@@ -149,6 +189,12 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   const [firstFrame, setFirstFrame] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'readyToPlay' | 'error'>('idle');
   const [removed, setRemoved] = useState(false);
+  const watchRef = useRef<{ startedAt: number | null; ms: number }>({ startedAt: null, ms: 0 });
+  const impressedRef = useRef<Set<string>>(new Set());
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const [activeKey, setActiveKey] = useState('');
+  const [savedIds, setSavedIds] = useState<string[]>(() => (video.products ?? []).filter((p) => p.saved).map((p) => p.id));
+  const sortedProducts = useMemo(() => [...(video.products ?? [])].sort((a, b) => a.startMs - b.startMs), [video.products]);
   const [burst, setBurst] = useState<{ x: number; y: number; key: number } | null>(null);
 
   // Pick cover/contain from the real video dimensions (decoder track events), falling back to the poster's.
@@ -161,10 +207,16 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   useEffect(() => {
     if (!active) return;
     const size = player.videoTrack?.size;
-    if (size) setFit(fitFor(size.width, size.height));
+    if (size) {
+      setFit(fitFor(size.width, size.height));
+      setDims({ w: size.width, h: size.height });
+    }
     const sub = player.addListener('videoTrackChange', ({ videoTrack }) => {
       const s = videoTrack?.size;
-      if (s) setFit(fitFor(s.width, s.height));
+      if (s) {
+        setFit(fitFor(s.width, s.height));
+        setDims({ w: s.width, h: s.height });
+      }
     });
     return () => sub.remove();
   }, [active, player, src]);
@@ -189,7 +241,40 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     }
   }, [active, player, src]);
 
+  // ---- Viewing analytics (what feeds the "do tags hurt viewing?" guardrail) ----
+  // One 'watch' event per time this card is the active one, carrying how long it actually played
+  // (paused / covered / backgrounded time doesn't count). Declared BEFORE the play effect so each
+  // activation starts with fresh counters; the flush adds any still-running stretch itself, so the
+  // order of cleanups doesn't matter.
+  useEffect(() => {
+    if (!active) return;
+    watchRef.current = { startedAt: null, ms: 0 };
+    impressedRef.current.clear();
+    return () => {
+      const w = watchRef.current;
+      const ms = w.ms + (w.startedAt !== null ? Date.now() - w.startedAt : 0);
+      w.startedAt = null;
+      if (ms >= 500) {
+        const dur = Math.round((player.duration || video.duration || 0) * 1000);
+        track({ type: 'watch', videoId: video.id, watchedMs: Math.round(ms), durationMs: dur > 0 ? dur : undefined });
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, video.id]);
+
   const shouldPlay = active && !suspended && !paused;
+  useEffect(() => {
+    if (!shouldPlay) return;
+    watchRef.current.startedAt = Date.now();
+    return () => {
+      const w = watchRef.current;
+      if (w.startedAt !== null) {
+        w.ms += Date.now() - w.startedAt;
+        w.startedAt = null;
+      }
+    };
+  }, [shouldPlay]);
+
   useEffect(() => {
     if (shouldPlay) player.play();
     else player.pause();
@@ -220,10 +305,17 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     const sub = player.addListener('timeUpdate', ({ currentTime }) => {
       const d = player.duration || video.duration || 0;
       setProgress(d > 0 ? Math.min(1, currentTime / d) : 0);
-      setNowMs(Math.floor(currentTime * 4) * 250);
+      if (sortedProducts.length) {
+        // Only the *set* of visible chips is state: it changes a few times per video, not every tick.
+        const key = activeProducts(sortedProducts, currentTime * 1000).map((p) => p.id).join(',');
+        setActiveKey((prev) => (prev === key ? prev : key));
+      }
     });
-    return () => sub.remove();
-  }, [active, player, video.duration]);
+    return () => {
+      sub.remove();
+      setActiveKey('');
+    };
+  }, [active, player, video.duration, sortedProducts]);
 
   const retry = useCallback(() => {
     setStatus('loading');
@@ -270,7 +362,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     // Sharing a link is harmless and drives growth — open to guests.
     const url = `${WEB_URL}/v/${video.id}`;
     try {
-      const res = await Share.share({ message: `${video.title || 'Watch this on Yotweek'}\n${url}`, url, title: video.title || 'Video' });
+      const res = await Share.share({ message: `${video.title || 'Watch this on Piitrade Videos'}\n${url}`, url, title: video.title || 'Piitrade video' });
       if (res.action === Share.sharedAction) {
         setShareCount((c) => c + 1);
         api.shareVideo(video.id).catch(() => {});
@@ -320,6 +412,39 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   }
 
   const poster = useMemo(() => mediaUrl(video.poster), [video.poster]);
+  const visibleProducts = useMemo(() => (activeKey ? sortedProducts.filter((p) => activeKey.split(',').includes(p.id)) : []), [activeKey, sortedProducts]);
+  const frame = useMemo(() => frameRect(width, height, dims, fit), [width, height, dims, fit]);
+
+  // A tag counts as "shown" once per viewing, the first time it appears on screen.
+  useEffect(() => {
+    if (!active || suspended) return;
+    for (const p of visibleProducts) {
+      if (impressedRef.current.has(p.id)) continue;
+      impressedRef.current.add(p.id);
+      track({ type: 'chip', videoId: video.id, productId: p.id });
+    }
+  }, [active, suspended, visibleProducts, video.id]);
+  const savedSet = useMemo(() => new Set(savedIds), [savedIds]);
+
+  // Tapping a tag SAVES it and the video keeps playing — nothing opens, nothing pauses, no sign-in
+  // prompt. Tapping an already-saved tag opens the Saved items list (still inside the app).
+  const onChipTap = useCallback(
+    async (p: VideoProduct) => {
+      if (savedIds.includes(p.id)) {
+        openSheet({ type: 'saved' });
+        return;
+      }
+      setSavedIds((ids) => (ids.includes(p.id) ? ids : [...ids, p.id])); // optimistic
+      try {
+        await api.saveProduct(video.id, p.id);
+      } catch (err) {
+        setSavedIds((ids) => ids.filter((x) => x !== p.id));
+        if (isNetworkError(err)) Alert.alert(OFFLINE_TITLE, OFFLINE_BODY);
+        else Alert.alert('Couldn’t save', err instanceof Error ? err.message : 'Please try again.');
+      }
+    },
+    [savedIds, video.id, openSheet]
+  );
   const uploader = video.uploader;
   const showFollowBadge = !!uploader && !uploader.isOwn && !following;
   const hasCaption = !!video.title || !!video.description;
@@ -344,7 +469,11 @@ export default function VideoCard({ video, active, preload = false, suspended = 
 
       {/* The poster stays underneath until the first decoded frame so the swap never flashes black. */}
       {poster && !(active && firstFrame) ? (
-        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={fit} onLoad={(e) => !active && setFit(fitFor(e.source?.width, e.source?.height))} />
+        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={fit} onLoad={(e) => {
+          if (active) return;
+          setFit(fitFor(e.source?.width, e.source?.height));
+          if (e.source?.width && e.source?.height) setDims({ w: e.source.width, h: e.source.height });
+        }} />
       ) : null}
 
       {active || preload ? (
@@ -360,7 +489,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={onSurfacePress}
-        onLongPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true), onProductsChanged: refreshProducts })}
+        onLongPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true) })}
         delayLongPress={450}
         accessibilityLabel={paused ? 'Play video' : 'Pause video'}
       />
@@ -388,6 +517,8 @@ export default function VideoCard({ video, active, preload = false, suspended = 
           </View>
         </View>
       ) : null}
+
+      <ProductChips docked={false} products={visibleProducts} frame={frame} cardW={width} onOpen={onChipTap} saved={savedSet} />
 
       {burst ? <HeartBurst key={burst.key} x={burst.x} y={burst.y} onDone={() => setBurst(null)} /> : null}
 
@@ -423,10 +554,11 @@ export default function VideoCard({ video, active, preload = false, suspended = 
         <RailButton size={sz.icon} a11y="Comments" icon="chatbubble-ellipses-outline" label={formatCount(commentCount)} onPress={onComments} />
         <RailButton size={sz.icon} a11y={saved ? 'Remove bookmark' : 'Bookmark'} icon={saved ? 'bookmark' : 'bookmark-outline'} color={saved ? colors.brandSoft : colors.text} onPress={onSave} />
         <RailButton size={sz.icon} a11y="Share" icon="arrow-redo-outline" label={formatCount(shareCount)} onPress={onShare} />
-        <RailButton size={sz.icon - 4} a11y="More" icon="ellipsis-horizontal" onPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true), onProductsChanged: refreshProducts })} />
+        <RailButton size={sz.icon - 4} a11y="More" icon="ellipsis-horizontal" onPress={() => openSheet({ type: 'more', video, onDeleted: () => setRemoved(true) })} />
       </View>
 
       <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: bottomInset + BOTTOM_MARGIN, paddingRight: RAIL_WIDTH + SIDE_MARGIN * 2 }]}>
+        <ProductChips docked products={visibleProducts} frame={frame} cardW={width} onOpen={onChipTap} saved={savedSet} />
         {uploader ? (
           <Pressable onPress={() => pushPage({ name: 'account', handle: uploader.handle })} accessibilityRole="button" accessibilityLabel={`Open ${uploader.handle}`} hitSlop={6}>
             <Text style={styles.handle} numberOfLines={1}>
@@ -442,31 +574,14 @@ export default function VideoCard({ video, active, preload = false, suspended = 
             </Text>
           </Pressable>
         ) : null}
-        {/* Products for this moment of the video. Links go through /go so the tap is counted. */}
-        {activeAt(products, nowMs).map((p) => (
-          <Pressable key={p.id} onPress={() => Linking.openURL(mediaUrl(p.go) || p.url)} accessibilityRole="link" accessibilityLabel={p.title || `Shop on ${p.site?.name ?? hostOf(p.url)}`} style={styles.shopChip}>
-            <Icon name="cart-outline" size={14} color={colors.text} />
-            <Text style={styles.shopText} numberOfLines={1}>
-              {p.title || `Shop on ${p.site?.name ?? hostOf(p.url)}`}
-            </Text>
-          </Pressable>
-        ))}
-        {products.length === 0 && legacyProduct ? (
-          <Pressable onPress={() => Linking.openURL(legacyProduct.url)} accessibilityRole="link" accessibilityLabel={legacyProduct.title || `Shop on ${video.site?.name ?? hostOf(legacyProduct.url)}`} style={styles.shopChip}>
-            <Icon name="cart-outline" size={14} color={colors.text} />
-            <Text style={styles.shopText} numberOfLines={1}>
-              {legacyProduct.title || `Shop on ${video.site?.name ?? hostOf(legacyProduct.url)}`}
-            </Text>
-          </Pressable>
-        ) : null}
         <Pressable
-          onPress={() => openSheet({ type: 'find', initialQuery: video.hashtags[0] || video.title })}
+          onPress={() => openSheet({ type: 'find', initialQuery: video.hashtags[0] || video.title, videoId: video.id })}
           accessibilityRole="button"
-          accessibilityLabel="Find the products in this video"
+          accessibilityLabel="Find this on Piitrade"
           style={styles.findChip}
         >
           <Icon name="bag-handle-outline" size={14} color={colors.text} />
-          <Text style={styles.findText}>Find products</Text>
+          <Text style={styles.findText}>Find on Piitrade</Text>
         </Pressable>
       </View>
 
@@ -493,8 +608,14 @@ const styles = StyleSheet.create({
   title: { fontWeight: '700' },
   desc: { color: 'rgba(255,255,255,0.95)', fontSize: 14, lineHeight: 19, ...shadow },
   tag: { color: colors.brandSoft, fontWeight: '700' },
-  shopChip: { alignSelf: 'flex-start', maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, height: 32, paddingHorizontal: 14, borderRadius: 16, backgroundColor: colors.brand },
-  shopText: { color: colors.text, fontSize: 13, fontWeight: '800', flexShrink: 1 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  productChip: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%', height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: colors.brand },
+  productChipSaved: { backgroundColor: 'rgba(0,0,0,0.65)', borderWidth: 1, borderColor: colors.success },
+  productChipText: { color: '#fff', fontSize: 13, fontWeight: '800', flexShrink: 1 },
+  productChipHost: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '500' },
+  hotspot: { position: 'absolute', flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: 150, height: 28, paddingLeft: 6, paddingRight: 10, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)' },
+  hotDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: colors.brand, borderWidth: 2, borderColor: '#fff' },
+  hotText: { color: '#fff', fontSize: 12, fontWeight: '700', flexShrink: 1 },
   findChip: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2, height: 30, paddingHorizontal: 12, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.35)' },
   findText: { color: colors.text, fontSize: 12.5, fontWeight: '700' },
   errorCard: { alignItems: 'center', gap: 8, backgroundColor: 'rgba(20,20,20,0.85)', paddingVertical: 18, paddingHorizontal: 24, borderRadius: 16 },

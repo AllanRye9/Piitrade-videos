@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Flag, Film, Globe, LayoutDashboard, LogOut, MapPin, Menu, MessageSquare, ScrollText, ShieldCheck, ShoppingBag, UserCircle, Wallet, Users, X } from 'lucide-react';
+import { Banknote, BarChart3, Flag, Film, LayoutDashboard, LogOut, MapPin, Menu, MessageSquare, ScrollText, ShieldCheck, ShoppingBag, Store, UserCircle, Users, X } from 'lucide-react';
 import { useAdminAuth } from './AdminAuthContext';
 import { ADMIN_BASE } from './paths';
-import { Badge, cx } from './ui';
+import { Badge, PageErrorBoundary, cx } from './ui';
 
 interface NavItem {
   to: string;
@@ -24,9 +24,15 @@ const NAV: Array<{ heading?: string; items: NavItem[] }> = [
       { to: 'comments', label: 'Comments', icon: MessageSquare, permission: 'comments.view' },
       { to: 'reports', label: 'Reports', icon: Flag, permission: 'reports.view' },
       { to: 'products', label: 'Products', icon: ShoppingBag, permission: 'products.view' },
-      { to: 'sites', label: 'Sites', icon: Globe, permission: 'sites.view' },
-      { to: 'earnings', label: 'Earnings', icon: Wallet, permission: 'attribution.view' },
       { to: 'locations', label: 'Locations', icon: MapPin, permission: 'locations.view' },
+    ],
+  },
+  {
+    heading: 'Commerce',
+    items: [
+      { to: 'shops', label: 'Shops', icon: Store, permission: 'sites.view' },
+      { to: 'attribution', label: 'Attribution', icon: BarChart3, permission: 'attribution.view' },
+      { to: 'payouts', label: 'Payouts', icon: Banknote, permission: 'payouts.view' },
     ],
   },
   {
@@ -81,8 +87,8 @@ export default function AdminLayout() {
   const sidebar = (
     <div className="h-full flex flex-col bg-neutral-900 border-r border-white/10">
       <div className="h-14 shrink-0 flex items-center gap-2.5 px-5 border-b border-white/10">
-        <img src="/logo.png" alt="" className="h-7 w-auto" />
-        <span className="text-white font-bold">Yotweek Admin</span>
+        <span className="w-7 h-7 rounded-lg bg-brand-orange grid place-items-center text-white font-extrabold text-sm">P</span>
+        <span className="text-white font-bold">Piitrade Admin</span>
       </div>
       {nav}
       <div className="p-3 border-t border-white/10">
@@ -135,7 +141,9 @@ export default function AdminLayout() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 max-w-[1400px] w-full">
-          <Outlet />
+          <PageErrorBoundary key={location.pathname}>
+            <Outlet />
+          </PageErrorBoundary>
         </main>
       </div>
     </div>

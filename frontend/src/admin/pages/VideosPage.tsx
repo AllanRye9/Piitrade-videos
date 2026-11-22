@@ -1,12 +1,10 @@
-import { ProductDraft, draftsFromOwn, draftsToPayload } from '../../productDrafts';
-import ProductListEditor from '../../components/ProductListEditor';
 import { useEffect, useState } from 'react';
 import { Pencil, Play, Trash2 } from 'lucide-react';
-import { adminApi, VideoRecord } from '../adminApi';
+import { adminApi, ProductPin, VideoRecord } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useDebounced, useFetch } from '../hooks';
 import { mediaUrl } from '../../config';
-import { LocationSelect, SiteSelect, formatDuration } from '../shared';
+import { LocationSelect, formatDuration } from '../shared';
 import {
   Badge, ConfirmDialog, EmptyState, ErrorState, Field, FormModal, IconButton, Modal, PageHeader, Pagination, SearchInput, Select, Spinner, Table, Td, Th, Toolbar, fmtDate, fmtNum, inputCls, useToast,
 } from '../ui';
@@ -81,19 +79,52 @@ function VideoDetail({ video, onClose }: { video: VideoRecord; onClose: () => vo
   );
 }
 
+/** Pinned shop products: each can be limited to a time window of the video. Times are edited in seconds. */
+function ProductsEditor({ value, onChange }: { value: ProductPin[]; onChange: (v: ProductPin[]) => void }) {
+  const set = (i: number, patch: Partial<ProductPin>) => onChange(value.map((p, n) => (n === i ? { ...p, ...patch } : p)));
+  const sec = (ms: number | null) => (ms === null ? '' : String(Math.round(ms / 100) / 10));
+  const ms = (v: string) => (v.trim() === '' ? null : Math.round(Number(v) * 1000));
+  return (
+    <div className="space-y-2">
+      {value.length === 0 && <p className="text-white/40 text-xs">No products pinned. Add a link to a connected shop’s product.</p>}
+      {value.map((p, i) => (
+        <div key={i} className="rounded-lg border border-white/10 p-2.5 space-y-2">
+          <div className="flex gap-2">
+            <input value={p.url} onChange={(e) => set(i, { url: e.target.value })} placeholder="https://shop.example.com/listings/123" className={inputCls} aria-label="Product link" />
+            <IconButton label="Remove product" danger onClick={() => onChange(value.filter((_, n) => n !== i))}><Trash2 size={16} /></IconButton>
+          </div>
+          <div className="grid grid-cols-[1fr_80px_80px] gap-x-2 gap-y-0.5">
+            <span className="text-[10px] uppercase tracking-wide text-white/35">Label</span><span className="text-[10px] uppercase tracking-wide text-white/35">From (s)</span><span className="text-[10px] uppercase tracking-wide text-white/35">To (s)</span>
+            <input value={p.title} onChange={(e) => set(i, { title: e.target.value })} placeholder="Label (optional)" className={inputCls} maxLength={120} aria-label="Label" />
+            <input value={sec(p.startMs)} onChange={(e) => set(i, { startMs: ms(e.target.value) ?? 0 })} placeholder="From s" inputMode="decimal" className={inputCls} aria-label="From (seconds)" />
+            <input value={sec(p.endMs)} onChange={(e) => set(i, { endMs: ms(e.target.value) })} placeholder="To s" inputMode="decimal" className={inputCls} aria-label="To (seconds)" />
+          </div>
+        </div>
+      ))}
+      {value.length < 8 && (
+        <button type="button" onClick={() => onChange([...value, { url: '', title: '', startMs: 0, endMs: null }])} className="text-brand-amber text-sm font-semibold">+ Add product</button>
+      )}
+    </div>
+  );
+}
+
 function EditVideo({ video, onClose, onSaved }: { video: VideoRecord; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [title, setTitle] = useState(video.title);
   const [description, setDescription] = useState(video.description);
   const [locationId, setLocationId] = useState(video.locationId ?? '');
-  const { data: siteData } = useFetch(() => adminApi.siteOptions(), []);
-  const [drafts, setDrafts] = useState<ProductDraft[]>(() => draftsFromOwn(video.products ?? []));
+  const [products, setProducts] = useState<ProductPin[] | null>(null);
+  useEffect(() => {
+    adminApi.getVideoProducts(video.id).then((r) => setProducts(r.products)).catch(() => setProducts([]));
+  }, [video.id]);
   return (
     <FormModal
       title="Edit video"
+      size="lg"
       onClose={onClose}
       onSubmit={async () => {
-        await adminApi.updateVideo(video.id, { title, description, locationId: locationId || null, products: draftsToPayload(drafts) });
+        await adminApi.updateVideo(video.id, { title, description, locationId: locationId || null });
+        if (products) await adminApi.setVideoProducts(video.id, products.filter((p) => p.url.trim()));
         toast('Video updated');
         onSaved();
       }}
@@ -107,9 +138,9 @@ function EditVideo({ video, onClose, onSaved }: { video: VideoRecord; onClose: (
       <Field label="Location">
         <LocationSelect form value={locationId} onChange={setLocationId} />
       </Field>
-      <div className="space-y-2">
-        <div className="text-sm font-medium text-white/80">Products</div>
-        <ProductListEditor value={drafts} onChange={setDrafts} sites={siteData?.sites ?? []} durationSec={video.duration} />
+      <div>
+        <p className="text-white/70 text-xs font-medium mb-1.5">Shop products</p>
+        {products === null ? <p className="text-white/40 text-xs">Loading…</p> : <ProductsEditor value={products} onChange={setProducts} />}
       </div>
     </FormModal>
   );

@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Yotweek",
+    "name": "Piitrade Videos",
     "slug": "piitrade-videos",
-    "scheme": "yotweek",
+    "scheme": "piitrade",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -41,7 +41,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Yotweek needs access to your photos and videos so you can upload them and set a profile picture."
+          "photosPermission": "Piitrade Videos needs access to your photos and videos so you can upload them and set a profile picture."
         }
       ],
       "expo-document-picker",

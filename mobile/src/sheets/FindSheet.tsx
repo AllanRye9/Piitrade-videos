@@ -1,25 +1,28 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { api } from '../api';
-import type { SiteSearchSummary, VisualSearchResult } from '../types';
+import type { VisualSearchResult } from '../types';
 import Sheet from '../components/Sheet';
 import { ErrorText, Icon } from '../components/ui';
 import { mediaUrl } from '../config';
+import { openProduct } from '../lib/products';
+import { openWebLink } from '../lib/links';
 import { useApp } from '../state/AppContext';
-import { useSites } from '../state/sites';
 import { colors, radius, space } from '../theme';
 
-/** "Find products" — type what you saw in the video, get matching listings from every connected shop. */
-export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
+/** "Find on Piitrade" — type what you saw in the video, get matching marketplace listings. */
+export default function FindSheet({ initialQuery, videoId }: { initialQuery?: string; videoId?: string }) {
   const { closeSheet } = useApp();
   const [query, setQuery] = useState((initialQuery || '').replace(/^#/, ''));
   const [results, setResults] = useState<VisualSearchResult[] | null>(null);
   const [browseUrl, setBrowseUrl] = useState<string | null>(null);
-  const [siteSummaries, setSiteSummaries] = useState<SiteSearchSummary[] | null>(null);
-  const connected = useSites();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Taps are logged against this video (so the creator and shop can be credited); with no video
+  // context (shouldn't happen) fall back to opening the link directly.
+  const open = (url: string) => (videoId ? openProduct(videoId, { url }) : openWebLink(url));
 
   const search = useCallback(async (q: string) => {
     if (!q.trim()) return;
@@ -29,7 +32,6 @@ export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
       const res = await api.marketplaceSearch(q.trim());
       setResults(res.results);
       setBrowseUrl(res.browseUrl ?? null);
-      setSiteSummaries(res.sites ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Search failed');
     } finally {
@@ -37,16 +39,13 @@ export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
     }
   }, []);
 
-  // One "See all" link per shop: from the search when it ran, else the connected shops.
-  const seeAll = (siteSummaries && siteSummaries.length > 0 ? siteSummaries : connected).map((s) => ({ key: s.slug, name: s.name, url: s.browseUrl }));
-
   useEffect(() => {
     if (query.trim()) search(query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <Sheet title="Find products" onClose={closeSheet} maxHeight={0.88} fill>
+    <Sheet title="Find on Piitrade" onClose={closeSheet} maxHeight={0.88} fill>
       <View style={styles.searchRow}>
         <View style={styles.box}>
           <Icon name="search" size={18} color={colors.textMuted} />
@@ -59,32 +58,24 @@ export default function FindSheet({ initialQuery }: { initialQuery?: string }) {
         <FlatList
           style={{ flex: 1 }}
           data={results}
-          keyExtractor={(r) => `${r.site?.slug ?? ''}:${r.id}`}
+          keyExtractor={(r) => r.id}
           contentContainerStyle={{ padding: space.lg, gap: space.md }}
-          ListEmptyComponent={<Text style={styles.empty}>No products matched “{query}”.</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>No listings matched “{query}”.</Text>}
           ListFooterComponent={
-            <View>
-              {seeAll.map((s) => (
-                <Pressable key={s.key} onPress={() => Linking.openURL(s.url)} style={styles.browse}>
-                  <Text style={styles.browseText}>See all on {s.name}</Text>
-                </Pressable>
-              ))}
-              {seeAll.length === 0 && browseUrl ? (
-                <Pressable onPress={() => Linking.openURL(browseUrl)} style={styles.browse}>
-                  <Text style={styles.browseText}>See all results</Text>
-                </Pressable>
-              ) : null}
-            </View>
+            browseUrl ? (
+              <Pressable onPress={() => open(browseUrl)} style={styles.browse}>
+                <Text style={styles.browseText}>See all results on Piitrade</Text>
+              </Pressable>
+            ) : undefined
           }
           renderItem={({ item }) => (
-            <Pressable onPress={() => Linking.openURL(item.listingUrl)} style={styles.card}>
+            <Pressable onPress={() => open(item.listingUrl)} style={styles.card}>
               <Image source={{ uri: mediaUrl(item.image) }} style={styles.img} contentFit="cover" />
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={styles.name} numberOfLines={2}>
                   {item.name}
                 </Text>
                 <Text style={styles.price}>{item.price}</Text>
-                {seeAll.length > 1 && item.site ? <Text style={styles.meta}>{item.site.name}</Text> : null}
                 {item.location ? (
                   <Text style={styles.meta} numberOfLines={1}>
                     {item.location}

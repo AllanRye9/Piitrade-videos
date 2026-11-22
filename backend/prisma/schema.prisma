@@ -38,22 +38,18 @@ model Video {
   // Nullable so pre-existing rows (uploaded before this column existed)
   // still read fine — they just have no discoverable uploader.
   uploaderSessionId String?
+  // Client-generated idempotency key for the upload that created this video.
+  uploadKey         String? @unique
+
+  // Shoppable moments: products pinned to this video (see VideoProduct).
+  products          VideoProduct[]
+  clicks            Click[]
+  savedItems        SavedItem[]
+  dailyStats        VideoDailyStat[]
 
   // Optional admin-managed location tag (see Location below).
   locationId     String?
   location       Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
-
-  // The connected marketplace/store this video promotes (see Site below)
-  // and, optionally, the exact product page on it. productUrl must belong
-  // to a registered Site (checked in routes/videos.ts) so videos can't be
-  // used to link anywhere on the internet.
-  siteId         String?
-  site           Site?   @relation(fields: [siteId], references: [id], onDelete: SetNull)
-  productUrl     String?
-  productTitle   String?
-  // The products pinned to this video (the first one is mirrored into
-  // siteId/productUrl/productTitle above for older app builds).
-  products       VideoProduct[]
 
   commentList    Comment[]
   states         UserVideoState[]
@@ -63,7 +59,6 @@ model Video {
   @@index([createdAt])
   @@index([uploaderSessionId])
   @@index([locationId])
-  @@index([siteId])
 }
 
 // A top-level comment or a reply (see parentId). Replies are flattened
@@ -335,7 +330,7 @@ model SessionProfile {
 //
 // This used to link an anonymous browser session to a piitrade.com
 // account so the in-video cart could place orders. piitrade.com is now
-// a classifieds marketplace (no cart, no orders), so Yotweek
+// a classifieds marketplace (no cart, no orders), so Piitrade Videos
 // simply sends viewers to the listing on piitrade.com instead and
 // stores no marketplace credentials at all.
 //
@@ -358,44 +353,40 @@ model MarketplaceLink {
   linkedAt                DateTime @default(now())
 }
 
-// A marketplace / store / website that videos link to — added and managed by
-// admins (Admin → Sites), so nothing about which sites exist is hardcoded.
-//
-// `apiType` says how the app can look products up on it:
-//   "piitrade"  — the site (or its backend, `apiUrl`) exposes the Piitrade
-//                 classifieds API (GET /api/listings?q=…), so "Find products"
-//                 shows live listings from it.
-//   "link-only" — no API: searching just offers a link to the site's own
-//                 search page (`searchPath`).
-// `listingPath` / `searchPath` / `sellPath` are paths on `siteUrl` with
-// {id} / {q} placeholders, e.g. "/listings/{id}" and "/listings?q={q}".
+
+// ---------------------------------------------------------------------------
+// Shops, attribution and the creator ledger (docs/GLOBAL_POSITIONING.md)
+// ---------------------------------------------------------------------------
+
+// A shop/marketplace that videos may link to. Outbound product links are only
+// allowed on a registered, active site's host, and a site reports sales back via
+// a postback signed with its own `postbackSecret`.
 model Site {
-  id          String   @id @default(cuid())
-  name        String
-  slug        String   @unique
-  siteUrl     String
-  apiUrl      String   @default("")
-  apiType     String   @default("piitrade")
-  country     String   @default("")
-  currency    String   @default("")
-  listingPath String   @default("/listings/{id}")
-  searchPath  String   @default("/listings?q={q}")
-  sellPath    String   @default("")
-  active      Boolean  @default(true)
-  position    Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  videos      Video[]
-  // Share of each confirmed sale (in percent) owed to the creator whose video
-  // drove it, and the secret this site signs conversion postbacks with.
-  commissionPct  Float  @default(0)
-  postbackSecret String @default("")
-  videoProducts  VideoProduct[]
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  // Shop origin, e.g. https://piitrade.com — product links must be on this host.
+  baseUrl        String
+  // Listing API base used by "Test connection" (GET {apiBase}/api/listings?...). Optional.
+  apiBase        String   @default("")
+  apiType        String   @default("piitrade")
+  country        String   @default("")
+  currency       String   @default("")
+  // % of each attributed order value owed to the video's creator.
+  commissionPct  Float    @default(0)
+  postbackSecret String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  products    VideoProduct[]
+  clicks      Click[]
+  conversions Conversion[]
+  savedItems  SavedItem[]
+  dailyStats  SiteDailyStat[]
 }
 
-// A product pinned to a video, optionally only for part of it (startMs..endMs)
-// and optionally at a spot on the frame (x/y as fractions 0..1). `url` is always
-// a page on `site` (checked in lib/sites.ts). Replaces the single productUrl.
+// One product pinned to a video, optionally only during [startMs, endMs] and at a
+// hotspot (x, y are 0..1 fractions of the frame).
 model VideoProduct {
   id        String   @id @default(cuid())
   videoId   String
@@ -403,7 +394,9 @@ model VideoProduct {
   siteId    String
   site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
   url       String
-  title     String?
+  // url with tracking params / trailing slash stripped — what the embed widget matches on.
+  urlKey    String
+  title     String   @default("")
   startMs   Int      @default(0)
   endMs     Int?
   x         Float?
@@ -412,50 +405,121 @@ model VideoProduct {
   createdAt DateTime @default(now())
 
   @@index([videoId])
-  @@index([siteId])
-  @@index([url])
+  @@index([urlKey])
 }
 
-// One tap on a "Shop" link, logged by GET /go/:videoId/:productId. `token` is
-// appended to the shop URL (?yw_click=) so the shop can report the sale back.
-// Plain ids (no FKs): a click is history and must outlive the video or site.
+// A logged outbound tap. `token` travels to the shop as ?pv_click= and comes back in the postback.
 model Click {
   id               String   @id @default(cuid())
   token            String   @unique
-  videoId          String
-  productId        String?
+  // Kept (SET NULL) if the video is later deleted — the ledger must outlive it.
+  videoId          String?
+  video            Video?   @relation(fields: [videoId], references: [id], onDelete: SetNull)
   siteId           String
+  site             Site     @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  productId        String?
   creatorSessionId String?
+  // Salted hashes only — never the raw session id or IP.
   viewerHash       String?
+  ipHash           String?
+  url              String
   createdAt        DateTime @default(now())
-  conversions      Conversion[]
 
-  @@index([videoId, createdAt])
+  conversions Conversion[]
+
+  @@index([videoId])
   @@index([siteId, createdAt])
-  @@index([creatorSessionId, createdAt])
-  @@index([viewerHash, productId])
+  @@index([creatorSessionId])
 }
 
-// A sale a shop reported for a click — doubles as the creator's ledger entry.
-// Amounts are in minor units (cents). status: pending -> approved -> paid,
-// or reversed (refund / fraud) from pending or approved.
+// A sale the shop reported for a click. Money is stored in minor units (cents).
 model Conversion {
-  id               String   @id @default(cuid())
-  clickId          String
-  click            Click    @relation(fields: [clickId], references: [id])
-  videoId          String
-  siteId           String
-  creatorSessionId String?
-  externalOrderId  String
-  amountMinor      Int
-  currency         String   @default("")
-  commissionMinor  Int      @default(0)
-  status           String   @default("pending")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default(cuid())
+  clickId         String
+  click           Click    @relation(fields: [clickId], references: [id], onDelete: Restrict)
+  siteId          String
+  site            Site     @relation(fields: [siteId], references: [id], onDelete: Restrict)
+  externalOrderId String
+  amountMinor     BigInt
+  currency        String
+  createdAt       DateTime @default(now())
 
+  payout PayoutEntry?
+
+  // Replaying the same postback must not double-count.
   @@unique([siteId, externalOrderId])
+}
+
+// What is owed to a creator for one conversion. status: pending → approved → paid, or reversed.
+model PayoutEntry {
+  id               String     @id @default(cuid())
+  conversionId     String     @unique
+  conversion       Conversion @relation(fields: [conversionId], references: [id], onDelete: Restrict)
+  creatorSessionId String
+  amountMinor      BigInt
+  currency         String
+  status           String     @default("pending")
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @default(now()) @updatedAt
+
   @@index([creatorSessionId, status])
+}
+
+// A product a viewer saved from a video to look at later ("Saved items"): tapping a product tag saves
+// it without leaving the video. It's a snapshot (url/title), so it survives the creator re-pinning
+// products, and the video link is cleared (SET NULL) rather than the item deleted if the video goes.
+model SavedItem {
+  id        String   @id @default(cuid())
+  sessionId String
+  videoId   String?
+  video     Video?   @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  siteId    String
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  url       String
+  urlKey    String
+  title     String   @default("")
+  createdAt DateTime @default(now())
+
+  // Saving the same product twice is one item.
+  @@unique([sessionId, urlKey])
+  @@index([sessionId, createdAt])
   @@index([siteId, createdAt])
-  @@index([videoId])
+}
+
+// ---------------------------------------------------------------------------
+// Viewing guardrail: do product tags hurt watch time? (docs/GUARDRAIL.md)
+// ---------------------------------------------------------------------------
+
+// Per video, per UTC day, per cohort — sums only, no per-viewer rows. cohort is
+//   exposed  : viewer saw this tagged video's product tags
+//   holdout  : viewer was randomly (deterministically, by hashed session) NOT shown tags
+//   untagged : video has no products (baseline, not a controlled comparison)
+// sumFrac / sumFracSq are sums of each session's watch-through (0..1) and its square, which is
+// everything needed for a mean, variance and significance test without storing every session.
+model VideoDailyStat {
+  id          String   @id @default(cuid())
+  videoId     String
+  video       Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  day         DateTime @db.Date
+  cohort      String
+  sessions    Int      @default(0)
+  completions Int      @default(0)
+  sumWatchMs  BigInt   @default(0)
+  sumFrac     Float    @default(0)
+  sumFracSq   Float    @default(0)
+
+  @@unique([videoId, day, cohort])
+  @@index([day, cohort])
+}
+
+// Product tags shown to viewers, per shop per day (the top of the partner funnel:
+// shown → saved → clicked → sold).
+model SiteDailyStat {
+  id          String   @id @default(cuid())
+  siteId      String
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  day         DateTime @db.Date
+  impressions Int      @default(0)
+
+  @@unique([siteId, day])
 }

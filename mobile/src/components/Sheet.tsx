@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Easing, Keyboard, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { Animated, Dimensions, Easing, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, space } from '../theme';
 import { IconButton } from './ui';
@@ -18,34 +18,12 @@ interface Props {
 const SCREEN_H = Dimensions.get('window').height;
 
 /**
- * Current on-screen keyboard height (0 when hidden). Android only needs this:
- * inside a transparent, edge-to-edge <Modal> the window is NOT resized for the
- * keyboard (adjustResize doesn't apply to the Modal's own window) and
- * KeyboardAvoidingView has no reliable behaviour there, so the sheet is lifted
- * by hand. iOS keeps using KeyboardAvoidingView.
- */
-function useAndroidKeyboardHeight(): number {
-  const [height, setHeight] = useState(0);
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    const show = Keyboard.addListener('keyboardDidShow', (e) => setHeight(e.endCoordinates?.height ?? 0));
-    const hide = Keyboard.addListener('keyboardDidHide', () => setHeight(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
-  return height;
-}
-
-/**
  * The one popup used for upload, profile, settings, sign-in, comments…
  * — a modern bottom sheet: dimmed backdrop (tap to dismiss), grab handle
  * (drag down to dismiss), Android back button support, keyboard-aware.
  */
 export default function Sheet({ title, onClose, children, maxHeight = 0.9, fill, headerRight }: Props) {
   const insets = useSafeAreaInsets();
-  const kb = useAndroidKeyboardHeight();
   const translateY = useRef(new Animated.Value(SCREEN_H)).current;
   const backdrop = useRef(new Animated.Value(0)).current;
   const closing = useRef(false);
@@ -83,12 +61,6 @@ export default function Sheet({ title, onClose, children, maxHeight = 0.9, fill,
     })
   ).current;
 
-  // With the keyboard up the sheet sits on top of it: shrink to the space left
-  // above the keyboard (so the composer stays visible) and drop the bottom safe-area padding.
-  const keyboardOpen = kb > 0;
-  const available = SCREEN_H - kb - insets.top - space.sm;
-  const sheetMax = Math.min(SCREEN_H * maxHeight, keyboardOpen ? available : Infinity);
-
   return (
     <Modal transparent visible animationType="none" onRequestClose={dismiss} statusBarTranslucent navigationBarTranslucent>
       <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -98,8 +70,8 @@ export default function Sheet({ title, onClose, children, maxHeight = 0.9, fill,
         <Animated.View
           style={[
             styles.sheet,
-            { maxHeight: sheetMax, paddingBottom: keyboardOpen ? space.sm : Math.max(insets.bottom, space.lg), marginBottom: keyboardOpen ? kb : 0, transform: [{ translateY }] },
-            fill && { height: sheetMax },
+            { maxHeight: SCREEN_H * maxHeight, paddingBottom: Math.max(insets.bottom, space.lg), transform: [{ translateY }] },
+            fill && { height: SCREEN_H * maxHeight },
           ]}
         >
           <View {...pan.panHandlers} style={styles.headerWrap}>

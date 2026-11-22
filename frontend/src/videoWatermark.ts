@@ -1,5 +1,5 @@
 /**
- * Burns an animated watermark (the shop's / site's own hostname) into a copy of a video,
+ * Burns an animated "piitrade.com" watermark into a copy of a video,
  * entirely client-side, for the Download control (both the tap button
  * and the long-press control in VideoCard.tsx).
  *
@@ -37,9 +37,10 @@ function pickMimeType(): string {
 }
 
 /** Draws one frame of the animated brand mark — a small pulsing dot
- *  next to the label, plus a soft diagonal sweep across the
+ *  next to "piitrade.com", plus a soft diagonal sweep across the
  *  wordmark — onto the given canvas context. `t` is elapsed seconds. */
-function drawWatermarkFrame(ctx: CanvasRenderingContext2D, width: number, height: number, t: number, label: string) {
+function drawWatermarkFrame(ctx: CanvasRenderingContext2D, width: number, height: number, t: number) {
+  const label = 'piitrade.com';
   const fontSize = Math.max(14, Math.round(width * 0.032));
   ctx.save();
   ctx.font = `700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
@@ -119,7 +120,7 @@ function drawWatermarkFrame(ctx: CanvasRenderingContext2D, width: number, height
  * APIs (very old browsers) — callers should fall back to a plain
  * download in that case rather than blocking the feature entirely.
  */
-export function renderWatermarkedVideo(sourceUrl: string, onProgress?: (p: WatermarkProgress) => void, label = window.location.hostname.replace(/^www\./, '')): Promise<WatermarkResult> {
+export function renderWatermarkedVideo(sourceUrl: string, onProgress?: (p: WatermarkProgress) => void): Promise<WatermarkResult> {
   return new Promise((resolve, reject) => {
     if (typeof MediaRecorder === 'undefined' || typeof HTMLCanvasElement.prototype.captureStream !== 'function') {
       reject(new Error('unsupported'));
@@ -194,7 +195,7 @@ export function renderWatermarkedVideo(sourceUrl: string, onProgress?: (p: Water
       const draw = () => {
         if (settled) return;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        drawWatermarkFrame(ctx, canvas.width, canvas.height, video.currentTime, label);
+        drawWatermarkFrame(ctx, canvas.width, canvas.height, video.currentTime);
         if (onProgress && duration > 0) onProgress({ fraction: Math.min(1, video.currentTime / duration) });
         if (!video.ended && !video.paused) {
           rafId = requestAnimationFrame(draw);

@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Video } from '../types';
 import { api, getAccountEmail } from '../api';
-import { useSeo } from '../seo';
-import { mediaUrl } from '../config';
 import VideoCard from './VideoCard';
 import { ArrowLeft } from 'lucide-react';
 
@@ -18,31 +16,6 @@ export default function VideoPermalinkPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const signedIn = !!getAccountEmail();
-
-  // Same tags the server puts in the HTML for crawlers (backend/src/routes/seo.ts), kept in sync here for Googlebot and in-app navigation.
-  const canonical = id ? `/v/${id}` : undefined;
-  const abs = (u: string) => new URL(mediaUrl(u) || u, window.location.origin).toString();
-  useSeo(
-    video
-      ? {
-          title: video.title || 'Video',
-          description: video.description || `Watch "${video.title}" on Yotweek.`,
-          canonical,
-          image: video.poster ? abs(video.poster) : null,
-          ogType: 'video.other',
-          jsonLd: {
-            '@context': 'https://schema.org',
-            '@type': 'VideoObject',
-            name: video.title || 'Untitled video',
-            description: video.description || video.title,
-            thumbnailUrl: video.poster ? [abs(video.poster)] : undefined,
-            uploadDate: video.createdAt,
-            contentUrl: abs(video.url),
-            ...(video.duration ? { duration: `PT${Math.floor(video.duration / 60)}M${Math.round(video.duration % 60)}S` } : {}),
-          },
-        }
-      : { title: error ? 'Video not found' : 'Video', noindex: true }
-  );
 
   useEffect(() => {
     if (!id) return;

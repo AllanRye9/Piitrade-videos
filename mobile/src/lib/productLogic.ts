@@ -1,0 +1,59 @@
+// Pure helpers (no React Native imports) so they can be unit-tested under plain Node.
+// The backend mirror of activeProducts lives in backend/src/lib/shoppable.ts.
+
+export interface Timed {
+  startMs: number;
+  endMs: number | null;
+}
+
+/** Products whose [startMs, endMs) window contains `ms`. No endMs = until the video ends. */
+export function activeProducts<T extends Timed>(products: T[], ms: number): T[] {
+  return products.filter((p) => ms >= p.startMs && (p.endMs === null || p.endMs === undefined || ms < p.endMs));
+}
+
+export interface Frame {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Where the picture actually sits inside the card. With `contain` (landscape/square clips) the video is
+ * letterboxed, so hotspot percentages must be applied to that inner rectangle, not the whole card.
+ * With `cover` the picture fills the card (a little is cropped), so the card is the frame.
+ */
+export function frameRect(cardW: number, cardH: number, dims: { w: number; h: number } | null, fit: 'cover' | 'contain'): Frame {
+  if (fit === 'cover' || !dims || !dims.w || !dims.h) return { left: 0, top: 0, width: cardW, height: cardH };
+  const scale = Math.min(cardW / dims.w, cardH / dims.h);
+  const width = dims.w * scale;
+  const height = dims.h * scale;
+  return { left: (cardW - width) / 2, top: (cardH - height) / 2, width, height };
+}
+
+/** Extracts a video id from piitrade://v/<id>, https://<web host>/v/<id> or /embed/<id>. Anything else → null. */
+export function parseVideoLink(url: string | null | undefined, webUrl: string): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const isApp = u.protocol === 'piitrade:';
+    const isWeb = (u.protocol === 'https:' || u.protocol === 'http:') && u.host === new URL(webUrl).host;
+    if (!isApp && !isWeb) return null;
+    // piitrade://v/<id> parses with host "v"; https://host/v/<id> has pathname "/v/<id>".
+    const path = isApp ? `/${u.host}${u.pathname}` : u.pathname;
+    const m = path.match(/^\/(?:v|embed)\/([^/?#]+)\/?$/);
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function embedSnippet(videoId: string, webUrl: string): string {
+  return `<iframe src="${webUrl}/embed/${encodeURIComponent(videoId)}" width="360" height="640" style="border:0;max-width:100%" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+}
+
+/** Clamp + format a seconds value for the tagging UI ("0:07"). */
+export function clock(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}

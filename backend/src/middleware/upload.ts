@@ -47,7 +47,11 @@ export const uploadImage = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
+    // The MIME type is only a hint (phones send HEIC as image/heic, image/heif, application/octet-stream
+    // or nothing). Reject files that positively claim to be something else; the real check is the
+    // content sniff in lib/image.ts toJpeg().
+    const t = (file.mimetype || '').toLowerCase();
+    if (t && !t.startsWith('image/') && t !== 'application/octet-stream' && t !== 'binary/octet-stream') {
       cb(new HttpError(400, 'Only image files are allowed'));
       return;
     }

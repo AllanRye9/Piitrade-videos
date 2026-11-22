@@ -7,6 +7,7 @@ import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin'
 import { uploadImage } from '../../middleware/upload';
 import { computeImageHash } from '../../lib/phash';
 import { HttpError } from '../../lib/httpError';
+import { toJpeg } from '../../lib/image';
 import { audit } from '../../lib/audit';
 import { PRODUCTS_DIR } from '../../paths';
 
@@ -37,8 +38,7 @@ router.post('/', requirePermission('products.create'), uploadImage.single('image
   if (!name || !price || !category) throw new HttpError(400, 'name, price, and category are required');
 
   const imageFilename = `${uuid()}.jpg`;
-  const sharp = (await import('sharp')).default;
-  const buffer = await sharp(file.buffer).jpeg({ quality: 88 }).toBuffer();
+  const buffer = await toJpeg(file.buffer, { quality: 88 });
   fs.writeFileSync(path.join(PRODUCTS_DIR, imageFilename), buffer);
   const phash = await computeImageHash(buffer);
 
@@ -58,8 +58,7 @@ router.patch('/:id', requirePermission('products.edit'), uploadImage.single('ima
   if (req.body.category !== undefined) data.category = String(req.body.category).trim().slice(0, 80);
 
   if (req.file) {
-    const sharp = (await import('sharp')).default;
-    const buffer = await sharp(req.file.buffer).jpeg({ quality: 88 }).toBuffer();
+    const buffer = await toJpeg(req.file.buffer, { quality: 88 });
     const imageFilename = `${uuid()}.jpg`;
     fs.writeFileSync(path.join(PRODUCTS_DIR, imageFilename), buffer);
     const oldFile = path.join(PRODUCTS_DIR, product.imageFilename);

@@ -32,7 +32,7 @@ export default function App() {
   // 'trending' is a capped, non-paginated top-50 list (see GET
   // /api/videos/trending) — a safe addition alongside the existing
   // cursor-paginated 'latest' feed rather than a replacement for it.
-  const [mode, setMode] = useState<FeedMode>('foryou');
+  const [mode, setMode] = useState<FeedMode>('latest');
   const profile = useSyncExternalStore(subscribeProfile, getProfileState);
 
   // Registered once, here, rather than per-VideoCard — it only needs
@@ -54,12 +54,12 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  function loadAll(m: FeedMode = mode) {
+  function loadAll() {
     setLoading(true);
     setError(null);
     setSearching(false);
     api
-      .listVideos(null, m === 'foryou' ? 'foryou' : 'latest')
+      .listVideos()
       .then((res) => {
         setVideos(res.videos);
         setNextCursor(res.nextCursor);
@@ -83,7 +83,7 @@ export default function App() {
   function switchMode(next: FeedMode) {
     setMode(next);
     if (next === 'trending') loadTrending();
-    else loadAll(next);
+    else loadAll();
   }
 
   // Fetches the next page and appends it — called by VideoFeed once the
@@ -92,22 +92,19 @@ export default function App() {
   // or there's nothing further to fetch — which includes 'trending'
   // mode, a fixed top-50 list with no cursor at all.
   function loadMore() {
-    if (mode === 'trending' || searching || loadingMore || !nextCursor) return;
+    if (mode !== 'latest' || searching || loadingMore || !nextCursor) return;
     setLoadingMore(true);
     api
-      .listVideos(nextCursor, mode === 'foryou' ? 'foryou' : 'latest')
+      .listVideos(nextCursor)
       .then((res) => {
-        setVideos((prev) => {
-          const seen = new Set(prev.map((v) => v.id));
-          return [...prev, ...res.videos.filter((v) => !seen.has(v.id))];
-        });
+        setVideos((prev) => [...prev, ...res.videos]);
         setNextCursor(res.nextCursor);
       })
       .catch(() => {}) // a failed "load more" isn't worth interrupting an otherwise-working feed over
       .finally(() => setLoadingMore(false));
   }
 
-  useEffect(() => loadAll(), []);
+  useEffect(loadAll, []);
 
   function handleSearch(query: string) {
     if (!query) {
@@ -159,7 +156,7 @@ export default function App() {
           {!loading && error && (
             <div className="h-full w-full flex flex-col items-center justify-center text-white/60 text-sm gap-3 px-6 text-center">
               <p>{error}</p>
-              <button type="button" onClick={() => loadAll()} className="text-brand-amber underline">
+              <button type="button" onClick={loadAll} className="text-brand-amber underline">
                 Retry
               </button>
             </div>

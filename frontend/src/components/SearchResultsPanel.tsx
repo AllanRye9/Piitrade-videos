@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import type { SiteSearchSummary, VisualSearchResult } from '../types';
-import { mediaUrl } from '../config';
-import { useSites } from '../sites';
+import type { VisualSearchResult } from '../types';
+import { mediaUrl, piitradeUrl } from '../config';
 import { X, SearchX, Search, ImageOff, MapPin, BadgeCheck, ExternalLink, ShieldCheck } from 'lucide-react';
 
 interface Props {
@@ -13,10 +12,8 @@ interface Props {
    *  originally identified/typed (the marketplace's search shortens a
    *  multi-word phrase until something matches — see backend/src/lib/marketplace.ts). */
   matchedQuery?: string | null;
-  /** "See all results" on the first site with matches (used when `sites` is absent). */
+  /** "See all results" on piitrade.com. */
   browseUrl?: string | null;
-  /** Per-site breakdown from the search, each with its own "See all" link. */
-  sites?: SiteSearchSummary[] | null;
   /** Manual, user-typed search — independent of the AI crop-to-identify flow.
    *  Doubles as a way to directly verify whether an item exists on the
    *  marketplace at all. */
@@ -40,15 +37,14 @@ function ListingImage({ src, alt }: { src: string | undefined; alt: string }) {
 }
 
 /**
- * "Find products" — bottom sheet of listings, from every connected shop,
- * matching what the viewer marked in the video (or typed). The shops are
- * classifieds-style, so there's no cart: each card simply opens the listing
- * on its own site, where the viewer contacts the seller.
+ * "Found on Piitrade" — bottom sheet of classifieds listings matching
+ * what the viewer marked in the video (or typed). piitrade.com is a
+ * classifieds marketplace, so there's no cart: each card simply opens
+ * the listing on piitrade.com, where the viewer contacts the seller.
  * It's a sheet, not a full screen, so the paused video stays visible
  * above it.
  */
-export default function SearchResultsPanel({ loading, error, results, identification, matchedQuery, browseUrl, sites, onManualSearch, onClose }: Props) {
-  const connected = useSites();
+export default function SearchResultsPanel({ loading, error, results, identification, matchedQuery, browseUrl, onManualSearch, onClose }: Props) {
   const [manualQuery, setManualQuery] = useState('');
 
   function submitManualSearch(e: React.FormEvent) {
@@ -58,13 +54,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
   }
 
   const showShortenedNotice = matchedQuery && identification && matchedQuery !== identification;
-  // One "See all" link per shop. Falls back to the connected-sites list (before any search ran) or a single link.
-  const seeAll: Array<{ key: string; name: string; url: string }> =
-    sites && sites.length > 0
-      ? sites.map((s) => ({ key: s.slug, name: s.name, url: s.browseUrl }))
-      : connected.map((s) => ({ key: s.slug, name: s.name, url: s.browseUrl }));
-  const multiSite = (sites?.length ?? connected.length) > 1;
-  const failed = (sites ?? []).filter((s) => s.error);
+  const seeAllUrl = browseUrl || piitradeUrl('/listings');
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center bg-black/60" onClick={onClose}>
@@ -75,7 +65,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
       >
         <div className="flex items-start justify-between gap-3 px-4 pt-3 pb-2">
           <div className="min-w-0">
-            <p className="text-white text-sm font-semibold">Find products</p>
+            <p className="text-white text-sm font-semibold">Find on Piitrade</p>
             {identification && <p className="text-[11px] text-white/50 truncate">Looks like “{identification}”</p>}
           </div>
           <button type="button" onClick={onClose} aria-label="Close results" className="tap-target -mr-2 -mt-1 text-white/60 shrink-0">
@@ -89,7 +79,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
             <input
               value={manualQuery}
               onChange={(e) => setManualQuery(e.target.value)}
-              placeholder="Search shops…"
+              placeholder="Search piitrade.com…"
               className="flex-1 bg-transparent text-white text-sm outline-none focus-visible:outline-none placeholder:text-white/40 min-w-0"
             />
           </div>
@@ -103,7 +93,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
         </form>
 
         <div className="flex-1 overflow-y-auto px-4 pb-3">
-          {loading && <p className="text-white/60 text-sm py-10 text-center">Searching shops…</p>}
+          {loading && <p className="text-white/60 text-sm py-10 text-center">Searching Piitrade…</p>}
           {error && <p className="text-red-400 text-sm py-10 text-center">{error}</p>}
 
           {!loading && !error && showShortenedNotice && (
@@ -116,7 +106,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
                 <SearchX size={26} className="text-white/30" />
               </div>
               <div>
-                <p className="text-white/80 text-sm font-medium">No products found</p>
+                <p className="text-white/80 text-sm font-medium">No listings found</p>
                 <p className="text-white/40 text-xs mt-1">
                   {identification ? `Nothing like “${identification}” is listed right now.` : 'Try a different word, or mark a clearer view of the item.'}
                 </p>
@@ -127,7 +117,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
           {!loading && !error && results && results.length > 0 && (
             <ul className="space-y-2">
               {results.map((r) => (
-                <li key={`${r.site?.slug ?? ''}:${r.id}`}>
+                <li key={r.id}>
                   <a
                     href={r.listingUrl}
                     target="_blank"
@@ -137,7 +127,6 @@ export default function SearchResultsPanel({ loading, error, results, identifica
                     <ListingImage src={mediaUrl(r.image)} alt={r.name} />
                     <div className="min-w-0 flex-1 flex flex-col">
                       <p className="text-white text-sm font-medium line-clamp-2 leading-snug">{r.name}</p>
-                      {multiSite && r.site && <p className="text-[10px] uppercase tracking-wide text-white/40 mt-0.5">{r.site.name}</p>}
                       <p className="mt-1 flex items-baseline gap-2">
                         <span className="text-brand-orange text-sm font-bold">{r.price}</span>
                         {r.originalPrice && <span className="text-white/35 text-[11px] line-through">{r.originalPrice}</span>}
@@ -166,25 +155,14 @@ export default function SearchResultsPanel({ loading, error, results, identifica
         </div>
 
         <div className="safe-bottom border-t border-white/10 px-4 pt-3 pb-3 space-y-2">
-          {failed.length > 0 && (
-            <p className="text-center text-[11px] text-white/40">Couldn’t reach {failed.map((f) => f.name).join(', ')} right now.</p>
-          )}
-          {seeAll.length === 0 && browseUrl && (
-            <a href={browseUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full rounded-full border border-brand-orange text-brand-orange text-sm font-semibold py-2.5 hover:bg-brand-orange/10">
-              See all results <ExternalLink size={14} />
-            </a>
-          )}
-          {seeAll.map((s) => (
-            <a
-              key={s.key}
-              href={s.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full rounded-full border border-brand-orange text-brand-orange text-sm font-semibold py-2.5 hover:bg-brand-orange/10"
-            >
-              See all on {s.name} <ExternalLink size={14} />
-            </a>
-          ))}
+          <a
+            href={seeAllUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full rounded-full border border-brand-orange text-brand-orange text-sm font-semibold py-2.5 hover:bg-brand-orange/10"
+          >
+            See all on piitrade.com <ExternalLink size={14} />
+          </a>
           <p className="flex items-center justify-center gap-1 text-[11px] text-white/35">
             <ShieldCheck size={12} /> Meet in public and inspect before paying.
           </p>

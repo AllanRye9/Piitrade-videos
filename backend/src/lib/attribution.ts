@@ -1,100 +1,104 @@
-/**
- * Pure helpers for click attribution and the creator earnings ledger (no DB,
- * no network) — unit-tested in test/attribution.test.js. The DB-facing routes
- * live in routes/attribution.ts.
- *
- * Flow: a viewer taps Shop → GET /go/:videoId/:productId logs a Click and sends
- * them to the shop with ?yw_click=<token>. When that visitor buys, the shop's
- * server calls POST /api/attribution/conversion (signed with the site's
- * postback secret) with the token; that creates a Conversion, which is the
- * creator's ledger entry (commission = site.commissionPct of the sale).
- */
 import crypto from 'crypto';
 
-export const CLICK_PARAM = 'yw_click';
-/** How long after a click a sale is still credited to the video. */
-export const ATTRIBUTION_WINDOW_DAYS = 30;
-/** Repeat taps on the same product by the same viewer inside this window reuse one click. */
-export const CLICK_DEDUPE_MS = 60_000;
-export const CONVERSION_STATUSES = ['pending', 'approved', 'paid', 'reversed'] as const;
-export type ConversionStatus = (typeof CONVERSION_STATUSES)[number];
+/** Query params that identify a visit rather than a page — dropped when comparing product URLs. */
+const TRACKING_PARAMS = /^(utm_[a-z]+|pv_click|fbclid|gclid|ref)$/i;
 
-export function generateClickToken(): string {
+/** Canonical form of a product URL (host lower-cased, no www/hash/tracking params/trailing slash), or null if not http(s). */
+export function normalizeProductUrl(raw: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+  u.hash = '';
+  for (const k of [...u.searchParams.keys()]) if (TRACKING_PARAMS.test(k)) u.searchParams.delete(k);
+  u.searchParams.sort();
+  const host = u.hostname.toLowerCase().replace(/^www\./, '');
+  const path = u.pathname.replace(/\/+$/, '') || '';
+  const qs = u.searchParams.toString();
+  return `${host}${path}${qs ? `?${qs}` : ''}`;
+}
+
+/** True when `url` is on the shop's host (or one of its subdomains). Prevents the redirect being used against arbitrary sites. */
+export function hostMatchesSite(url: string, siteBaseUrl: string): boolean {
+  try {
+    const h = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+    const base = new URL(siteBaseUrl).hostname.toLowerCase().replace(/^www\./, '');
+    return h === base || h.endsWith(`.${base}`);
+  } catch {
+    return false;
+  }
+}
+
+export function newClickToken(): string {
   return crypto.randomBytes(18).toString('base64url');
 }
 
-/** Adds utm_* and the click token to a shop URL, never overriding params the link already has. */
-export function buildRedirectUrl(productUrl: string, token: string, videoId: string, utmSource: string): string {
-  const url = new URL(productUrl);
-  const set = (k: string, v: string) => {
-    if (!url.searchParams.has(k)) url.searchParams.set(k, v);
-  };
-  set('utm_source', utmSource);
-  set('utm_medium', 'video');
-  set('utm_campaign', `video-${videoId}`);
-  url.searchParams.set(CLICK_PARAM, token);
-  return url.toString();
+const SALT = () => process.env.ATTRIBUTION_SALT || process.env.JWT_SECRET || 'dev-attribution-salt';
+
+/** One-way, salted identifier — stored instead of raw session ids / IP addresses. */
+export function hashId(value: string): string {
+  return crypto.createHash('sha256').update(`${SALT()}:${value}`).digest('hex').slice(0, 32);
 }
 
-/** One-way, daily-rotating viewer fingerprint: lets us de-duplicate taps without storing an IP. */
-export function viewerHash(ip: string, userAgent: string, secret: string, now: Date = new Date()): string {
-  const day = now.toISOString().slice(0, 10);
-  return crypto.createHmac('sha256', secret).update(`${day}|${ip}|${userAgent}`).digest('hex').slice(0, 24);
+/** The destination URL with attribution parameters added (utm + the click token the shop echoes back). */
+export function withClickParams(url: string, p: { token: string; videoId: string }): string {
+  const u = new URL(url);
+  u.searchParams.set('utm_source', 'piitrade_videos');
+  u.searchParams.set('utm_medium', 'video');
+  u.searchParams.set('utm_campaign', p.videoId);
+  u.searchParams.set('pv_click', p.token);
+  return u.toString();
 }
 
-export function signBody(secret: string, raw: Buffer | string): string {
-  return crypto.createHmac('sha256', secret).update(raw).digest('hex');
+// ---------- signed conversion postbacks ----------
+export const POSTBACK_MAX_SKEW_MS = 5 * 60 * 1000;
+
+/** hex HMAC-SHA256 over "<timestamp>.<raw body>" — the timestamp is signed so a captured request can't be replayed later. */
+export function signPostback(secret: string, timestamp: string, rawBody: string): string {
+  return crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
 }
 
-/** Accepts "sha256=<hex>" or bare hex. Constant-time; false for anything malformed. */
-export function verifySignature(secret: string, raw: Buffer | string, header: string | undefined): boolean {
-  if (!secret || !header) return false;
-  const given = header.trim().replace(/^sha256=/i, '').toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(given)) return false;
-  const expected = signBody(secret, raw);
-  return crypto.timingSafeEqual(Buffer.from(given, 'hex'), Buffer.from(expected, 'hex'));
+export function verifyPostback(secret: string, timestamp: string, rawBody: string, signature: string, now = Date.now()): boolean {
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts) || Math.abs(now - ts) > POSTBACK_MAX_SKEW_MS) return false;
+  const given = Buffer.from(signature.replace(/^sha256=/i, '').trim(), 'hex');
+  const expected = Buffer.from(signPostback(secret, timestamp, rawBody), 'hex');
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
-/** Sale amount (e.g. 12.5 or "12.50") → whole minor units (cents). null if not a sane, non-negative amount. */
-export function toMinor(amount: unknown): number | null {
-  const n = typeof amount === 'string' ? Number(amount.trim()) : typeof amount === 'number' ? amount : NaN;
-  if (!Number.isFinite(n) || n < 0 || n > 10_000_000) return null;
-  return Math.round(n * 100);
+export interface ConversionInput {
+  clickToken: string;
+  orderId: string;
+  amount: unknown;
+  currency: string;
 }
 
-export function commissionFor(amountMinor: number, pct: number | undefined | null): number {
-  const p = Number(pct);
-  if (!Number.isFinite(p) || p <= 0) return 0;
-  return Math.round((amountMinor * Math.min(100, p)) / 100);
+export function parseConversion(body: any): ConversionInput | { error: string } {
+  const clickToken = String(body?.clickToken ?? '').trim();
+  const orderId = String(body?.orderId ?? '').trim();
+  const currency = String(body?.currency ?? '').trim().toUpperCase();
+  if (!clickToken || clickToken.length > 100) return { error: 'clickToken is required' };
+  if (!orderId || orderId.length > 120) return { error: 'orderId is required' };
+  if (!/^[A-Z]{3}$/.test(currency)) return { error: 'currency must be a 3-letter ISO code' };
+  return { clickToken, orderId, amount: body?.amount, currency };
 }
 
-const NEXT: Record<ConversionStatus, ConversionStatus[]> = {
+/** Clicks older than this can no longer earn a commission. */
+export const ATTRIBUTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+export const PAYOUT_STATUSES = ['pending', 'approved', 'paid', 'reversed'] as const;
+export type PayoutStatus = (typeof PAYOUT_STATUSES)[number];
+
+/** Allowed status moves — keeps the ledger auditable (a paid entry can only be reversed, never silently reset). */
+const NEXT: Record<PayoutStatus, PayoutStatus[]> = {
   pending: ['approved', 'reversed'],
-  approved: ['paid', 'reversed'],
-  paid: [], // money has left; handle clawbacks outside the app
+  approved: ['paid', 'reversed', 'pending'],
+  paid: ['reversed'],
   reversed: [],
 };
-
 export function canTransition(from: string, to: string): boolean {
-  return (NEXT[from as ConversionStatus] ?? []).includes(to as ConversionStatus);
-}
-
-export function isConversionStatus(v: unknown): v is ConversionStatus {
-  return typeof v === 'string' && (CONVERSION_STATUSES as readonly string[]).includes(v);
-}
-
-export function validCurrency(v: unknown): string | null {
-  const c = String(v ?? '').trim().toUpperCase();
-  return /^[A-Z]{3}$/.test(c) ? c : c === '' ? '' : null;
-}
-
-/** Totals of ledger rows per currency: { UGX: { pending, approved, paid } } in minor units. */
-export function sumByCurrency(rows: Array<{ currency: string; status: string; commissionMinor: number }>): Record<string, { pending: number; approved: number; paid: number }> {
-  const out: Record<string, { pending: number; approved: number; paid: number }> = {};
-  for (const r of rows) {
-    if (r.status !== 'pending' && r.status !== 'approved' && r.status !== 'paid') continue; // reversed earns nothing
-    const key = r.currency || '—';
-    (out[key] ??= { pending: 0, approved: 0, paid: 0 })[r.status] += r.commissionMinor;
-  }
-  return out;
+  return (NEXT as Record<string, string[]>)[from]?.includes(to) ?? false;
 }

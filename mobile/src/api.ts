@@ -1,4 +1,6 @@
-import type { Video, Comment, MarketplaceSearchResponse, AccountSummary, AppNotification, TrendingHashtag, SiteInfo, ProductPayload, OwnProduct, ProductSuggestion, Earnings } from './types';
+import type { SavedItem, Video, Comment, MarketplaceSearchResponse, AccountSummary, AppNotification, TrendingHashtag, Earnings, ProductPin, ProductSuggestion, SiteInfo } from './types';
+import { fetchWithTimeout, isNetworkError } from './lib/net';
+import { setOffline } from './state/network';
 import { API_BASE } from './config';
 import { getSessionId } from './lib/session';
 
@@ -19,15 +21,6 @@ export interface LocalFile {
   uri: string;
   name: string;
   type: string;
-}
-
-/** The site / product page a video promotes — all optional. */
-export interface VideoLink {
-  siteId?: string;
-  productUrl?: string;
-  productTitle?: string;
-  /** Several products, each optionally timed. Takes precedence over the single link above. */
-  products?: ProductPayload[];
 }
 
 export interface AudioUpload {
@@ -51,10 +44,17 @@ export function setSignInRequiredHandler(fn: (() => void) | null) {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: { ...(options.headers || {}), 'X-Session-Id': getSessionId() },
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(fetch, `${API_BASE}${path}`, {
+      ...options,
+      headers: { ...(options.headers || {}), 'X-Session-Id': getSessionId() },
+    });
+  } catch (err) {
+    if (isNetworkError(err)) setOffline(true);
+    throw err;
+  }
+  setOffline(false); // the server answered (even with an error status), so we're online
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     if (res.status === 401 && body.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
@@ -71,10 +71,8 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const api = {
-  listVideos: (cursor?: string | null, sort: 'latest' | 'foryou' = 'latest') => {
-    const qs = [cursor ? `cursor=${encodeURIComponent(cursor)}` : '', sort === 'foryou' ? 'sort=foryou' : ''].filter(Boolean).join('&');
-    return request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${qs ? `?${qs}` : ''}`);
-  },
+  listVideos: (cursor?: string | null) =>
+    request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
   getTrendingVideos: () => request<{ videos: Video[] }>('/api/videos/trending'),
   searchVideos: (q: string) => request<{ videos: Video[] }>(`/api/videos/search?q=${encodeURIComponent(q)}`),
   getHashtagVideos: (tag: string, cursor?: string | null) =>
@@ -88,6 +86,23 @@ export const api = {
   /** Counts one view per session per video (server de-duplicates). Fire-and-forget. */
   recordView: (id: string) => request<{ counted: boolean }>(`/api/videos/${id}/view`, { method: 'POST' }),
   deleteVideo: (id: string) => request<void>(`/api/videos/${id}`, { method: 'DELETE' }),
+  deleteComment: (videoId: string, commentId: string) => request<{ comments: number }>(`/api/videos/${videoId}/comments/${commentId}`, { method: 'DELETE' }),
+  /** Logs a product tap and returns the destination with attribution params (the session id stays in a header, never a URL). */
+  clickThrough: (videoId: string, target: { productId?: string; url?: string }) =>
+    request<{ url: string }>('/api/attribution/click', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, ...target }) }),
+  /** Saves a pinned product to the viewer's list. Idempotent; works for guests (no sign-in prompt). */
+  saveProduct: (videoId: string, productId: string) =>
+    request<{ saved: boolean; id: string; count: number }>('/api/saved-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, productId }) }),
+  getSavedItems: () => request<{ items: SavedItem[] }>('/api/saved-items'),
+  deleteSavedItem: (id: string) => request<void>(`/api/saved-items/${id}`, { method: 'DELETE' }),
+  /** Batched viewing analytics (watch time, tag impressions). Best-effort; see lib/analytics.ts. */
+  sendEvents: (events: unknown[]) =>
+    request<{ accepted: number }>('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }) }),
+  getEarnings: () => request<Earnings>('/api/attribution/earnings'),
+  getSites: () => request<{ sites: SiteInfo[] }>('/api/marketplace/sites'),
+  getMyProducts: (videoId: string) => request<{ products: ProductPin[] }>(`/api/videos/${videoId}/products`),
+  setProducts: (videoId: string, products: ProductPin[]) => request<{ products: unknown[] }>(`/api/videos/${videoId}/products`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ products }) }),
+  suggestProducts: (videoId: string) => request<{ suggestions: ProductSuggestion[] }>(`/api/videos/${videoId}/suggest-products`, { method: 'POST' }),
   shareVideo: (id: string) => request<{ shares: number }>(`/api/videos/${id}/share`, { method: 'POST' }),
 
   uploadVideo: (
@@ -97,7 +112,8 @@ export const api = {
     onProgress?: (pct: number) => void,
     trim?: TrimRange | null,
     audio?: AudioUpload | null,
-    link?: VideoLink | null
+    idempotencyKey?: string,
+    products?: ProductPin[]
   ) =>
     new Promise<{ video: Video }>((resolve, reject) => {
       const form = new FormData();
@@ -105,12 +121,7 @@ export const api = {
       form.append('video', file as unknown as Blob);
       form.append('title', title);
       form.append('description', description);
-      if (link?.products?.length) form.append('products', JSON.stringify(link.products));
-      else if (link?.siteId) form.append('siteId', link.siteId);
-      if (!link?.products?.length && link?.productUrl) {
-        form.append('productUrl', link.productUrl);
-        if (link.productTitle) form.append('productTitle', link.productTitle);
-      }
+      if (products && products.length) form.append('products', JSON.stringify(products));
       if (trim) {
         form.append('trimStart', trim.start.toFixed(3));
         form.append('trimEnd', trim.end.toFixed(3));
@@ -124,6 +135,9 @@ export const api = {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE}/api/videos`);
       xhr.setRequestHeader('X-Session-Id', getSessionId());
+      // Same key on every retry of this upload, so a retry after a dropped connection returns the
+      // video the server already created instead of posting a duplicate.
+      if (idempotencyKey) xhr.setRequestHeader('X-Idempotency-Key', idempotencyKey);
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
       };
@@ -155,13 +169,6 @@ export const api = {
   postComment: (id: string, text: string, author?: string, parentId?: string) =>
     request<{ comment: Comment; comments: number }>(`/api/videos/${id}/comments`, json('POST', { text, author, parentId })),
 
-  listSites: () => request<{ sites: SiteInfo[] }>('/api/marketplace/sites'),
-
-  // Products pinned to your own video, AI suggestions from a few of its frames, and your earnings.
-  getMyProducts: (id: string) => request<{ products: OwnProduct[]; max: number }>(`/api/videos/${id}/products`),
-  saveMyProducts: (id: string, products: ProductPayload[]) => request<{ products: OwnProduct[] }>(`/api/videos/${id}/products`, json('PUT', { products })),
-  suggestProducts: (id: string) => request<{ suggestions: ProductSuggestion[] }>(`/api/videos/${id}/suggest-products`, { method: 'POST' }),
-  getEarnings: () => request<Earnings>('/api/earnings'),
   marketplaceSearch: (query: string) => request<MarketplaceSearchResponse>(`/api/marketplace/search?q=${encodeURIComponent(query)}`),
 
   getProfile: () => request<{ avatar: string | null; displayName: string | null; handle: string | null; bio: string | null }>('/api/profile'),

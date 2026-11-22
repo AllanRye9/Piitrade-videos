@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { ApiError, AudioUpload, VideoLink, LocalFile, TrimRange, api } from '../api';
+import { ApiError, AudioUpload, LocalFile, TrimRange, api } from '../api';
 import type { Video } from '../types';
 import { MAX_VIDEO_SECONDS } from '../config';
 
@@ -25,7 +25,6 @@ export interface UploadParams {
   description: string;
   trim: TrimRange | null;
   audio: AudioUpload | null;
-  link?: VideoLink | null;
   draft: UploadDraft;
 }
 
@@ -43,6 +42,12 @@ const IDLE: UploadState = { phase: 'idle', progress: 0, title: '', error: null, 
 
 let state: UploadState = IDLE;
 let lastParams: UploadParams | null = null;
+let lastKey: string | null = null;
+
+/** Unique per upload attempt (not a secret — it only de-duplicates retries). */
+function newUploadKey(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 12)}`;
+}
 const listeners = new Set<() => void>();
 
 function set(patch: Partial<UploadState>) {
@@ -50,14 +55,16 @@ function set(patch: Partial<UploadState>) {
   listeners.forEach((l) => l());
 }
 
-export function startUpload(params: UploadParams, onDone?: (v: Video) => void): void {
+export function startUpload(params: UploadParams, onDone?: (v: Video) => void, key?: string): void {
   if (state.phase === 'uploading' || state.phase === 'processing') return;
   lastParams = params;
+  lastKey = key ?? newUploadKey();
   set({ ...IDLE, phase: 'uploading', title: params.title });
   api
-    .uploadVideo(params.file, params.title, params.description, (pct) => set({ progress: pct, phase: pct >= 100 ? 'processing' : 'uploading' }), params.trim, params.audio, params.link)
+    .uploadVideo(params.file, params.title, params.description, (pct) => set({ progress: pct, phase: pct >= 100 ? 'processing' : 'uploading' }), params.trim, params.audio, lastKey ?? undefined)
     .then((res) => {
       lastParams = null;
+      lastKey = null;
       set({ phase: 'done', progress: 100, video: res.video });
       onDone?.(res.video);
     })
@@ -76,12 +83,13 @@ export function startUpload(params: UploadParams, onDone?: (v: Video) => void): 
 
 export function retryUpload(): void {
   if (state.phase !== 'error' || !lastParams || state.tooLongDraft) return;
-  startUpload(lastParams);
+  startUpload(lastParams, undefined, lastKey ?? undefined); // same key → no duplicate if the first attempt actually landed
 }
 
 export function dismissUpload(): void {
   if (state.phase === 'uploading' || state.phase === 'processing') return;
   lastParams = null;
+  lastKey = null;
   set(IDLE);
 }
 

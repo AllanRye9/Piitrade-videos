@@ -13,7 +13,7 @@
 export interface ResourceDef {
   key: string;
   label: string;
-  actions: Array<'view' | 'create' | 'edit' | 'delete'>;
+  actions: Array<'view' | 'create' | 'edit' | 'delete' | 'manage'>;
 }
 
 export const RESOURCES: ResourceDef[] = [
@@ -23,8 +23,9 @@ export const RESOURCES: ResourceDef[] = [
   { key: 'reports', label: 'Reports (moderation)', actions: ['view', 'delete'] },
   { key: 'products', label: 'Products', actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'locations', label: 'Locations', actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'sites', label: 'Sites (linked marketplaces)', actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'attribution', label: 'Attribution & payouts (view stats; edit = approve / pay / reverse)', actions: ['view', 'edit'] },
+  { key: 'sites', label: 'Shops (sites)', actions: ['view', 'create', 'edit', 'delete'] },
+  { key: 'attribution', label: 'Attribution reports', actions: ['view'] },
+  { key: 'payouts', label: 'Creator payouts', actions: ['view', 'manage'] },
 ];
 
 export const ALL_PERMISSIONS: string[] = RESOURCES.flatMap((r) => r.actions.map((a) => `${r.key}.${a}`));

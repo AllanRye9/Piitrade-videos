@@ -156,23 +156,37 @@ router.post('/:handle/follow', requireAccount, writeLimiter, async (req: Request
   if (!profile) throw new HttpError(404, 'Account not found');
   if (profile.sessionId === followerSessionId) throw new HttpError(400, "You can't follow your own account");
 
-  const key = { followerSessionId_followingSessionId: { followerSessionId, followingSessionId: profile.sessionId } };
-  const existing = await prisma.follow.findUnique({ where: key });
+  const pair = { followerSessionId, followingSessionId: profile.sessionId };
+  const existing = await prisma.follow.findUnique({ where: { followerSessionId_followingSessionId: pair } });
 
+  let following: boolean;
   if (existing) {
-    await prisma.follow.delete({ where: key });
+    // deleteMany (not delete): if a concurrent tap already removed the row this is a no-op instead of a 500.
+    await prisma.follow.deleteMany({ where: pair });
+    following = false;
   } else {
-    await prisma.follow.create({ data: { followerSessionId, followingSessionId: profile.sessionId } });
-    // Notify the followed account — but not on unfollow, and this
-    // branch only runs when `existing` was null, i.e. this is a new
-    // follow, not a repeat toggle back to the same state.
-    await prisma.notification.create({
-      data: { recipientSessionId: profile.sessionId, type: 'follow', actorSessionId: followerSessionId },
-    });
+    try {
+      await prisma.follow.create({ data: pair });
+      following = true;
+      // Notify the followed account once per follower. Toggling follow/unfollow/follow used to send a
+      // fresh notification every time, which let one person flood someone's inbox.
+      const alreadyNotified = await prisma.notification.findFirst({
+        where: { recipientSessionId: profile.sessionId, type: 'follow', actorSessionId: followerSessionId },
+        select: { id: true },
+      });
+      if (!alreadyNotified) {
+        await prisma.notification.create({ data: { recipientSessionId: profile.sessionId, type: 'follow', actorSessionId: followerSessionId } });
+      }
+    } catch (err: any) {
+      // Two simultaneous taps both saw "not following" — the loser hits the unique key. The end state
+      // is "following", which is what both taps asked for.
+      if (err?.code === 'P2002') following = true;
+      else throw err;
+    }
   }
 
   const followersCount = await prisma.follow.count({ where: { followingSessionId: profile.sessionId } });
-  res.json({ following: !existing, followersCount });
+  res.json({ following, followersCount });
 });
 
 export default router;

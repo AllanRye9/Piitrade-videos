@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bookmark, Download, Flag, X, ChevronLeft, ShoppingBag } from 'lucide-react';
+import { Bookmark, Download, Flag, X, ChevronLeft } from 'lucide-react';
 
 type ReportReason = 'spam' | 'inappropriate' | 'copyright' | 'other';
 
@@ -11,8 +11,6 @@ interface Props {
   onDownload: () => void;
   onReport: (reason: ReportReason) => void;
   onClose: () => void;
-  /** Only passed for the creator's own videos. */
-  onEditProducts?: () => void;
 }
 
 const REASONS: ReportReason[] = ['spam', 'inappropriate', 'copyright', 'other'];
@@ -23,7 +21,7 @@ const REASONS: ReportReason[] = ['spam', 'inappropriate', 'copyright', 'other'];
  * that stack was most of the clutter on the right edge. Opens only
  * when asked for, so the video itself stays clear.
  */
-export default function VideoMoreSheet({ favorited, reported, reportBusy, onFavorite, onDownload, onReport, onClose, onEditProducts }: Props) {
+export default function VideoMoreSheet({ favorited, reported, reportBusy, onFavorite, onDownload, onReport, onClose }: Props) {
   const [view, setView] = useState<'menu' | 'report'>('menu');
   const row = 'flex items-center gap-3.5 w-full px-4 py-3 text-left hover:bg-white/5 disabled:opacity-50';
 
@@ -48,19 +46,6 @@ export default function VideoMoreSheet({ favorited, reported, reportBusy, onFavo
 
         {view === 'menu' ? (
           <div className="py-1">
-            {onEditProducts && (
-              <button
-                type="button"
-                onClick={() => {
-                  onEditProducts();
-                  onClose();
-                }}
-                className={row}
-              >
-                <ShoppingBag size={20} className="text-brand-orange" />
-                <span className="text-white text-sm">Products in this video</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {
@@ -83,7 +68,7 @@ export default function VideoMoreSheet({ favorited, reported, reportBusy, onFavo
               <Download size={20} className="text-white/60" />
               <span>
                 <span className="block text-white text-sm">Download</span>
-                <span className="block text-white/40 text-xs">Saved with a watermark. You can also hold the video for 3 seconds.</span>
+                <span className="block text-white/40 text-xs">Saved with a piitrade.com watermark. You can also hold the video for 3 seconds.</span>
               </span>
             </button>
             <button type="button" onClick={() => setView('report')} disabled={reported} className={row}>

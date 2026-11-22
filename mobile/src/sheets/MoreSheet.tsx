@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { api } from '../api';
+import { embedSnippet } from '../lib/products';
 import type { Video } from '../types';
 import Sheet from '../components/Sheet';
 import { Icon } from '../components/ui';
@@ -14,8 +15,8 @@ const REASONS: { id: 'spam' | 'inappropriate' | 'copyright' | 'other'; label: st
   { id: 'other', label: 'Something else' },
 ];
 
-export default function MoreSheet({ video, onDeleted, onProductsChanged }: { video: Video; onDeleted?: () => void; onProductsChanged?: () => void }) {
-  const { closeSheet, requireAuth, openSheet } = useApp();
+export default function MoreSheet({ video, onDeleted }: { video: Video; onDeleted?: () => void }) {
+  const { closeSheet, openSheet, requireAuth } = useApp();
   const [step, setStep] = useState<'menu' | 'report' | 'done' | 'confirmDelete'>('menu');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -50,9 +51,15 @@ export default function MoreSheet({ video, onDeleted, onProductsChanged }: { vid
     <Sheet title={step === 'report' ? 'Report video' : step === 'confirmDelete' ? 'Delete video?' : 'More'} onClose={closeSheet} maxHeight={0.7}>
       <View style={styles.body}>
         {step === 'menu' && video.uploader?.isOwn && (
-          <Pressable style={styles.item} onPress={() => { closeSheet(); openSheet({ type: 'products', video, onSaved: onProductsChanged }); }}>
-            <Icon name="bag-handle-outline" color={colors.brandSoft} />
-            <Text style={styles.itemText}>Products in this video</Text>
+          <Pressable style={styles.item} onPress={() => openSheet({ type: 'products', video })}>
+            <Icon name="bag-handle-outline" />
+            <Text style={styles.itemText}>Pin products to this video</Text>
+          </Pressable>
+        )}
+        {step === 'menu' && video.uploader?.isOwn && (
+          <Pressable style={styles.item} onPress={() => Share.share({ message: embedSnippet(video.id) }).catch(() => {})}>
+            <Icon name="code-slash-outline" />
+            <Text style={styles.itemText}>Share embed code</Text>
           </Pressable>
         )}
         {step === 'menu' && video.uploader?.isOwn && (

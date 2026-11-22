@@ -45,3 +45,36 @@ export const authLimiter = rateLimit({
   keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
   message: { error: 'Too many attempts — please try again later.' },
 });
+
+// Outbound product redirects (/go): public, unauthenticated, hit by embeds and widgets on
+// third-party pages, so limit by IP. Generous enough for real browsing, tight enough that the
+// click log can't be flooded.
+export const redirectLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
+  message: { error: 'Too many requests — please slow down.' },
+});
+
+// Shop → us conversion postbacks. Authenticated by HMAC signature; this only caps abuse of the endpoint itself.
+export const postbackLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
+  message: { error: 'Too many requests.' },
+});
+
+// Analytics batches from the app (one every ~10 s while watching). Keyed by session like the other
+// write limiters; generous for normal use, tight enough that nobody can flood the stats tables.
+export const eventsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.header('x-session-id')?.trim() || (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
+  message: { error: 'Too many requests.' },
+});

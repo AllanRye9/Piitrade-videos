@@ -33,18 +33,10 @@ services:
       # the real, live Piitrade identification worker and marketplace.
       AI_SEARCH: ${AI_SEARCH:-https://apkit.allan-rye-999.workers.dev}
       AI_SEARCH_API_KEY: ${AI_SEARCH_API_KEY:-}
-      # Shops are managed in Admin -> Sites. These are only a one-time seed for
-      # an empty Sites table (see .env.example); leave blank on a fresh install.
-      MARKETPLACE_API: ${MARKETPLACE_API:-}
-      MARKETPLACE_COUNTRY: ${MARKETPLACE_COUNTRY:-}
-      MARKETPLACE_DEFAULT_CURRENCY: ${MARKETPLACE_DEFAULT_CURRENCY:-}
-      PIITRADE_SITE_URL: ${PIITRADE_SITE_URL:-}
-      # Public origin of THIS site (canonical URLs, sitemap, share previews), e.g. https://videos.yotweek.com
-      SITE_URL: ${SITE_URL:-}
-      # Who may frame the embeddable player (space-separated origins; blank = anyone)
-      EMBED_FRAME_ANCESTORS: ${EMBED_FRAME_ANCESTORS:-}
-      # Optional: where to fetch the built index.html from (default http://frontend/index.html, or SITE_URL/index.html)
-      SPA_SHELL_URL: ${SPA_SHELL_URL:-http://frontend/index.html}
+      MARKETPLACE_API: ${MARKETPLACE_API:-https://backend-production-a662.up.railway.app}
+      MARKETPLACE_COUNTRY: ${MARKETPLACE_COUNTRY:-UGANDA}
+      MARKETPLACE_DEFAULT_CURRENCY: ${MARKETPLACE_DEFAULT_CURRENCY:-UGX}
+      PIITRADE_SITE_URL: ${PIITRADE_SITE_URL:-https://piitrade.com}
       # Optional Cloudflare R2 storage — all required values must be set;
       # otherwise media is stored on local disk.
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}

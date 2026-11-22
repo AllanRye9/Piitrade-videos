@@ -74,6 +74,6 @@ jobs:
       # job's default working-directory, so the path includes mobile/.
       - uses: actions/upload-artifact@v4
         with:
-          name: yotweek-apk
+          name: piitrade-videos-apk
           path: mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error

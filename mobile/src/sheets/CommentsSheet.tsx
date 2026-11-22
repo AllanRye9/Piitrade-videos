@@ -7,7 +7,16 @@ import { Avatar, ErrorText, Icon } from '../components/ui';
 import { useApp, useProfile } from '../state/AppContext';
 import { colors, radius, space } from '../theme';
 
-function Row({ c, isReply, onReply }: { c: Comment; isReply: boolean; onReply: (c: Comment) => void }) {
+function timeAgo(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  if (s < 86400 * 7) return `${Math.floor(s / 86400)}d`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function Row({ c, isReply, onReply, canDelete, onDelete }: { c: Comment; isReply: boolean; onReply: (c: Comment) => void; canDelete: boolean; onDelete: (c: Comment) => void }) {
   const { requireAuth } = useApp();
   const [liked, setLiked] = useState(c.liked);
   const [likes, setLikes] = useState(c.likes);
@@ -32,13 +41,20 @@ function Row({ c, isReply, onReply }: { c: Comment; isReply: boolean; onReply: (
     <View style={[styles.row, isReply && styles.reply]}>
       <Avatar name={c.author} size={isReply ? 26 : 32} />
       <View style={{ flex: 1 }}>
-        <Text style={styles.author}>{c.author}</Text>
+        <Text style={styles.author}>{c.author} <Text style={styles.time}>· {timeAgo(c.createdAt)}</Text></Text>
         <Text style={styles.text}>{c.text}</Text>
-        {!isReply && (
-          <Pressable onPress={() => onReply(c)} hitSlop={8}>
-            <Text style={styles.replyBtn}>Reply</Text>
-          </Pressable>
-        )}
+        <View style={styles.actions}>
+          {!isReply && (
+            <Pressable onPress={() => onReply(c)} hitSlop={8}>
+              <Text style={styles.replyBtn}>Reply</Text>
+            </Pressable>
+          )}
+          {canDelete && (
+            <Pressable onPress={() => onDelete(c)} hitSlop={8} accessibilityLabel="Delete comment">
+              <Text style={styles.deleteBtn}>Delete</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
       <Pressable onPress={toggleLike} hitSlop={8} style={styles.like} accessibilityLabel={liked ? 'Unlike comment' : 'Like comment'}>
         <Icon name={liked ? 'heart' : 'heart-outline'} size={18} color={liked ? colors.brand : colors.textMuted} />
@@ -48,7 +64,7 @@ function Row({ c, isReply, onReply }: { c: Comment; isReply: boolean; onReply: (
   );
 }
 
-function Thread({ c, onReply }: { c: Comment; onReply: (c: Comment) => void }) {
+function Thread({ c, onReply, isVideoOwner, onDelete }: { c: Comment; onReply: (c: Comment) => void; isVideoOwner: boolean; onDelete: (c: Comment) => void }) {
   const [open, setOpen] = useState(false);
   const [replies, setReplies] = useState<Comment[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,14 +84,14 @@ function Thread({ c, onReply }: { c: Comment; onReply: (c: Comment) => void }) {
 
   return (
     <View>
-      <Row c={c} isReply={false} onReply={onReply} />
+      <Row c={c} isReply={false} onReply={onReply} canDelete={!!c.mine || isVideoOwner} onDelete={onDelete} />
       {(c.replyCount ?? 0) > 0 && (
         <Pressable onPress={toggle} style={styles.viewReplies}>
           <Text style={styles.viewRepliesText}>{open ? 'Hide replies' : `View ${c.replyCount} ${c.replyCount === 1 ? 'reply' : 'replies'}`}</Text>
         </Pressable>
       )}
       {open && loading && <ActivityIndicator color={colors.textMuted} style={{ margin: space.sm }} />}
-      {open && replies?.map((r) => <Row key={r.id} c={r} isReply onReply={onReply} />)}
+      {open && replies?.map((r) => <Row key={r.id} c={r} isReply onReply={onReply} canDelete={!!r.mine || isVideoOwner} onDelete={(x) => { setReplies((rs) => (rs ?? []).filter((y) => y.id !== x.id)); onDelete(x); }} />)}
     </View>
   );
 }
@@ -100,6 +116,16 @@ export default function CommentsSheet({ video, onCountChange }: { video: Video; 
   }, [video.id]);
 
   useEffect(load, [load]);
+
+  async function removeComment(c: Comment) {
+    try {
+      const res = await api.deleteComment(video.id, c.id);
+      setComments((list) => list.filter((x) => x.id !== c.id));
+      onCountChange?.(res.comments);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete comment');
+    }
+  }
 
   function post() {
     const body = text.trim();
@@ -128,7 +154,7 @@ export default function CommentsSheet({ video, onCountChange }: { video: Video; 
         style={{ flex: 1 }}
         data={comments}
         keyExtractor={(c) => c.id}
-        renderItem={({ item }) => <Thread c={item} onReply={setReplyTo} />}
+        renderItem={({ item }) => <Thread c={item} onReply={setReplyTo} isVideoOwner={!!video.uploader?.isOwn} onDelete={removeComment} />}
         contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.lg }}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={loading ? <ActivityIndicator color={colors.textMuted} style={{ marginTop: 40 }} /> : <Text style={styles.empty}>No comments yet — be the first.</Text>}
@@ -163,6 +189,9 @@ export default function CommentsSheet({ video, onCountChange }: { video: Video; 
 }
 
 const styles = StyleSheet.create({
+  time: { color: colors.textMuted, fontWeight: '400' },
+  actions: { flexDirection: 'row', gap: space.lg },
+  deleteBtn: { color: colors.danger, fontSize: 12, fontWeight: '700', marginTop: 2 },
   row: { flexDirection: 'row', gap: space.md, paddingVertical: space.md, alignItems: 'flex-start' },
   reply: { marginLeft: 44, paddingVertical: space.sm },
   author: { color: colors.textMuted, fontSize: 12, fontWeight: '700' },

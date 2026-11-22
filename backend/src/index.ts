@@ -14,11 +14,11 @@ import profileRouter from './routes/profile';
 import accountsRouter from './routes/accounts';
 import accountRouter from './routes/account';
 import notificationsRouter from './routes/notifications';
-import seoRouter from './routes/seo';
-import attributionRouter from './routes/attribution';
-import embedRouter from './routes/embed';
-import videoProductsRouter from './routes/videoProducts';
-import { seedLegacySite, startSiteRefresh } from './lib/sites';
+import attributionRouter, { goRouter } from './routes/attribution';
+import publicRouter from './routes/public';
+import savedItemsRouter from './routes/savedItems';
+import eventsRouter from './routes/events';
+import { ensureDefaultSite } from './lib/sites';
 import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
 
@@ -27,13 +27,17 @@ for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR]) {
 }
 
 const app = express();
+// Behind nginx/Vercel the socket address is the proxy's. Trust one hop so req.ip is the real client
+// (needed for IP rate limits and anonymous click de-duplication). Set TRUST_PROXY=0 if the backend
+// is exposed directly, or a larger number for extra proxies (e.g. a CDN in front of nginx).
+app.set('trust proxy', Number(process.env.TRUST_PROXY ?? 1));
 const PORT = Number(process.env.PORT) || 4000;
 const allowedOrigins = process.env.ALLOWED_ORIGIN
   ? [
       ...process.env.ALLOWED_ORIGIN.split(',').map((origin) => origin.trim()),
-      // This site's own public origin, and the Capacitor/Android WebView origin.
-      ...(process.env.SITE_URL ? [process.env.SITE_URL.replace(/\/+$/, '')] : []),
       'https://localhost',
+      'https://piitrade.com',
+      'https://yotweek.com',
     ]
   : true;
 
@@ -42,34 +46,19 @@ const allowedOrigins = process.env.ALLOWED_ORIGIN
 // cross-origin (e.g. if the frontend is served from a different host).
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(compression());
-// Meant to be used from other people's sites (iframes, oEmbed, shop widgets), so mounted before the CORS allow-list.
-app.use(embedRouter);
 app.use(
   cors({
     origin: allowedOrigins,
   })
 );
-// The raw body of attribution postbacks is kept: shops sign it (HMAC) and we verify it byte for byte.
-app.use(
-  express.json({
-    verify: (req, _res, buf) => {
-      if ((req as express.Request).originalUrl?.startsWith('/api/attribution/')) (req as any).rawBody = buf;
-    },
-  })
-);
+// The raw bytes are kept for the conversion postback: its HMAC signature is computed over them.
+app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
 
 // Uploaded files are named with random UUIDs and never overwritten in
 // place, so it's safe to let browsers/CDNs cache them aggressively.
 app.use('/uploads', express.static(UPLOAD_ROOT, { maxAge: '7d', immutable: true }));
 
-// Crawler-facing routes at the site root: /robots.txt, /sitemap.xml, /v/:id (see routes/seo.ts).
-app.use(seoRouter);
-
-// /go/:videoId/:productId (tracked Shop links) and /api/attribution/*, /api/earnings.
-app.use(attributionRouter);
-
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-app.use('/api/videos', videoProductsRouter);
 app.use('/api/videos', videosRouter);
 app.use('/api/visual-search', visualSearchRouter);
 app.use('/api/auth', authRouter);
@@ -79,6 +68,11 @@ app.use('/api/profile', profileRouter);
 app.use('/api/accounts', accountsRouter);
 app.use('/api/account', accountRouter);
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/attribution', attributionRouter);
+app.use('/api/saved-items', savedItemsRouter);
+app.use('/api/events', eventsRouter);
+app.use(goRouter); // /go/:videoId/:productId
+app.use(publicRouter); // /embed, /v, /embed.js, /api/oembed, /api/embed/by-product
 
 // Centralized error handler. Thanks to `express-async-errors`, any
 // error thrown (or rejected promise) inside an async route handler
@@ -97,8 +91,8 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: 'Internal server error' });
 });
 
-seedLegacySite().finally(startSiteRefresh);
+ensureDefaultSite().catch((err) => console.error('Could not ensure the default shop:', err));
 
 app.listen(PORT, () => {
-  console.log(`Yotweek backend listening on port ${PORT}`);
+  console.log(`Piitrade backend listening on port ${PORT}`);
 });

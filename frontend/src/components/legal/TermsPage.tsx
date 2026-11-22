@@ -4,8 +4,8 @@ export default function TermsPage() {
   return (
     <LegalLayout title="Terms of Service" lastUpdated="[DATE]">
       <p>
-        These Terms of Service ("Terms") govern your use of Yotweek (the "Service"), operated by{' '}
-        <strong>[LEGAL ENTITY NAME]</strong> ("Yotweek," "we," "us"). By creating an account or otherwise using the
+        These Terms of Service ("Terms") govern your use of Piitrade Videos (the "Service"), operated by{' '}
+        <strong>[LEGAL ENTITY NAME]</strong> ("Piitrade," "we," "us"). By creating an account or otherwise using the
         Service, you agree to these Terms. If you do not agree, do not use the Service.
       </p>
 
@@ -20,13 +20,13 @@ export default function TermsPage() {
         An account is required to upload videos, comment, follow creators, or complete a purchase. You're
         responsible for keeping your password confidential and for all activity under your account. You may set a
         public handle, display name, avatar, and bio; your handle is visible to other users at a public profile URL
-        (<code>{window.location.host}/u/your-handle</code>).
+        (<code>piitrade.com/u/your-handle</code>).
       </p>
 
       <h2>3. Content you post</h2>
       <p>
         You retain ownership of videos, comments, and other content you upload ("Your Content"). By posting Your
-        Content, you grant Yotweek a worldwide, non-exclusive, royalty-free license to host, store, reproduce,
+        Content, you grant Piitrade a worldwide, non-exclusive, royalty-free license to host, store, reproduce,
         display, and distribute it solely for the purpose of operating and promoting the Service (for example,
         showing your video in the feed, generating a thumbnail, or displaying it on your public profile).
       </p>
@@ -43,14 +43,14 @@ export default function TermsPage() {
         <a href="/legal/dmca">Copyright &amp; DMCA Policy</a> for copyright-specific takedowns.
       </p>
 
-      <h2>4. Finding items in the shops</h2>
+      <h2>4. Finding items on Piitrade</h2>
       <p>
-        Yotweek is a short-video service whose videos link to products on connected marketplaces and shops
-        (the "Shops"). It helps you find listings related to what you see in a video and then opens the listing on
-        the Shop's own website. Yotweek does not sell items, take payments, or process orders. Any contact
-        with a seller, price negotiation, payment, and handover happens between you and the seller through the
-        Shop and is subject to that Shop's own terms and safety guidance. Yotweek is not a party to those
-        transactions and is not responsible for the listings, sellers, or items.
+        Piitrade Videos is the short-video companion of the Piitrade classifieds marketplace (piitrade.com). It helps
+        you find listings related to what you see in a video and then opens the listing on piitrade.com. Piitrade
+        Videos does not sell items, take payments, or process orders. Any contact with a seller, price negotiation,
+        payment, and handover happens between you and the seller through piitrade.com and is subject to the
+        Marketplace's own terms and safety guidance. Piitrade Videos is not a party to those transactions and is not
+        responsible for the listings, sellers, or items.
       </p>
 
       <h2>5. Termination</h2>
@@ -62,7 +62,7 @@ export default function TermsPage() {
       <h2>6. Disclaimers and limitation of liability</h2>
       <p>
         The Service is provided "as is" without warranties of any kind. To the maximum extent permitted by law,
-        Yotweek is not liable for indirect, incidental, or consequential damages arising from your use of the
+        Piitrade is not liable for indirect, incidental, or consequential damages arising from your use of the
         Service.
       </p>
 

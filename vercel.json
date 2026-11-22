@@ -10,49 +10,21 @@
     },
     "rewrites": [
         {
-            "source": "/(robots.txt|sitemap.xml)",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
-        },
-        {
-            "source": "/go/:videoId/:productId",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
-        },
-        {
-            "source": "/embed/:id",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
-        },
-        {
-            "source": "/(widget.js|track.js)",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
-        },
-        {
-            "source": "/legal/:page",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
-        },
-        {
-            "source": "/v/:id",
-            "destination": {
-                "type": "service",
-                "service": "backend"
-            }
-        },
-        {
             "source": "/api(/.*)?",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
+            "source": "/(go|embed|v)/(.*)",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
+            "source": "/embed.js",
             "destination": {
                 "type": "service",
                 "service": "backend"

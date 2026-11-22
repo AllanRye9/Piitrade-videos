@@ -1,4 +1,3 @@
-import { resolveOrigin } from '../lib/seo';
 import { Router, Request, Response } from 'express';
 import { randomBytes, createHash } from 'crypto';
 import { prisma } from '../db';
@@ -190,15 +189,20 @@ router.post('/forgot-password', authLimiter, async (req: Request, res: Response)
       data: { userId: user.id, tokenHash: hashToken(rawToken), expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
     });
 
-    // The site the user is on — APP_URL / SITE_URL if configured, else the request's own host (never a hardcoded domain).
-    const appUrl = (process.env.APP_URL || resolveOrigin(process.env.SITE_URL, req.header('x-forwarded-proto'), req.header('x-forwarded-host') || req.header('host'))).replace(/\/+$/, '');
+    const appUrl = (process.env.APP_URL || 'https://piitrade.com').replace(/\/+$/, '');
     const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
-    await sendEmail({
-      to: user.email,
-      subject: 'Reset your Yotweek password',
-      text: `Reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.`,
-      html: `<p>Reset your Yotweek password by clicking the link below. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
-    });
+    // A mail-server failure must not change the response: answering 500 only for accounts that exist
+    // tells anyone which emails are registered (and tells a real user nothing useful). Log it instead.
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Reset your Piitrade password',
+        text: `Reset your password: ${resetUrl}\n\nThis link expires in 1 hour. If you didn't request this, you can ignore this email.`,
+        html: `<p>Reset your Piitrade password by clicking the link below. This link expires in 1 hour.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+      });
+    } catch (err) {
+      console.error('Password reset email failed to send', err);
+    }
   }
 
   res.json(genericResponse);
@@ -217,10 +221,18 @@ router.post('/reset-password', authLimiter, async (req: Request, res: Response) 
   }
 
   const passwordHash = await hashPassword(password);
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
-    prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
-  ]);
+  const now = new Date();
+  const claimed = await prisma.$transaction(async (tx: any) => {
+    // Claim the token with a conditional update: of two simultaneous requests carrying the same link,
+    // only one gets count 1 (a read-then-write check let both succeed).
+    const c = await tx.passwordResetToken.updateMany({ where: { id: record.id, usedAt: null }, data: { usedAt: now } });
+    if (c.count === 0) return false;
+    await tx.user.update({ where: { id: record.userId }, data: { passwordHash } });
+    // Older, still-unexpired links for this account die too — a reset should end every pending one.
+    await tx.passwordResetToken.updateMany({ where: { userId: record.userId, usedAt: null }, data: { usedAt: now } });
+    return true;
+  });
+  if (!claimed) throw new HttpError(400, 'This reset link is invalid or has expired — request a new one');
 
   res.json({ reset: true });
 });

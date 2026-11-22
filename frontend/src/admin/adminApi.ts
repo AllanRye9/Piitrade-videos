@@ -1,4 +1,3 @@
-import type { ProductPayload } from '../types';
 import { API_BASE } from '../config';
 import { getAdminToken, setAdminToken } from '../api';
 
@@ -31,77 +30,6 @@ export interface PageMeta {
 export interface LocationOption {
   id: string;
   name: string;
-}
-
-export interface SiteOption {
-  id: string;
-  name: string;
-  slug: string;
-  siteUrl: string;
-}
-
-export interface SiteRecord extends SiteOption {
-  apiUrl: string;
-  apiType: 'piitrade' | 'link-only';
-  country: string;
-  currency: string;
-  listingPath: string;
-  searchPath: string;
-  sellPath: string;
-  active: boolean;
-  position: number;
-  /** Percent of each confirmed sale owed to the creator. */
-  commissionPct: number;
-  /** Signs conversion postbacks. Only sent to admins who can edit sites. */
-  postbackSecret?: string;
-  createdAt: string;
-  videoCount?: number;
-  preview: { home: string; listing: string; search: string; sell: string | null };
-}
-
-export type SiteInput = Partial<Pick<SiteRecord, 'name' | 'slug' | 'siteUrl' | 'apiUrl' | 'apiType' | 'country' | 'currency' | 'listingPath' | 'searchPath' | 'sellPath' | 'active' | 'position' | 'commissionPct'>>;
-
-export interface SiteTestResult {
-  ok: boolean;
-  linkOnly?: boolean;
-  message?: string;
-  ms?: number;
-  count?: number;
-  error?: string;
-  sample?: Array<{ name: string; price: string; listingUrl: string }>;
-}
-
-export interface AttributionOverview {
-  days: number;
-  clicks: number;
-  conversions: number;
-  /** Amounts are minor units (cents) per currency. */
-  byCurrency: Record<string, { conversions: number; revenueMinor: number; commissionMinor: number; reversed: number }>;
-  topVideos: Array<{ videoId: string; title: string; clicks: number }>;
-  topCreators: Array<{ creator: string; currency: string; conversions: number; revenueMinor: number; commissionMinor: number }>;
-  ledger: Record<string, { pending: number; approved: number; paid: number }>;
-}
-
-export interface ConversionRow {
-  id: string;
-  videoId: string;
-  video: string;
-  site: string;
-  creator: string;
-  creatorEmail: string | null;
-  externalOrderId: string;
-  currency: string;
-  amountMinor: number;
-  commissionMinor: number;
-  status: 'pending' | 'approved' | 'paid' | 'reversed';
-  createdAt: string;
-}
-
-export interface ConversionList {
-  total: number;
-  page: number;
-  pageSize: number;
-  conversions: ConversionRow[];
 }
 
 export interface LocationRecord extends LocationOption {
@@ -150,11 +78,6 @@ export interface VideoRecord {
   createdAt: string;
   locationId: string | null;
   location: LocationOption | null;
-  siteId: string | null;
-  site: { id: string; name: string } | null;
-  productUrl: string | null;
-  productTitle: string | null;
-  products: Array<{ id: string; siteId: string; url: string; title: string | null; startMs: number; endMs: number | null; x: number | null; y: number | null }>;
   uploader: { handle: string | null; displayName: string | null; userId: string | null } | null;
   reportCount: number;
 }
@@ -200,7 +123,7 @@ export interface AuditEntry {
 export interface ResourceDef {
   key: string;
   label: string;
-  actions: Array<'view' | 'create' | 'edit' | 'delete'>;
+  actions: Array<'view' | 'create' | 'edit' | 'delete' | 'manage'>;
 }
 
 export interface DashboardStats {
@@ -217,9 +140,85 @@ export interface DashboardStats {
   reports?: { openVideos: number };
   products?: { total: number };
   locations?: { total: number };
-  sites?: { total: number };
-  attribution?: { clicksThisWeek: number; salesThisWeek: number; pendingPayouts: number };
   admins?: { total: number };
+}
+
+export interface SiteRecord {
+  id: string;
+  name: string;
+  slug: string;
+  baseUrl: string;
+  apiBase: string;
+  apiType: string;
+  country: string;
+  currency: string;
+  commissionPct: number;
+  active: boolean;
+  createdAt: string;
+  secretHint: string;
+  clicks?: number;
+  conversions?: number;
+}
+
+export interface SpecIssue {
+  level: 'error' | 'warning';
+  message: string;
+}
+export interface SiteTestResult {
+  ok: boolean;
+  status?: number;
+  ms: number;
+  issues: SpecIssue[];
+  sampleCount?: number;
+}
+
+export interface AttributionOverview {
+  days: number;
+  totals: { saves: number; clicks: number; conversions: number; revenue: Record<string, number>; credited: Record<string, number> };
+  sites: Array<{ site: string; saves: number; clicks: number; conversions: number; revenue: Record<string, number> }>;
+  topVideos: Array<{ videoId: string; title: string; clicks: number; conversions: number }>;
+  topCreators: Array<{ handle: string; clicks: number; conversions: number; earned: Record<string, number> }>;
+}
+
+export interface CohortSummary {
+  sessions: number;
+  watchThrough: number;
+  sd: number;
+  completionRate: number;
+  avgWatchSec: number;
+}
+export type GuardrailVerdict = 'insufficient_data' | 'no_harm' | 'harm' | 'benefit';
+export interface GuardrailReport {
+  days: number;
+  holdoutPct: number;
+  cohorts: { exposed: CohortSummary; holdout: CohortSummary; untagged: CohortSummary };
+  comparison: { verdict: GuardrailVerdict; deltaWatchThrough: number; ci95: [number | null, number | null]; deltaCompletion: number; pValue: number | null; minSessions: number };
+  funnel: Array<{ site: string; impressions: number; saves: number; clicks: number; sales: number; saveRate: number | null; clickRate: number | null; saleRate: number | null }>;
+}
+
+export type PayoutStatus = 'pending' | 'approved' | 'paid' | 'reversed';
+export interface PayoutRecord {
+  id: string;
+  creator: string;
+  amount: number;
+  currency: string;
+  status: PayoutStatus;
+  createdAt: string;
+  site: string;
+  orderId: string;
+  orderAmount: number;
+  videoTitle: string | null;
+}
+
+export interface ProductPin {
+  id?: string;
+  url: string;
+  title: string;
+  startMs: number;
+  endMs: number | null;
+  x?: number | null;
+  y?: number | null;
+  site?: string;
 }
 
 // ---------- transport ----------
@@ -297,7 +296,7 @@ export const adminApi = {
   listVideos: (q: List & { sort?: string; locationId?: string; reported?: boolean; uploader?: string }) =>
     get<{ videos: VideoRecord[] } & PageMeta>('/api/admin/videos', q),
   getVideo: (id: string) => get<{ video: VideoRecord; reports: Array<{ reason: string; createdAt: string }> }>(`/api/admin/videos/${id}`),
-  updateVideo: (id: string, data: { title?: string; description?: string; locationId?: string | null; siteId?: string | null; productUrl?: string | null; productTitle?: string | null; products?: ProductPayload[] }) =>
+  updateVideo: (id: string, data: { title?: string; description?: string; locationId?: string | null }) =>
     patch<{ video: VideoRecord }>(`/api/admin/videos/${id}`, data),
   deleteVideo: (id: string) => del(`/api/admin/videos/${id}`),
   videoComments: (id: string) => get<{ comments: Array<{ id: string; author: string; text: string; createdAt: string }> }>(`/api/admin/videos/${id}/comments`),
@@ -331,19 +330,6 @@ export const adminApi = {
   },
   deleteProduct: (id: string) => del(`/api/admin/products/${id}`),
 
-  // sites (linked marketplaces)
-  siteOptions: () => get<{ sites: SiteOption[] }>('/api/admin/sites/options'),
-  listSites: () => get<{ sites: SiteRecord[] }>('/api/admin/sites'),
-  createSite: (d: SiteInput) => post<{ site: SiteRecord }>('/api/admin/sites', d),
-  updateSite: (id: string, d: SiteInput) => patch<{ site: SiteRecord }>(`/api/admin/sites/${id}`, d),
-  deleteSite: (id: string) => del(`/api/admin/sites/${id}`),
-  testSite: (id: string, q?: string) => post<SiteTestResult>(`/api/admin/sites/${id}/test`, { q }),
-  rotateSiteSecret: (id: string) => post<{ site: SiteRecord }>(`/api/admin/sites/${id}/rotate-secret`),
-
-  // attribution & payouts
-  attributionOverview: (days: number, siteId?: string) => get<AttributionOverview>('/api/admin/attribution/overview', { days, siteId }),
-  conversions: (q: { status?: string; siteId?: string; page?: number }) => get<ConversionList>('/api/admin/attribution/conversions', q),
-  setConversionStatus: (id: string, status: 'approved' | 'paid' | 'reversed') => patch<{ id: string; status: string }>(`/api/admin/attribution/conversions/${id}`, { status }),
   // locations
   locationOptions: () => get<{ locations: LocationOption[] }>('/api/admin/locations/options'),
   listLocations: (q?: string) => get<{ locations: LocationRecord[] }>('/api/admin/locations', { q }),
@@ -357,6 +343,21 @@ export const adminApi = {
   updateAdmin: (id: string, d: { email?: string; name?: string; password?: string; permissions?: string[]; disabled?: boolean }) =>
     patch<{ admin: AdminRecord }>(`/api/admin/admins/${id}`, d),
   deleteAdmin: (id: string) => del(`/api/admin/admins/${id}`),
+
+  // shops, attribution, payouts
+  listSites: () => get<{ sites: SiteRecord[] }>('/api/admin/sites'),
+  createSite: (d: Record<string, unknown>) => post<{ site: SiteRecord; postbackSecret: string }>('/api/admin/sites', d),
+  updateSite: (id: string, d: Record<string, unknown>) => patch<{ site: SiteRecord }>(`/api/admin/sites/${id}`, d),
+  revealSiteSecret: (id: string) => get<{ postbackSecret: string }>(`/api/admin/sites/${id}/secret`),
+  rotateSiteSecret: (id: string) => post<{ postbackSecret: string }>(`/api/admin/sites/${id}/rotate-secret`),
+  testSite: (id: string) => post<SiteTestResult>(`/api/admin/sites/${id}/test`),
+  deleteSite: (id: string) => del(`/api/admin/sites/${id}`),
+  attributionOverview: (q: { days?: number; siteId?: string }) => get<AttributionOverview>('/api/admin/attribution/overview', q),
+  guardrail: (days: number) => get<GuardrailReport>('/api/admin/attribution/guardrail', { days }),
+  listPayouts: (q: { status?: string; page?: number; limit?: number }) => get<{ entries: PayoutRecord[] } & PageMeta>('/api/admin/attribution/payouts', q),
+  setPayoutStatus: (id: string, status: PayoutStatus) => patch<{ ok: boolean }>(`/api/admin/attribution/payouts/${id}`, { status }),
+  getVideoProducts: (id: string) => get<{ products: ProductPin[] }>(`/api/admin/videos/${id}/products`),
+  setVideoProducts: (id: string, products: ProductPin[]) => req<{ count: number }>('PUT', `/api/admin/videos/${id}/products`, { products }),
 
   // audit (primary only)
   listAudit: (q: List) => get<{ entries: AuditEntry[] } & PageMeta>('/api/admin/audit', q),

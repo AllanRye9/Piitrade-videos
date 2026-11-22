@@ -4,7 +4,7 @@ import { adminApi, AdminRecord, ResourceDef } from '../adminApi';
 import { useFetch } from '../hooks';
 import { Badge, Button, Card, ConfirmDialog, ErrorState, Field, FormModal, IconButton, PageHeader, Spinner, Table, Td, Th, cx, fmtDateTime, inputCls, useToast } from '../ui';
 
-const ACTIONS = ['view', 'create', 'edit', 'delete'] as const;
+const ACTIONS = ['view', 'create', 'edit', 'delete', 'manage'] as const;
 
 /** Resource × action grid. Ticking edit/create/delete also ticks view (the server enforces the same rule). */
 function PermissionMatrix({ resources, value, onChange }: { resources: ResourceDef[]; value: string[]; onChange: (v: string[]) => void }) {

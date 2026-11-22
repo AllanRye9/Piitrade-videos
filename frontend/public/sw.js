@@ -6,8 +6,8 @@
 // caching strategy /uploads already has server-side (see index.ts's
 // `maxAge: '7d', immutable`), not this service worker.
 
-const CACHE_NAME = 'yotweek-shell-v4';
-const SHELL_URLS = ['/', '/manifest.json', '/icon-192.png'];
+const CACHE_NAME = 'piitrade-shell-v3';
+const SHELL_URLS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

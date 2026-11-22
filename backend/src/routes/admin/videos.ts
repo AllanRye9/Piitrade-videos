@@ -8,7 +8,8 @@ import { extractHashtags } from '../../lib/hashtags';
 import { resolveAssetUrl } from '../videos';
 import { VIDEOS_DIR, POSTERS_DIR } from '../../paths';
 import { removeStoredFile, optionalId } from './helpers';
-import { resolveProductPlan, replaceProducts } from '../../lib/videoProducts';
+import { loadActiveSites, replaceVideoProducts } from '../../lib/videoProducts';
+import { validateProducts } from '../../lib/shoppable';
 
 const router = Router();
 
@@ -37,11 +38,6 @@ function serialize(v: any, extra: { uploader?: any; reportCount?: number } = {})
     createdAt: v.createdAt,
     locationId: v.locationId ?? null,
     location: v.location ? { id: v.location.id, name: v.location.name } : null,
-    siteId: v.siteId ?? null,
-    site: v.site ? { id: v.site.id, name: v.site.name } : null,
-    productUrl: v.productUrl ?? null,
-    productTitle: v.productTitle ?? null,
-    products: (v.products ?? []).map((p: any) => ({ id: p.id, siteId: p.siteId, url: p.url, title: p.title, startMs: p.startMs, endMs: p.endMs, x: p.x, y: p.y })),
     uploader: extra.uploader ?? null,
     reportCount: extra.reportCount ?? 0,
   };
@@ -65,21 +61,7 @@ router.get('/', requirePermission('videos.view'), async (req: AuthedRequest, res
   const uploaderUserId = String(req.query.uploader || '');
 
   const where: any = {};
-  if (q) {
-    const tag = q.replace(/^#/, '').toLowerCase();
-    const creators = await prisma.sessionProfile.findMany({
-      where: { OR: [{ handle: { contains: q.replace(/^@/, ''), mode: 'insensitive' } }, { displayName: { contains: q.replace(/^@/, ''), mode: 'insensitive' } }] },
-      select: { sessionId: true },
-      take: 200,
-    });
-    where.OR = [
-      { id: q },
-      { title: { contains: q, mode: 'insensitive' } },
-      { description: { contains: q, mode: 'insensitive' } },
-      { hashtags: { has: tag } },
-      ...(creators.length ? [{ uploaderSessionId: { in: creators.map((c: { sessionId: string }) => c.sessionId) } }] : []),
-    ];
-  }
+  if (q) where.OR = [{ title: { contains: q, mode: 'insensitive' } }, { description: { contains: q, mode: 'insensitive' } }];
   if (locationId) where.locationId = locationId;
   if (String(req.query.reported || '') === 'true') where.reportList = { some: {} };
   if (uploaderUserId) {
@@ -89,7 +71,7 @@ router.get('/', requirePermission('videos.view'), async (req: AuthedRequest, res
 
   const [total, videos] = await Promise.all([
     prisma.video.count({ where }),
-    prisma.video.findMany({ where, orderBy: sort, skip, take, include: { location: true, site: true } }),
+    prisma.video.findMany({ where, orderBy: sort, skip, take, include: { location: true } }),
   ]);
 
   const ids = videos.map((v: any) => v.id as string);
@@ -107,7 +89,7 @@ router.get('/', requirePermission('videos.view'), async (req: AuthedRequest, res
 
 // GET /api/admin/videos/:id
 router.get('/:id', requirePermission('videos.view'), async (req: AuthedRequest, res: Response) => {
-  const v = await prisma.video.findUnique({ where: { id: req.params.id }, include: { location: true, site: true, products: { orderBy: [{ startMs: 'asc' }, { position: 'asc' }] } } });
+  const v = await prisma.video.findUnique({ where: { id: req.params.id }, include: { location: true } });
   if (!v) throw new HttpError(404, 'Video not found');
   const [uploaders, reports] = await Promise.all([
     uploadersFor([(v as any).uploaderSessionId]),
@@ -116,17 +98,14 @@ router.get('/:id', requirePermission('videos.view'), async (req: AuthedRequest, 
   res.json({ video: serialize(v, { uploader: uploaders.get((v as any).uploaderSessionId) ?? null, reportCount: reports.length }), reports });
 });
 
-// PATCH /api/admin/videos/:id  { title?, description?, locationId?, products? (replaces the list), or the single-link siteId? / productUrl? / productTitle? }
+// PATCH /api/admin/videos/:id  { title?, description?, locationId? }
 router.patch('/:id', requirePermission('videos.edit'), async (req: AuthedRequest, res: Response) => {
-  const title = req.body.title !== undefined ? String(req.body.title).trim().slice(0, 200) : undefined;
-  if (title !== undefined && !title) throw new HttpError(400, 'A video needs a title');
+  const title = req.body.title !== undefined ? String(req.body.title).slice(0, 200) : undefined;
   const description = req.body.description !== undefined ? String(req.body.description).slice(0, 1000) : undefined;
   const locationId = optionalId(req.body.locationId);
 
   const video = await prisma.video.findUnique({ where: { id: req.params.id } });
   if (!video) throw new HttpError(404, 'Video not found');
-
-  const plan = await resolveProductPlan(req.body, video as any, video.duration ? video.duration * 1000 : null);
 
   try {
     const updated = await prisma.video.update({
@@ -138,12 +117,8 @@ router.patch('/:id', requirePermission('videos.edit'), async (req: AuthedRequest
         // Re-parse whenever either changes so hashtags don't go stale.
         ...(title !== undefined || description !== undefined ? { hashtags: extractHashtags(title ?? video.title, description ?? video.description) } : {}),
       },
-      include: { location: true, site: true, products: { orderBy: [{ startMs: 'asc' }, { position: 'asc' }] } },
+      include: { location: true },
     });
-    if (plan) {
-      await replaceProducts(video.id, plan);
-      updated.products = (await prisma.videoProduct.findMany({ where: { videoId: video.id }, orderBy: [{ startMs: 'asc' }, { position: 'asc' }] })) as any;
-    }
     audit(req, 'video.update', 'video', video.id, updated.title);
     res.json({ video: serialize(updated) });
   } catch (err: any) {
@@ -152,15 +127,31 @@ router.patch('/:id', requirePermission('videos.edit'), async (req: AuthedRequest
   }
 });
 
+// GET /api/admin/videos/:id/products — full rows (with destination URLs) for the editor
+router.get('/:id/products', requirePermission('videos.view'), async (req: AuthedRequest, res: Response) => {
+  const rows = await prisma.videoProduct.findMany({ where: { videoId: req.params.id }, orderBy: [{ position: 'asc' }, { startMs: 'asc' }], include: { site: { select: { name: true } } } });
+  res.json({ products: rows.map((p: any) => ({ id: p.id, url: p.url, title: p.title, startMs: p.startMs, endMs: p.endMs, x: p.x, y: p.y, site: p.site?.name ?? '' })) });
+});
+
+// PUT /api/admin/videos/:id/products  { products: [...] } — same validation as the creator endpoint
+router.put('/:id/products', requirePermission('videos.edit'), async (req: AuthedRequest, res: Response) => {
+  const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+  if (!video) throw new HttpError(404, 'Video not found');
+  const checked = validateProducts(req.body?.products ?? [], await loadActiveSites(), video.duration ?? null);
+  if ('error' in checked) throw new HttpError(400, checked.error);
+  await replaceVideoProducts(video.id, checked.products);
+  audit(req, 'video.products', 'video', video.id, `${checked.products.length} product(s)`);
+  res.json({ count: checked.products.length });
+});
+
 // DELETE /api/admin/videos/:id
 router.delete('/:id', requirePermission('videos.delete'), async (req: AuthedRequest, res: Response) => {
   const video = await prisma.video.findUnique({ where: { id: req.params.id } });
   if (!video) throw new HttpError(404, 'Video not found');
 
   await prisma.video.delete({ where: { id: video.id } });
-  // The row is already gone; a storage hiccup (R2 down, file missing) must not turn a successful delete into a 500.
-  await removeStoredFile(video.filename, VIDEOS_DIR).catch((err: unknown) => console.error('video file cleanup failed', err));
-  if (video.posterFilename) await removeStoredFile(video.posterFilename, POSTERS_DIR).catch((err: unknown) => console.error('poster cleanup failed', err));
+  await removeStoredFile(video.filename, VIDEOS_DIR);
+  if (video.posterFilename) await removeStoredFile(video.posterFilename, POSTERS_DIR);
   audit(req, 'video.delete', 'video', video.id, video.title);
   res.status(204).send();
 });

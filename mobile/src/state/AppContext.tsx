@@ -16,10 +16,11 @@ export type SheetDescriptor =
   | { type: 'settings' }
   | { type: 'notifications' }
   | { type: 'comments'; video: Video; onCountChange?: (n: number) => void }
-  | { type: 'more'; video: Video; onDeleted?: () => void; onProductsChanged?: () => void }
-  | { type: 'find'; initialQuery?: string }
-  | { type: 'products'; video: Video; onSaved?: () => void }
-  | { type: 'earnings' };
+  | { type: 'more'; video: Video; onDeleted?: () => void }
+  | { type: 'find'; initialQuery?: string; videoId?: string }
+  | { type: 'products'; video: Video }
+  | { type: 'earnings' }
+  | { type: 'saved' };
 
 // ------------------------------------------------------------------ pages
 export type PageDescriptor =

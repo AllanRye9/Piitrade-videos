@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { Component, createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Info, Loader2, Search, X } from 'lucide-react';
 
 export const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(' ');
@@ -404,4 +404,30 @@ export function fmtDateTime(iso: string | null | undefined): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
-export const fmtNum = (n: number) => n.toLocaleString();
+/** Tolerates a missing value (an older API, a field not yet populated) — a number formatter must never take the page down. */
+export const fmtNum = (n: number | null | undefined) => (typeof n === 'number' && Number.isFinite(n) ? n : 0).toLocaleString();
+
+/**
+ * Catches a rendering error in one page so the rest of the dashboard (sidebar, navigation, sign-out)
+ * keeps working, instead of the whole admin going blank.
+ */
+export class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error) {
+    console.error('Admin page crashed', error);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="max-w-md mx-auto text-center py-20">
+        <AlertTriangle className="mx-auto text-red-400 mb-3" size={30} />
+        <h1 className="text-white font-semibold text-lg">This page hit a problem</h1>
+        <p className="text-white/50 text-sm mt-1">The rest of the dashboard still works. Try again, or open another section.</p>
+        <Button className="mt-4" onClick={() => this.setState({ error: null })}>Try again</Button>
+      </div>
+    );
+  }
+}

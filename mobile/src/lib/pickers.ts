@@ -5,7 +5,7 @@ const VIDEO_EXT = ['mp4', 'm4v', 'mov', 'webm', '3gp', 'avi', 'mkv', 'wmv', 'flv
 const MIME_BY_EXT: Record<string, string> = {
   mp4: 'video/mp4', m4v: 'video/x-m4v', mov: 'video/quicktime', webm: 'video/webm', '3gp': 'video/3gpp',
   avi: 'video/x-msvideo', mkv: 'video/x-matroska', wmv: 'video/x-ms-wmv', flv: 'video/x-flv',
-  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif', avif: 'image/avif', gif: 'image/gif',
 };
 
 function extOf(nameOrUri: string): string {
@@ -37,9 +37,19 @@ export async function pickVideo(): Promise<PickedVideo | null> {
 
 /** Opens the gallery for a (cropped, square) profile photo. Returns null if cancelled. */
 export async function pickAvatar(): Promise<LocalFile | null> {
-  const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.9 });
+  const res = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 0.9,
+    // iPhone photos are HEIC by default. "Compatible" makes iOS hand over a JPEG instead (the server
+    // can also convert HEIC, but this avoids uploading a file other tools can't read).
+    preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
+  });
   if (res.canceled || !res.assets?.[0]) return null;
   const a = res.assets[0];
   const ext = extOf(a.fileName || '') || extOf(a.uri) || 'jpg';
-  return { uri: a.uri, name: `avatar.${ext}`, type: a.mimeType || MIME_BY_EXT[ext] || 'image/jpeg' };
+  // The OS sometimes reports no type or a generic one; fall back to the extension, then JPEG.
+  const reported = a.mimeType && a.mimeType !== 'application/octet-stream' ? a.mimeType : '';
+  return { uri: a.uri, name: `avatar.${ext}`, type: reported || MIME_BY_EXT[ext] || 'image/jpeg' };
 }

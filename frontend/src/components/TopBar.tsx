@@ -10,13 +10,14 @@ import {
   User,
   ExternalLink,
   Store,
+  ShieldCheck,
   PlusCircle,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
-import { useSites } from '../sites';
+import { piitradeUrl } from '../config';
 
-export type FeedMode = 'foryou' | 'latest' | 'trending';
+export type FeedMode = 'latest' | 'trending';
 
 interface Props {
   mode: FeedMode;
@@ -29,7 +30,6 @@ interface Props {
 }
 
 const TABS: Array<{ id: FeedMode; label: string }> = [
-  { id: 'foryou', label: 'For you' },
   { id: 'latest', label: 'Latest' },
   { id: 'trending', label: 'Trending' },
 ];
@@ -41,10 +41,9 @@ const TABS: Array<{ id: FeedMode; label: string }> = [
  * used to float over the video), search, upload, and one account menu
  * that now holds everything that used to be its own icon button
  * (notifications, discover, settings, profile) plus the shortcuts to
- * the connected shops (Admin → Sites).
+ * piitrade.com.
  */
 export default function TopBar({ mode, onModeChange, onSearch, onUploadClick, onSettingsClick, onNotificationsClick, unreadCount }: Props) {
-  const sites = useSites();
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -130,9 +129,13 @@ export default function TopBar({ mode, onModeChange, onSearch, onUploadClick, on
           </>
         ) : (
           <>
-            <Link to="/" aria-label="Yotweek home" className="flex items-center gap-2 shrink-0">
-              <img src="/logo.png" alt="" className="h-8 w-auto" width={38} height={32} />
-              <span className="hidden sm:inline text-white font-bold text-[15px] tracking-tight">Yotweek</span>
+            <Link to="/" aria-label="Piitrade Videos home" className="flex items-center gap-2 shrink-0">
+              <span className="w-8 h-8 rounded-lg bg-brand-orange flex items-center justify-center text-white font-extrabold text-lg leading-none">
+                P
+              </span>
+              <span className="hidden sm:inline text-white font-bold text-[15px] tracking-tight">
+                Piitrade <span className="text-white/50 font-semibold">Videos</span>
+              </span>
             </Link>
 
             {/* Latest / Trending live here, in the bar — never on the video. */}
@@ -232,27 +235,22 @@ export default function TopBar({ mode, onModeChange, onSearch, onUploadClick, on
                   </button>
 
                   <div className="my-1.5 border-t border-white/10" />
-                  {sites.length > 0 && (
-                    <>
-                      <p className="px-4 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-white/35">Shops</p>
-                      {sites.map((s) => (
-                        <div key={s.id}>
-                          <a role="menuitem" href={s.browseUrl} target="_blank" rel="noopener noreferrer" className={menuItem}>
-                            <Store size={18} className="text-brand-orange" />
-                            <span className="flex-1 truncate">Browse {s.name}</span>
-                            <ExternalLink size={14} className="text-white/30" />
-                          </a>
-                          {s.sellUrl && (
-                            <a role="menuitem" href={s.sellUrl} target="_blank" rel="noopener noreferrer" className={menuItem}>
-                              <PlusCircle size={18} className="text-brand-orange" />
-                              <span className="flex-1 truncate">Sell on {s.name}</span>
-                              <ExternalLink size={14} className="text-white/30" />
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </>
-                  )}
+                  <p className="px-4 pt-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-white/35">On piitrade.com</p>
+                  <a role="menuitem" href={piitradeUrl('/listings')} target="_blank" rel="noopener noreferrer" className={menuItem}>
+                    <Store size={18} className="text-brand-orange" />
+                    <span className="flex-1">Browse listings</span>
+                    <ExternalLink size={14} className="text-white/30" />
+                  </a>
+                  <a role="menuitem" href={piitradeUrl('/listings/create')} target="_blank" rel="noopener noreferrer" className={menuItem}>
+                    <PlusCircle size={18} className="text-brand-orange" />
+                    <span className="flex-1">Sell something</span>
+                    <ExternalLink size={14} className="text-white/30" />
+                  </a>
+                  <a role="menuitem" href={piitradeUrl('/safety')} target="_blank" rel="noopener noreferrer" className={menuItem}>
+                    <ShieldCheck size={18} className="text-brand-orange" />
+                    <span className="flex-1">Safety tips</span>
+                    <ExternalLink size={14} className="text-white/30" />
+                  </a>
 
                   <div className="mt-1.5 border-t border-white/10 px-4 pt-2 pb-1.5 flex items-center gap-3 text-[11px] text-white/35">
                     <Link to="/legal/terms" onClick={() => setMenuOpen(false)} className="hover:text-white/60">

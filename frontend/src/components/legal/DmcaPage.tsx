@@ -4,7 +4,7 @@ export default function DmcaPage() {
   return (
     <LegalLayout title="Copyright & DMCA Policy" lastUpdated="[DATE]">
       <p>
-        Yotweek respects the intellectual property rights of others and expects users of Yotweek to do the
+        Piitrade respects the intellectual property rights of others and expects users of Piitrade Videos to do the
         same. This policy explains how to report content you believe infringes your copyright, and how a user can
         respond to a claim made against their content.
       </p>
@@ -24,7 +24,7 @@ export default function DmcaPage() {
       <ul>
         <li>your physical or electronic signature;</li>
         <li>identification of the copyrighted work you claim is infringed;</li>
-        <li>the specific video URL (e.g. <code>{window.location.host}/v/...</code>) or other location of the material;</li>
+        <li>the specific video URL (e.g. <code>piitrade.com/v/...</code>) or other location of the material;</li>
         <li>your contact information (address, phone number, email);</li>
         <li>
           a statement that you have a good-faith belief the use is not authorized by the copyright owner, its agent,

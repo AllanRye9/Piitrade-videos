@@ -7,6 +7,7 @@ import { uploadImage } from '../middleware/upload';
 import { uploadToR2, deleteFromR2ByUrl } from '../lib/r2';
 import { AVATARS_DIR } from '../paths';
 import { HttpError } from '../lib/httpError';
+import { toJpeg } from '../lib/image';
 import { writeLimiter } from '../middleware/rateLimit';
 import { requireAccount } from '../middleware/requireAccount';
 
@@ -140,19 +141,16 @@ router.put('/handle', requireAccount, writeLimiter, async (req: Request, res: Re
 });
 
 // POST /api/profile/avatar  (multipart: avatar)
-router.post('/avatar', requireAccount, uploadImage.single('avatar'), async (req: Request, res: Response) => {
+router.post('/avatar', requireAccount, writeLimiter, uploadImage.single('avatar'), async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const file = req.file;
   if (!file) throw new HttpError(400, 'An avatar image is required');
 
   // Normalize to a square JPEG thumbnail — avatars are shown small and
   // consistently, so there's no reason to store (or re-transfer, on
-  // every profile load) an arbitrarily large original.
-  const sharp = (await import('sharp')).default;
-  const buffer = await sharp(file.buffer)
-    .resize(512, 512, { fit: 'cover' })
-    .jpeg({ quality: 88 })
-    .toBuffer();
+  // every profile load) an arbitrarily large original. toJpeg also accepts HEIC/WebP/AVIF/TIFF,
+  // applies the photo's rotation, and answers a clear 400 for anything unreadable.
+  const buffer = await toJpeg(file.buffer, { square: 512, quality: 88 });
 
   const filename = `${uuid()}.jpg`;
   const existing = await prisma.sessionProfile.findUnique({ where: { sessionId } });
