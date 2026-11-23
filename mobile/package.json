@@ -36,7 +36,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run src && npm run test:logic",
     "prebuild:android": "expo prebuild --platform android --no-install",
     "apk": "expo prebuild --platform android --no-install --clean && cd android && ./gradlew assembleRelease",
     "test:logic": "node --experimental-strip-types --test test/productLogic.test.mjs test/net.test.mjs test/eventQueue.test.mjs"

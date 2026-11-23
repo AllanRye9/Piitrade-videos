@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run",
+    "test": "vitest run src && npm run test:logic",
     "test:logic": "node --experimental-strip-types --test test/productLogic.test.mjs test/productChips.test.mjs test/apiBase.test.mjs"
   },
   "dependencies": {
