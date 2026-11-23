@@ -1,6 +1,6 @@
 name: CI
 
-# Runs typecheck + build (+ tests, for the backend) on every push and
+# Runs typecheck + build + tests for the web app, mobile app, and backend on every push and
 # pull request. This does NOT deploy anything.
 on:
   push:
@@ -44,6 +44,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+      - run: npm test
 
   mobile:
     runs-on: ubuntu-latest
@@ -59,6 +60,7 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
       # Proves the JS bundles for both platforms (no native toolchain needed).
       - run: npx expo export --platform android --platform ios --output-dir /tmp/export
         env:
