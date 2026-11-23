@@ -34,7 +34,12 @@ function localDevelopmentOrigin(origin: string): boolean {
 export function corsOptions(): CorsOptions {
   const configured = process.env.ALLOWED_ORIGIN;
   if (!configured?.trim()) {
-    return { origin: true, maxAge: 86_400 };
+    return {
+      origin(_origin, callback) {
+        callback(null, true);
+      },
+      maxAge: 86_400,
+    };
   }
 
   const allowed = new Set(REQUIRED_ORIGINS);

@@ -30,7 +30,18 @@ const path = require('path');
 // stubbed out rather than requiring a real Postgres + generated client
 // just to run these tests.
 const dbPath = path.resolve(__dirname, '../dist/db.js');
-require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma: {} } };
+require.cache[dbPath] = {
+  id: dbPath,
+  filename: dbPath,
+  loaded: true,
+  exports: {
+    prisma: {
+      site: {
+        findMany: async () => [],
+      },
+    },
+  },
+};
 
 const FAKE_CATALOG = [
   {
