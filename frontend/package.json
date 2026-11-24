@@ -8,12 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-<<<<<<< Updated upstream
     "test": "vitest run src && npm run test:logic",
     "test:logic": "node --experimental-strip-types --test test/productLogic.test.mjs test/productChips.test.mjs test/apiBase.test.mjs"
-=======
-    "test": "vitest run"
->>>>>>> Stashed changes
   },
   "dependencies": {
     "lucide-react": "^1.42.0",
