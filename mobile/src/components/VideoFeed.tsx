@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { FlatList, RefreshControl } from 'react-native';
-import type { ListViewToken } from 'react-native';
+import type { ViewToken } from 'react-native';
 import type { Video } from '../types';
 import { colors } from '../theme';
 import VideoCard from './VideoCard';
@@ -21,7 +21,7 @@ export default function VideoFeed({ videos, height, bottomInset, onNearEnd, onRe
   const [activeIndex, setActiveIndex] = useState(initialIndex);
   const [refreshing, setRefreshing] = useState(false);
 
-  const onViewable = useRef(({ viewableItems }: { viewableItems: ListViewToken[] }) => {
+  const onViewable = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((v) => v.isViewable && typeof v.index === 'number');
     if (first && typeof first.index === 'number') setActiveIndex(first.index);
   }).current;
