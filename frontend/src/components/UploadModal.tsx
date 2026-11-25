@@ -106,7 +106,7 @@ export default function UploadModal({ onClose }: Props) {
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     const url = URL.createObjectURL(f);
     audioUrlRef.current = url;
-    const base: AudioSelection = { file: f, url, duration: null, videoVolume: 1, audioVolume: 0.7, start: 0 };
+    const base: AudioSelection = { file: f, url, duration: null, audioVolume: 0.7, start: 0 };
     setAudio(base);
 
     // Read the length from the header, like the video probe does. If the
@@ -226,7 +226,6 @@ export default function UploadModal({ onClose }: Props) {
       audio: audio
         ? {
             file: audio.file,
-            videoVolume: audio.videoVolume,
             audioVolume: audio.audioVolume,
             // never ask to start past the end of a track we could measure
             audioStart: audio.duration !== null ? Math.min(audio.start, Math.max(0, audio.duration - 1)) : audio.start,
@@ -285,7 +284,7 @@ export default function UploadModal({ onClose }: Props) {
     });
   }, [clipLength]);
   const audioPreview: AudioPreview | null = audio
-    ? { url: audio.url, start: audio.start, videoVolume: audio.videoVolume, audioVolume: audio.audioVolume }
+    ? { url: audio.url, start: audio.start, audioVolume: audio.audioVolume }
     : null;
 
   return (

@@ -45,7 +45,6 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
   const [description, setDescription] = useState(draft?.description ?? '');
 
   const [audio, setAudio] = useState<LocalFile | null>(null);
-  const [videoVol, setVideoVol] = useState(1);
   const [audioVol, setAudioVol] = useState(0.7);
   const [audioStart, setAudioStart] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +103,7 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
       title: title.trim() || 'Untitled',
       description: description.trim(),
       trim: needsTrim ? { start: trimStart, end: trimStart + trimLength } : null,
-      audio: audio ? { file: audio, videoVolume: videoVol, audioVolume: audioVol, audioStart } : null,
+      audio: audio ? { file: audio, audioVolume: audioVol, audioStart } : null,
       draft: { file: picked.file, uri: picked.uri, duration: sourceDuration, title, description },
     });
     closeSheet();
@@ -185,7 +184,7 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
                       <Text style={[styles.link, { color: colors.danger }]}>Remove</Text>
                     </Pressable>
                   </View>
-                  <Tune label={`Original sound · ${Math.round(videoVol * 100)}%`} value={videoVol} min={0} max={1} onChange={setVideoVol} />
+                  <Text style={styles.small}>Added sound replaces the video’s original audio.</Text>
                   <Tune label={`Music · ${Math.round(audioVol * 100)}%`} value={audioVol} min={0} max={1} onChange={setAudioVol} />
                   <Tune label={`Start music at · ${fmt(audioStart)}`} value={audioStart} min={0} max={300} step={1} onChange={setAudioStart} />
                 </>

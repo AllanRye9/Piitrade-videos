@@ -30,19 +30,7 @@ interface Props {
 
 const HASHTAG = /#([a-z0-9_]{1,30})/gi;
 
-/**
- * Videos at or below this width/height ratio are "portrait enough" to fill the
- * viewport with `cover` (9:16 = 0.56, 3:4 = 0.75, 4:5 = 0.8). Anything wider —
- * landscape clips, squares — is letterboxed with `contain` so it is shown whole.
- */
-const COVER_MAX_RATIO = 0.82;
-
 type Fit = 'cover' | 'contain';
-
-function fitFor(width?: number, height?: number): Fit {
-  if (!width || !height) return 'cover'; // size unknown yet: keep the full-bleed default
-  return width / height <= COVER_MAX_RATIO ? 'cover' : 'contain';
-}
 
 /**
  * Overlay proportions, modelled on TikTok's phone layout: a narrow right rail
@@ -185,43 +173,35 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   const [shareCount, setShareCount] = useState(video.shares);
   const [expanded, setExpanded] = useState(false);
   const [following, setFollowing] = useState(!!video.uploader?.isFollowing);
-  const [fit, setFit] = useState<Fit>('cover');
+  const fit: Fit = 'cover';
   const [firstFrame, setFirstFrame] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'readyToPlay' | 'error'>('idle');
   /** The player's own explanation when it fails (e.g. the HTTP status of the file), shown under "Couldn't play this video". */
   const [failure, setFailure] = useState<string | null>(null);
   const [removed, setRemoved] = useState(false);
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const watchRef = useRef<{ startedAt: number | null; ms: number }>({ startedAt: null, ms: 0 });
   const impressedRef = useRef<Set<string>>(new Set());
-  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [activeKey, setActiveKey] = useState('');
   const [savedIds, setSavedIds] = useState<string[]>(() => (video.products ?? []).filter((p) => p.saved).map((p) => p.id));
   const sortedProducts = useMemo(() => [...(video.products ?? [])].sort((a, b) => a.startMs - b.startMs), [video.products]);
   const [burst, setBurst] = useState<{ x: number; y: number; key: number } | null>(null);
   const watchingToken = useRef(Symbol('video-watcher')).current;
 
-  // Pick cover/contain from the real video dimensions (decoder track events), falling back to the poster's.
   useEffect(() => {
-    setFit('cover');
     setFirstFrame(false);
     setStatus('idle');
     setFailure(null);
+    setDims(null);
   }, [src]);
 
   useEffect(() => {
     if (!active) return;
-    const size = player.videoTrack?.size;
-    if (size) {
-      setFit(fitFor(size.width, size.height));
-      setDims({ w: size.width, h: size.height });
-    }
-    const sub = player.addListener('videoTrackChange', ({ videoTrack }) => {
-      const s = videoTrack?.size;
-      if (s) {
-        setFit(fitFor(s.width, s.height));
-        setDims({ w: s.width, h: s.height });
-      }
-    });
+    const setSize = (size?: { width: number; height: number }) => {
+      if (size?.width && size.height) setDims({ w: size.width, h: size.height });
+    };
+    setSize(player.videoTrack?.size);
+    const sub = player.addListener('videoTrackChange', ({ videoTrack }) => setSize(videoTrack?.size));
     return () => sub.remove();
   }, [active, player, src]);
 
@@ -466,21 +446,11 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   }
 
   return (
-    <View style={{ width, height, backgroundColor: '#000' }}>
-      {/* Letterboxed (non-portrait) videos get a blurred, dimmed copy of the poster behind them. */}
-      {fit === 'contain' && poster ? (
-        <>
-          <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit="cover" blurRadius={40} />
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)' }]} />
-        </>
-      ) : null}
-
+    <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
       {/* The poster stays underneath until the first decoded frame so the swap never flashes black. */}
       {poster && !(active && firstFrame) ? (
-        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={fit} onLoad={(e) => {
-          if (active) return;
-          setFit(fitFor(e.source?.width, e.source?.height));
-          if (e.source?.width && e.source?.height) setDims({ w: e.source.width, h: e.source.height });
+        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit="cover" onLoad={(e) => {
+          if (!active && e.source?.width && e.source?.height) setDims({ w: e.source.width, h: e.source.height });
         }} />
       ) : null}
 
@@ -488,7 +458,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
         <VideoView
           player={player}
           style={[StyleSheet.absoluteFill, !active && { opacity: 0 }]}
-          contentFit={fit}
+          contentFit="cover"
           nativeControls={false}
           onFirstFrameRender={() => setFirstFrame(true)}
         />

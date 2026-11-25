@@ -561,7 +561,7 @@ export default function VideoCard({ video, active }: Props) {
   const hasLongDescription = Boolean(video.description) && video.description.length > 70;
 
   return (
-    <div className="relative h-full w-full snap-start flex items-center justify-center bg-black">
+    <div className="relative h-full w-full snap-start flex items-center justify-center bg-black overflow-hidden">
       <video
         ref={videoRef}
         src={mediaUrl(video.url)}
@@ -585,7 +585,7 @@ export default function VideoCard({ video, active }: Props) {
           // Only worth a re-render when there are tags whose window could open or close.
           if (products.length > 0) setCurrentMs(Math.round(el.currentTime * 1000));
         }}
-        className="h-full w-full object-contain"
+        className="h-full w-full object-cover"
       />
 
       {/* Soft bottom shade so the caption and action icons stay legible

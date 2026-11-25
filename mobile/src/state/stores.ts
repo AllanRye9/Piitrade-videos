@@ -74,7 +74,9 @@ const RECENT_KEY = 'piitrade_recent_searches';
 export async function getRecentSearches(): Promise<string[]> {
   try {
     const raw = await AsyncStorage.getItem(RECENT_KEY);
-    return raw ? (JSON.parse(raw) as string[]) : [];
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((search): search is string => typeof search === 'string') : [];
   } catch {
     return [];
   }

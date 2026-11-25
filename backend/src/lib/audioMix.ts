@@ -10,8 +10,6 @@ const MAX_VOLUME = 2;
 const MIN_AUDIO_LEFT_SECONDS = 0.5;
 
 export interface AudioMix {
-  /** Volume of the video's own sound, 0–2 (1 = unchanged). */
-  videoVolume: number;
   /** Volume of the added audio, 0–2 (1 = unchanged). */
   audioVolume: number;
   /** Where in the added audio to start, in seconds. */
@@ -32,18 +30,18 @@ function num(raw: unknown, fallback: number, label: string): number {
  * it can be tested without ffmpeg.
  *
  * `audioDuration` is the measured length of the added audio file; the
- * start point must leave some audio to play.
+ * start point must leave some audio to play. The legacy `videoVolume`
+ * field is accepted but ignored so source audio is always replaced.
  */
 export function resolveAudioMix(raw: { videoVolume?: unknown; audioVolume?: unknown; audioStart?: unknown }, audioDuration: number): AudioMix {
-  const videoVolume = num(raw.videoVolume, 1, 'Original sound volume');
   const audioVolume = num(raw.audioVolume, 1, 'Added audio volume');
   const audioStart = num(raw.audioStart, 0, 'Audio start');
 
-  if (videoVolume < 0 || videoVolume > MAX_VOLUME || audioVolume < 0 || audioVolume > MAX_VOLUME) {
-    throw new HttpError(400, 'Volumes must be between 0% and 200%', { code: 'INVALID_AUDIO' });
+  if (audioVolume < 0 || audioVolume > MAX_VOLUME) {
+    throw new HttpError(400, 'Added audio volume must be between 0% and 200%', { code: 'INVALID_AUDIO' });
   }
-  if (videoVolume === 0 && audioVolume === 0) {
-    throw new HttpError(400, 'Both sounds are at 0% — raise at least one, or remove the added audio', { code: 'INVALID_AUDIO' });
+  if (audioVolume === 0) {
+    throw new HttpError(400, 'Added audio is at 0% — raise its volume, or remove it', { code: 'INVALID_AUDIO' });
   }
   if (audioStart < 0) {
     throw new HttpError(400, 'Audio start cannot be negative', { code: 'INVALID_AUDIO' });
@@ -54,7 +52,7 @@ export function resolveAudioMix(raw: { videoVolume?: unknown; audioVolume?: unkn
       details: { audioDuration },
     });
   }
-  return { videoVolume, audioVolume, audioStart };
+  return { audioVolume, audioStart };
 }
 
 function vol(n: number): string {
@@ -62,27 +60,13 @@ function vol(n: number): string {
 }
 
 /**
- * Builds the ffmpeg filter graph that puts the added audio (input 1) onto
- * the video (input 0). Output label is always [aout].
- *
- *  - Source has sound and its volume > 0: both are mixed, ending with
- *    the video (`duration=first`); `normalize=0` keeps each at the
- *    level the uploader set instead of ffmpeg halving both.
- *  - Source is silent, or its volume is 0 (the "replace" case): the
- *    added audio alone becomes the sound.
+ * Builds the ffmpeg filter graph that replaces source audio with the
+ * uploaded audio (input 1). Output label is always [aout].
  *
  * The added audio is padded with silence (`apad`) so a track shorter
  * than the clip leaves the rest quiet rather than cutting the video
  * short; the caller always bounds the output length with `-t`.
  */
-export function buildAudioFilter(opts: { hasSourceAudio: boolean; videoVolume: number; audioVolume: number }): string {
-  const added = `[1:a]volume=${vol(opts.audioVolume)},apad[a1]`;
-  if (opts.hasSourceAudio && opts.videoVolume > 0) {
-    return [
-      `[0:a]volume=${vol(opts.videoVolume)}[a0]`,
-      added,
-      '[a0][a1]amix=inputs=2:duration=first:normalize=0[aout]',
-    ].join(';');
-  }
+export function buildAudioFilter(opts: { audioVolume: number }): string {
   return `[1:a]volume=${vol(opts.audioVolume)},apad[aout]`;
 }

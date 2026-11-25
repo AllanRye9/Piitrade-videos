@@ -4,7 +4,7 @@ import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { prisma } from '../db';
 import { uploadVideoWithAudio } from '../middleware/upload';
-import { extractPoster, getVideoDuration, hasAudioStream } from '../lib/thumbnail';
+import { extractPoster, getVideoDuration } from '../lib/thumbnail';
 import { transcodeToMp4, TranscodeOptions } from '../lib/videoTranscode';
 import { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit, TrimWindow } from '../lib/videoLimits';
 import { MAX_AUDIO_BYTES, resolveAudioMix } from '../lib/audioMix';
@@ -384,7 +384,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // POST /api/videos  (multipart: video, title, description, trimStart?,
-//                    trimEnd?, audio?, videoVolume?, audioVolume?, audioStart?)
+//                    trimEnd?, audio?, audioVolume?, audioStart?)
 //
 // Videos are capped at MAX_VIDEO_SECONDS (60s). A longer source is
 // rejected with code VIDEO_TOO_LONG unless the uploader supplies a
@@ -394,10 +394,9 @@ router.get('/:id', async (req: Request, res: Response) => {
 // works for every accepted format, including ones a browser can't
 // decode and therefore can't trim locally.
 //
-// The editor can also add an audio track (`audio`): it is mixed with the
-// video's own sound at the volumes given (`videoVolume`/`audioVolume`,
-// 0–1; original sound at 0 replaces it), starting `audioStart` seconds
-// into the audio, and cut to the clip's length.
+// The editor can also add an audio track (`audio`): it replaces the
+// video's own sound, at `audioVolume`, starting `audioStart` seconds into
+// the audio, and cut to the clip's length.
 const createVideo = async (req: Request, res: Response) => {
   const files = (req.files || {}) as { [field: string]: Express.Multer.File[] };
   const file = files.video?.[0];
@@ -479,8 +478,6 @@ const createVideo = async (req: Request, res: Response) => {
         path: audioFile.path,
         startSeconds: mix.audioStart,
         audioVolume: mix.audioVolume,
-        videoVolume: mix.videoVolume,
-        hasSourceAudio: await hasAudioStream(file.path),
       };
     } catch (err) {
       cleanup();

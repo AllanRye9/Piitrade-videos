@@ -10,8 +10,8 @@ test('activeProducts windows', () => {
   assert.deepEqual(activeProducts(ps, 99999).map((p) => p.id), ['b']);
   assert.deepEqual(activeProducts([], 10), []);
 });
-test('frameRect: cover = whole card, contain = centred letterbox', () => {
-  assert.deepEqual(frameRect(400, 800, { w: 1080, h: 1920 }, 'cover'), { left: 0, top: 0, width: 400, height: 800 });
+test('frameRect: cover crops symmetrically, contain letterboxes', () => {
+  assert.deepEqual(frameRect(400, 800, { w: 1080, h: 1920 }, 'cover'), { left: -25, top: 0, width: 450, height: 800 });
   const r = frameRect(400, 800, { w: 1920, h: 1080 }, 'contain'); // landscape in a tall card
   assert.equal(r.width, 400); assert.equal(Math.round(r.height), 225);
   assert.equal(r.left, 0); assert.ok(Math.abs(r.top - (800 - r.height) / 2) < 1e-9);

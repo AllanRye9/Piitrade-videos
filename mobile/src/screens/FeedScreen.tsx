@@ -1,5 +1,5 @@
 import React, { useSyncExternalStore, useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
 import type { Video } from '../types';
@@ -124,6 +124,11 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
     }
   }
 
+  function submitSearch() {
+    Keyboard.dismiss();
+    void runSearch();
+  }
+
   function closeSearch() {
     setSearchOpen(false);
     setQuery('');
@@ -196,7 +201,8 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
                 autoFocus
                 value={query}
                 onChangeText={setQuery}
-                onSubmitEditing={runSearch}
+                onSubmitEditing={submitSearch}
+                blurOnSubmit
                 returnKeyType="search"
                 placeholder="Search videos, #tags"
                 placeholderTextColor={colors.textFaint}

@@ -11,11 +11,11 @@ test('activeProducts includes start and excludes end', () => {
   assert.deepEqual(activeProducts(products, 2000).map((product) => product.id), ['b']);
 });
 
-test('frameRect maps contain-fit coordinates into the centered video frame', () => {
+test('frameRect maps cover-fit coordinates into the centered cropped frame', () => {
   assert.deepEqual(frameRect(400, 800, 1920, 1080), {
-    left: 0,
-    top: 287.5,
-    width: 400,
-    height: 225,
+    left: -511.1111111111111,
+    top: 0,
+    width: 1422.2222222222222,
+    height: 800,
   });
 });

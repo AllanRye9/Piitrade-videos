@@ -25,22 +25,25 @@ test('both apps show the same tags at every moment of the video (start inclusive
   assert.deepEqual(mobile.activeProducts([], 10), web.activeProducts([], 10));
 });
 
-test('both apps place the picture inside the card identically (letterboxing)', () => {
+test('both apps center-crop videos to fill the card identically', () => {
   const cards = [[390, 844], [360, 640], [1080, 1920], [300, 300]];
   const videos = [[1080, 1920], [1920, 1080], [1000, 1000], [640, 360], [2160, 3840]];
   for (const [cw, ch] of cards) {
     for (const [vw, vh] of videos) {
-      assert.deepEqual(mobile.frameRect(cw, ch, { w: vw, h: vh }, 'contain'), web.frameRect(cw, ch, vw, vh), `card ${cw}x${ch}, video ${vw}x${vh}`);
+      assert.deepEqual(mobile.frameRect(cw, ch, { w: vw, h: vh }, 'cover'), web.frameRect(cw, ch, vw, vh), `card ${cw}x${ch}, video ${vw}x${vh}`);
     }
     // unknown video size: the whole card on both
-    assert.deepEqual(mobile.frameRect(cw, ch, null, 'contain'), web.frameRect(cw, ch, 0, 0));
+    assert.deepEqual(mobile.frameRect(cw, ch, null, 'cover'), web.frameRect(cw, ch, 0, 0));
   }
 });
 
-test('the picture never leaves the card and keeps its shape', () => {
-  for (const impl of [(cw, ch, vw, vh) => web.frameRect(cw, ch, vw, vh), (cw, ch, vw, vh) => mobile.frameRect(cw, ch, { w: vw, h: vh }, 'contain')]) {
+test('cover crops overflow symmetrically while preserving source aspect ratio', () => {
+  for (const impl of [(cw, ch, vw, vh) => web.frameRect(cw, ch, vw, vh), (cw, ch, vw, vh) => mobile.frameRect(cw, ch, { w: vw, h: vh }, 'cover')]) {
     const f = impl(390, 844, 1920, 1080);
-    assert.ok(f.left >= 0 && f.top >= 0 && f.left + f.width <= 390 + 1e-6 && f.top + f.height <= 844 + 1e-6);
+    assert.ok(f.left <= 0 && f.top <= 0);
+    assert.ok(f.left + f.width >= 390 - 1e-6 && f.top + f.height >= 844 - 1e-6);
+    assert.ok(Math.abs(f.left + f.width / 2 - 195) < 1e-6);
+    assert.ok(Math.abs(f.top + f.height / 2 - 422) < 1e-6);
     assert.ok(Math.abs(f.width / f.height - 1920 / 1080) < 1e-9);
   }
 });

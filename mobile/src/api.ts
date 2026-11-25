@@ -31,7 +31,6 @@ export interface LocalFile {
 
 export interface AudioUpload {
   file: LocalFile;
-  videoVolume: number;
   audioVolume: number;
   audioStart: number;
 }
@@ -143,7 +142,6 @@ export const api = {
         form.append('trimEnd', trim.end.toFixed(3));
       }
       if (audio) {
-        form.append('videoVolume', String(audio.videoVolume));
         form.append('audioVolume', String(audio.audioVolume));
         form.append('audioStart', audio.audioStart.toFixed(3));
         form.append('audio', audio.file as unknown as Blob);

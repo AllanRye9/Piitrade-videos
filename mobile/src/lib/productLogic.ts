@@ -19,13 +19,15 @@ export interface Frame {
 }
 
 /**
- * Where the picture actually sits inside the card. With `contain` (landscape/square clips) the video is
- * letterboxed, so hotspot percentages must be applied to that inner rectangle, not the whole card.
- * With `cover` the picture fills the card (a little is cropped), so the card is the frame.
+ * The rendered image rectangle inside the card. `cover` can extend beyond
+ * the card when the source and viewport aspect ratios differ; hotspots use
+ * this rectangle so they stay aligned with the cropped image.
  */
 export function frameRect(cardW: number, cardH: number, dims: { w: number; h: number } | null, fit: 'cover' | 'contain'): Frame {
-  if (fit === 'cover' || !dims || !dims.w || !dims.h) return { left: 0, top: 0, width: cardW, height: cardH };
-  const scale = Math.min(cardW / dims.w, cardH / dims.h);
+  if (!dims || !dims.w || !dims.h) return { left: 0, top: 0, width: cardW, height: cardH };
+  const scale = fit === 'cover'
+    ? Math.max(cardW / dims.w, cardH / dims.h)
+    : Math.min(cardW / dims.w, cardH / dims.h);
   const width = dims.w * scale;
   const height = dims.h * scale;
   return { left: (cardW - width) / 2, top: (cardH - height) / 2, width, height };

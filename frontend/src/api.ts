@@ -136,11 +136,9 @@ export function isSignedIn(): boolean {
   return !!getAccountEmail();
 }
 
-/** An audio file to add to a video, and how it's mixed in. Volumes are 0–1. */
+/** An audio file that replaces a video's sound. Volumes are 0–1. */
 export interface AudioUpload {
   file: File;
-  /** Volume of the video's own sound (0 replaces it with the added audio). */
-  videoVolume: number;
   /** Volume of the added audio. */
   audioVolume: number;
   /** Where in the added audio to start, in seconds. */
@@ -242,7 +240,6 @@ export const api = {
         form.append('trimEnd', trim.end.toFixed(3));
       }
       if (audio) {
-        form.append('videoVolume', String(audio.videoVolume));
         form.append('audioVolume', String(audio.audioVolume));
         form.append('audioStart', audio.audioStart.toFixed(3));
         form.append('audio', audio.file);

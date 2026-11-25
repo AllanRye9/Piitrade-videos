@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Music, X, Volume2, Mic } from 'lucide-react';
+import { Music, X, Volume2 } from 'lucide-react';
 
 /** What the uploader chose, as held by the upload dialog. */
 export interface AudioSelection {
@@ -8,8 +8,6 @@ export interface AudioSelection {
   url: string | null;
   /** Length of the audio in seconds, when the browser could read it. */
   duration: number | null;
-  /** 0–1 */
-  videoVolume: number;
   /** 0–1 */
   audioVolume: number;
   /** Seconds into the audio where it starts. */
@@ -76,9 +74,9 @@ function SliderRow({
 
 /**
  * "Add audio" section of the upload editor. Choose an audio file, set how
- * loud it is against the video's own sound (Original sound at Off replaces
- * it), and pick where in the audio to start. The dialog previews the mix
- * with the video; the server makes the real one while processing.
+ * loud it is and pick where in the audio to start. The dialog previews the
+ * uploaded sound replacing the video's own sound; the server makes the
+ * final audio while processing.
  */
 export default function AudioPanel({ audio, clipLength, error, disabled, canPreview, onPick, onChange, onRemove }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -153,13 +151,6 @@ export default function AudioPanel({ audio, clipLength, error, disabled, canPrev
       </div>
 
       <SliderRow
-        icon={<Mic size={13} />}
-        label="Original sound"
-        value={audio.videoVolume}
-        disabled={disabled}
-        onChange={(v) => onChange({ ...audio, videoVolume: v })}
-      />
-      <SliderRow
         icon={<Volume2 size={13} />}
         label="Added audio"
         value={audio.audioVolume}
@@ -193,8 +184,8 @@ export default function AudioPanel({ audio, clipLength, error, disabled, canPrev
           : clipLength !== null
             ? `The audio is cut to your ${Math.round(clipLength * 10) / 10}s clip. `
             : ''}
-        Turn Original sound Off to replace it.
-        {canPreview ? ' Press play above to hear the mix.' : ' This format can’t be previewed here, but it will be added when you post.'}
+        The added sound replaces the video's original audio.
+        {canPreview ? ' Press play above to hear it.' : ' This format can’t be previewed here, but it will be added when you post.'}
       </p>
       {error && <p className="text-red-400 text-xs">{error}</p>}
       {input}

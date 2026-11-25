@@ -24,7 +24,7 @@ export function frameRect(
   videoH: number
 ): Frame {
   if (!videoW || !videoH) return { left: 0, top: 0, width: cardW, height: cardH };
-  const scale = Math.min(cardW / videoW, cardH / videoH);
+  const scale = Math.max(cardW / videoW, cardH / videoH);
   const width = videoW * scale;
   const height = videoH * scale;
   return { left: (cardW - width) / 2, top: (cardH - height) / 2, width, height };

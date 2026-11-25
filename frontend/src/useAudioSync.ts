@@ -7,16 +7,14 @@ export interface AudioPreview {
   url: string | null;
   /** Where in the audio the clip starts, in seconds. */
   start: number;
-  /** Volume of the video's own sound, 0–1. */
-  videoVolume: number;
   /** Volume of the added audio, 0–1. */
   audioVolume: number;
 }
 
 /**
  * Plays the added audio in step with a preview <video>, so the uploader
- * hears roughly what will be posted: the video at its volume plus the
- * audio at its volume, starting from the chosen point in the audio.
+ * hears roughly what will be posted: the audio replaces the video's own
+ * sound and starts from the chosen point in the track.
  *
  * The audio simply follows the video — it plays, pauses and seeks with
  * it, and is nudged back into line if it drifts. `clipStart` is where
@@ -51,8 +49,8 @@ export function useAudioSync(videoRef: RefObject<HTMLVideoElement | null>, audio
     };
   }, [url]);
 
-  // Volumes (and mute) apply to both sounds.
-  const videoVolume = audio?.videoVolume ?? 1;
+  // The added track replaces video audio; the viewer's mute setting applies to both.
+  const videoVolume = audio ? 0 : 1;
   const audioVolume = audio?.audioVolume ?? 1;
   useEffect(() => {
     const v = videoRef.current;

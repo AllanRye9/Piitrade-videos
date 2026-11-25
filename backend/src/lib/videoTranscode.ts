@@ -1,15 +1,12 @@
 import ffmpeg from 'fluent-ffmpeg';
 import { buildAudioFilter } from './audioMix';
 
-/** An audio track to lay over the video during the transcode. */
+/** An audio track that replaces source audio during the transcode. */
 export interface AddedAudio {
   path: string;
   /** Where in the audio file to start, in seconds. */
   startSeconds: number;
   audioVolume: number;
-  videoVolume: number;
-  /** Whether the source video has its own sound to mix with. */
-  hasSourceAudio: boolean;
 }
 
 export interface TranscodeOptions {
@@ -17,7 +14,7 @@ export interface TranscodeOptions {
   startSeconds?: number;
   /** Keep at most this many seconds from the start point. */
   durationSeconds?: number;
-  /** Add (mix in, or substitute) an uploaded audio track. */
+  /** Replace the video's audio with an uploaded audio track. */
   audio?: AddedAudio;
 }
 
@@ -31,12 +28,8 @@ export interface TranscodeOptions {
  *      (iPhones commonly upload .mov, Android/older devices .3gp,
  *      screen recorders .webm/.mkv, etc — most of these are not
  *      reliably playable via a plain <video> tag as-is).
- *   2. The audio track is always explicitly preserved. Output is
- *      never produced with `-an` (no audio) — if the source has no
- *      audio stream, ffmpeg's own output simply carries none; this
- *      function never strips one that exists. (The one deliberate
- *      exception: the uploader sets the original sound to 0% while
- *      adding their own audio — see `options.audio`.)
+ *   2. Source audio is preserved unless the uploader supplies a separate
+ *      audio track, in which case that track replaces it.
  *   3. `+faststart` moves the MP4 moov atom to the front of the file,
  *      so playback can begin before the whole file has downloaded
  *      (otherwise large uploads have to fully load before frame 1).
@@ -45,10 +38,9 @@ export interface TranscodeOptions {
  *      (see lib/videoLimits.ts). Because the file is re-encoded
  *      anyway, ffmpeg's input-side seek is frame-accurate here, and
  *      timestamps restart at 0 so the stored clip has no leading gap.
- *   5. Optionally lays an uploaded audio track over the clip, mixed with
- *      the original sound at the volumes the uploader chose, starting
- *      from the point they chose in the audio. It is cut to the clip's
- *      length by the same output duration that bounds the video.
+ *   5. Optionally replaces the clip's sound with an uploaded audio track,
+ *      starting from the selected point and cut to the clip's length by
+ *      the same output duration that bounds the video.
  *
  * Rejects (never resolves) if ffmpeg reports an error, so callers can
  * clean up the source upload and surface a clear error rather than
@@ -64,7 +56,7 @@ export function transcodeToMp4(inputPath: string, outputPath: string, options: T
       const a = options.audio;
       command.input(a.path);
       if (a.startSeconds > 0) command.inputOptions(['-ss', String(a.startSeconds)]);
-      command.complexFilter(buildAudioFilter({ hasSourceAudio: a.hasSourceAudio, videoVolume: a.videoVolume, audioVolume: a.audioVolume }));
+      command.complexFilter(buildAudioFilter({ audioVolume: a.audioVolume }));
       command.outputOptions(['-map 0:v:0', '-map [aout]']);
     }
 

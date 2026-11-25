@@ -25,27 +25,25 @@ function expectInvalid(fn) {
   assert.fail('expected INVALID_AUDIO');
 }
 
-test('defaults: both sounds at full volume, starting at the beginning', () => {
-  assert.deepEqual(resolveAudioMix({}, 120), { videoVolume: 1, audioVolume: 1, audioStart: 0 });
+test('defaults: uploaded sound at full volume, starting at the beginning', () => {
+  assert.deepEqual(resolveAudioMix({}, 120), { audioVolume: 1, audioStart: 0 });
 });
 
 test('form-field strings are parsed', () => {
-  assert.deepEqual(resolveAudioMix({ videoVolume: '0.4', audioVolume: '0.8', audioStart: '12.5' }, 120), {
-    videoVolume: 0.4,
+  assert.deepEqual(resolveAudioMix({ videoVolume: '1', audioVolume: '0.8', audioStart: '12.5' }, 120), {
     audioVolume: 0.8,
     audioStart: 12.5,
   });
 });
 
-test('original sound at 0 (replace) is allowed', () => {
-  assert.equal(resolveAudioMix({ videoVolume: 0, audioVolume: 1 }, 60).videoVolume, 0);
+test('legacy original-volume settings cannot mix source sound back in', () => {
+  assert.deepEqual(resolveAudioMix({ videoVolume: 1, audioVolume: 1 }, 60), { audioVolume: 1, audioStart: 0 });
 });
 
 test('invalid mixes are rejected', () => {
-  expectInvalid(() => resolveAudioMix({ videoVolume: 'loud' }, 60)); // not a number
   expectInvalid(() => resolveAudioMix({ audioVolume: -0.1 }, 60)); // negative
   expectInvalid(() => resolveAudioMix({ audioVolume: 5 }, 60)); // absurd boost
-  expectInvalid(() => resolveAudioMix({ videoVolume: 0, audioVolume: 0 }, 60)); // silence on silence
+  expectInvalid(() => resolveAudioMix({ audioVolume: 0 }, 60)); // no audio at all after replacement
   expectInvalid(() => resolveAudioMix({ audioStart: -2 }, 60));
   expectInvalid(() => resolveAudioMix({ audioStart: 60 }, 60)); // nothing left to play
   expectInvalid(() => resolveAudioMix({ audioStart: 59.9 }, 60));
@@ -55,21 +53,8 @@ test('a start just inside the audio is fine', () => {
   assert.equal(resolveAudioMix({ audioStart: 59 }, 60).audioStart, 59);
 });
 
-test('filter: video with sound + added audio are mixed at the chosen volumes', () => {
-  const f = buildAudioFilter({ hasSourceAudio: true, videoVolume: 0.5, audioVolume: 0.8 });
-  assert.match(f, /\[0:a\]volume=0\.5\[a0\]/);
-  assert.match(f, /\[1:a\]volume=0\.8,apad\[a1\]/);
-  assert.match(f, /amix=inputs=2:duration=first:normalize=0\[aout\]/);
-});
-
-test('filter: replacing the original sound uses the added audio alone', () => {
-  const f = buildAudioFilter({ hasSourceAudio: true, videoVolume: 0, audioVolume: 1 });
-  assert.equal(f, '[1:a]volume=1,apad[aout]');
-});
-
-test('filter: a silent source video gets the added audio alone', () => {
-  const f = buildAudioFilter({ hasSourceAudio: false, videoVolume: 1, audioVolume: 0.7 });
-  assert.equal(f, '[1:a]volume=0.7,apad[aout]');
+test('filter: uploaded audio replaces source sound at the selected volume', () => {
+  assert.equal(buildAudioFilter({ audioVolume: 0.8 }), '[1:a]volume=0.8,apad[aout]');
 });
 
 // ---- real ffmpeg -----------------------------------------------------
@@ -103,7 +88,7 @@ test('real ffmpeg: audio is added, cut to the clip, and honours volume + start',
   await transcodeToMp4(silentVideo, full, {
     startSeconds: 0,
     durationSeconds: 10,
-    audio: { path: music, startSeconds: 0, audioVolume: 1, videoVolume: 1, hasSourceAudio: false },
+    audio: { path: music, startSeconds: 0, audioVolume: 1 },
   });
   assert.match(probe(full, ['-select_streams', 'a', '-show_entries', 'stream=codec_name']), /codec_name=aac/);
   const dur = Number(/duration=([\d.]+)/.exec(probe(full, ['-show_entries', 'format=duration']))[1]);
@@ -114,7 +99,7 @@ test('real ffmpeg: audio is added, cut to the clip, and honours volume + start',
   await transcodeToMp4(silentVideo, quiet, {
     startSeconds: 0,
     durationSeconds: 10,
-    audio: { path: music, startSeconds: 0, audioVolume: 0.25, videoVolume: 1, hasSourceAudio: false },
+    audio: { path: music, startSeconds: 0, audioVolume: 0.25 },
   });
   const diff = meanDb(full) - meanDb(quiet);
   assert.ok(diff > 10 && diff < 14, `25% volume should be ~12dB quieter, was ${diff.toFixed(1)}dB`);
@@ -125,32 +110,23 @@ test('real ffmpeg: audio is added, cut to the clip, and honours volume + start',
   await transcodeToMp4(silentVideo, late, {
     startSeconds: 0,
     durationSeconds: 10,
-    audio: { path: music, startSeconds: 39, audioVolume: 1, videoVolume: 1, hasSourceAudio: false },
+    audio: { path: music, startSeconds: 39, audioVolume: 1 },
   });
   const lateDur = Number(/duration=([\d.]+)/.exec(probe(late, ['-show_entries', 'format=duration']))[1]);
   assert.ok(lateDur > 9.8 && lateDur < 10.3, `padded output should still be ~10s, was ${lateDur}`);
 
-  // A video that already has sound: mixing keeps ONE audio stream; replacing
-  // (original at 0) ends up with only the added audio's loudness.
+  // A video that already has sound keeps just the uploaded sound.
   const talky = path.join(dir, 'talky.mp4');
   ff(['-f', 'lavfi', '-i', 'testsrc=size=320x240:rate=25:duration=10', '-f', 'lavfi', '-i', 'sine=frequency=880:duration=10', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', talky]);
   const mixed = path.join(dir, 'mixed.mp4');
   await transcodeToMp4(talky, mixed, {
     startSeconds: 0,
     durationSeconds: 10,
-    audio: { path: music, startSeconds: 0, audioVolume: 1, videoVolume: 1, hasSourceAudio: true },
+    audio: { path: music, startSeconds: 0, audioVolume: 1 },
   });
   const streams = probe(mixed, ['-show_entries', 'stream=codec_type']).match(/codec_type=audio/g) || [];
-  assert.equal(streams.length, 1, 'mixing must produce a single audio stream');
-  assert.ok(meanDb(mixed) > meanDb(full) + 1.5, 'two sounds mixed at full volume should be louder than one');
-
-  const replaced = path.join(dir, 'replaced.mp4');
-  await transcodeToMp4(talky, replaced, {
-    startSeconds: 0,
-    durationSeconds: 10,
-    audio: { path: music, startSeconds: 0, audioVolume: 1, videoVolume: 0, hasSourceAudio: true },
-  });
-  assert.ok(Math.abs(meanDb(replaced) - meanDb(full)) < 1.5, 'original at 0% should leave only the added audio');
+  assert.equal(streams.length, 1, 'replacement must produce a single audio stream');
+  assert.ok(Math.abs(meanDb(mixed) - meanDb(full)) < 1.5, 'only the uploaded sound should be audible');
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
