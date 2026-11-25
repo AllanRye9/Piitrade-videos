@@ -188,6 +188,8 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   const [fit, setFit] = useState<Fit>('cover');
   const [firstFrame, setFirstFrame] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'readyToPlay' | 'error'>('idle');
+  /** The player's own explanation when it fails (e.g. the HTTP status of the file), shown under "Couldn't play this video". */
+  const [failure, setFailure] = useState<string | null>(null);
   const [removed, setRemoved] = useState(false);
   const watchRef = useRef<{ startedAt: number | null; ms: number }>({ startedAt: null, ms: 0 });
   const impressedRef = useRef<Set<string>>(new Set());
@@ -203,6 +205,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     setFit('cover');
     setFirstFrame(false);
     setStatus('idle');
+    setFailure(null);
   }, [src]);
 
   useEffect(() => {
@@ -226,7 +229,10 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   useEffect(() => {
     if (!active) return;
     setStatus(player.status);
-    const sub = player.addListener('statusChange', ({ status: s }) => setStatus(s));
+    const sub = player.addListener('statusChange', ({ status: s, error }) => {
+      setStatus(s);
+      setFailure(s === 'error' ? error?.message ?? null : null);
+    });
     return () => sub.remove();
   }, [active, player, src]);
 
@@ -320,6 +326,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
 
   const retry = useCallback(() => {
     setStatus('loading');
+    setFailure(null);
     player.replace(src);
     player.play();
   }, [player, src]);
@@ -512,6 +519,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
           <View style={styles.errorCard}>
             <Icon name="cloud-offline-outline" size={26} color={colors.textMuted} />
             <Text style={styles.errorText}>Couldn’t play this video</Text>
+            {failure ? <Text style={styles.errorDetail} numberOfLines={4}>{failure}</Text> : null}
             <Pressable onPress={retry} style={styles.retry} accessibilityRole="button">
               <Text style={styles.retryText}>Try again</Text>
             </Pressable>
@@ -621,6 +629,7 @@ const styles = StyleSheet.create({
   findText: { color: colors.text, fontSize: 12.5, fontWeight: '700' },
   errorCard: { alignItems: 'center', gap: 8, backgroundColor: 'rgba(20,20,20,0.85)', paddingVertical: 18, paddingHorizontal: 24, borderRadius: 16 },
   errorText: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  errorDetail: { color: colors.textMuted, fontSize: 11, textAlign: 'center', maxWidth: 260 },
   retry: { backgroundColor: colors.brand, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 18, marginTop: 4 },
   retryText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   progressTrack: { position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.18)' },

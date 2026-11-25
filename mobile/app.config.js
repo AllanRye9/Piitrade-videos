@@ -6,7 +6,8 @@ module.exports = ({ config }) => {
   let host = null;
   try {
     const u = new URL(process.env.EXPO_PUBLIC_WEB_URL || '');
-    if (u.protocol === 'https:') host = u.host;
+    // yotweek.* is the project's old domain: a stale value there must not become the App Links host.
+    if (u.protocol === 'https:' && !/(^|\.)yotweek\.com$/i.test(u.hostname)) host = u.host;
   } catch {
     // not set / not https: skip universal links
   }

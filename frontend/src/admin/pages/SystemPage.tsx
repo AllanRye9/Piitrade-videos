@@ -8,7 +8,7 @@ const CONFIG: Record<string, [string, string, boolean]> = {
   jwtSecret: ['JWT_SECRET', 'Signs admin sessions. Without your own value a default is used — set it in production.', true],
   adminSetupCode: ['ADMIN_SETUP_CODE', 'Stops anyone claiming a fresh deployment before you do. Only matters until the first admin exists.', false],
   appUrl: ['APP_URL', 'The public web address used in password-reset emails.', true],
-  allowedOrigins: ['ALLOWED_ORIGIN', 'Extra browser origins allowed to call the API (yotweek.com is always allowed).', false],
+  allowedOrigins: ['ALLOWED_ORIGIN', 'Extra browser origins allowed to call the API (videos.piitrade.com, piitrade.com and yotweek.com are always allowed).', false],
   emailProvider: ['RESEND_API_KEY', 'Sends password-reset emails. Without it, reset links are only written to the server log.', true],
   attributionSalt: ['ATTRIBUTION_SALT', 'Salt for hashing viewers in partner click tracking.', true],
   aiSearch: ['AI_SEARCH_API_KEY', 'Visual search (“crop to find”). Optional.', false],

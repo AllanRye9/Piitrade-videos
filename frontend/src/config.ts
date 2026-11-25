@@ -1,7 +1,7 @@
 /**
  * Where the API lives.
  *
- * - On the live site (videos.piitrade.com) it is always https://v.piitrade.com, whatever was baked in at build
+ * - On the live site (videos.piitrade.com) it is always https://videos.piitrade.com, whatever was baked in at build
  *   time, so a stale VITE_API_BASE_URL in the hosting settings can't point the site at a dead backend.
  * - Everywhere else (the Android app, previews, local builds) it is VITE_API_BASE_URL, the backend's full
  *   origin with no trailing slash. The Android app runs from https://localhost and must set it.

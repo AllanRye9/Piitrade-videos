@@ -1,25 +1,28 @@
+import { DEFAULT_API_BASE, resolveApiBase, resolveMediaUrl, resolveWebUrl } from './lib/apiBase';
+
 /**
  * Build-time configuration. Expo inlines EXPO_PUBLIC_* variables into the
  * JS bundle, so set EXPO_PUBLIC_API_BASE_URL in .env (local) or as the
  * API_BASE_URL repository variable (CI — see .github/workflows/android-apk.yml).
  */
-/** The production backend (Railway, behind this domain). Used when EXPO_PUBLIC_API_BASE_URL isn't set. */
-export const DEFAULT_API_BASE = 'https://api.yotweek.com';
-export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || DEFAULT_API_BASE).replace(/\/$/, '');
+/** The production backend, https://v.piitrade.com. Used when EXPO_PUBLIC_API_BASE_URL isn't set (or still names the old yotweek host). */
+export { DEFAULT_API_BASE };
+export const API_BASE = resolveApiBase(process.env.EXPO_PUBLIC_API_BASE_URL);
 
 /** The public website — used for share links, legal pages and the password-reset link. */
-export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || API_BASE || 'https://piitrade.com').replace(/\/$/, '');
+export const WEB_URL = resolveWebUrl(process.env.EXPO_PUBLIC_WEB_URL, API_BASE);
 
-export const PIITRADE_SITE_URL = (process.env.EXPO_PUBLIC_PIITRADE_SITE_URL || 'https://piitrade.com').replace(/\/$/, '');
+export const PIITRADE_SITE_URL = (process.env.EXPO_PUBLIC_PIITRADE_SITE_URL || 'https://piitrade.com').trim().replace(/\/+$/, '');
 
 /** Keep in sync with MAX_VIDEO_SECONDS in backend/src/lib/videoLimits.ts. */
 export const MAX_VIDEO_SECONDS = 60;
 
-/** Resolves a backend-relative path (e.g. `/uploads/videos/x.mp4`) against API_BASE; absolute URLs (R2) pass through. */
+/**
+ * Resolves what the backend sent for a video, poster or avatar into a loadable URL: backend-relative paths
+ * (`/uploads/videos/x.mp4`) against API_BASE; absolute URLs (R2) pass through. See resolveMediaUrl.
+ */
 export function mediaUrl(path: string | null | undefined): string | undefined {
-  if (!path) return undefined;
-  if (/^https?:\/\//i.test(path)) return path;
-  return `${API_BASE}${path}`;
+  return resolveMediaUrl(path, API_BASE);
 }
 
 export function piitradeUrl(path: string): string {

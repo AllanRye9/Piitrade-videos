@@ -28,10 +28,18 @@ Android back to dismiss.
 
 ```bash
 cd mobile
-cp .env.example .env        # set EXPO_PUBLIC_API_BASE_URL
+cp .env.example .env        # EXPO_PUBLIC_API_BASE_URL=https://v.piitrade.com (bare origin, no /api)
 npm ci
 npx expo run:android        # or: npx expo run:ios  (macOS)
 ```
+
+The app talks to **https://v.piitrade.com**: `/api/*` (data) and `/uploads/*` (videos, posters, avatars when R2
+isn't used). That is the same backend as the website, which lives at **https://videos.piitrade.com** and also
+serves `/v/<id>` share links, the legal pages and the admin area. Both hostnames must be attached to the same
+Vercel project so `/api/*` and `/uploads/*` reach the backend on each. If `EXPO_PUBLIC_API_BASE_URL` is unset, still
+holds the old `*.yotweek.com` address, or names the website host, the app uses `v.piitrade.com` anyway. A request
+that reaches a server without this API reports it ("…v.piitrade.com has no such endpoint") instead of a bare
+`HTTP 404`.
 
 ### APK in GitHub Actions
 `.github/workflows/android-apk.yml` runs `expo prebuild` + `gradlew assembleRelease` and uploads

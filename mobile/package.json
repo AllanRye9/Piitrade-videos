@@ -41,7 +41,7 @@
     "test": "vitest run src && npm run test:logic",
     "prebuild:android": "expo prebuild --platform android --no-install",
     "apk": "expo prebuild --platform android --no-install --clean && cd android && ./gradlew assembleRelease",
-    "test:logic": "node --experimental-strip-types --test test/productLogic.test.mjs test/net.test.mjs test/eventQueue.test.mjs test/guestPrompt.test.mjs"
+    "test:logic": "node --experimental-strip-types --test test/productLogic.test.mjs test/net.test.mjs test/eventQueue.test.mjs test/guestPrompt.test.mjs test/apiBase.test.mjs test/httpError.test.mjs"
   },
   "private": true
 }

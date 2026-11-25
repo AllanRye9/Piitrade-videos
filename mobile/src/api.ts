@@ -2,6 +2,8 @@ import type { SavedItem, Video, Comment, MarketplaceSearchResponse, AccountSumma
 import { fetchWithTimeout, isNetworkError } from './lib/net';
 import { setOffline } from './state/network';
 import { API_BASE } from './config';
+import { buildApiUrl } from './lib/apiBase';
+import { describeBadSuccessBody, describeHttpFailure, hostLabel } from './lib/httpError';
 import { getSessionId } from './lib/session';
 
 export class ApiError extends Error {
@@ -49,29 +51,31 @@ export function setSignInRequiredHandler(fn: (() => void) | null) {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = (options.method || 'GET').toUpperCase();
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
   let res: Response;
   try {
-    res = await fetchWithTimeout(fetch, `${API_BASE}${path}`, {
+    res = await fetchWithTimeout(fetch, buildApiUrl(API_BASE, cleanPath), {
       ...options,
-      headers: { ...(options.headers || {}), 'X-Session-Id': getSessionId() },
+      headers: { Accept: 'application/json', ...(options.headers || {}), 'X-Session-Id': getSessionId() },
     });
   } catch (err) {
     if (isNetworkError(err)) setOffline(true);
     throw err;
   }
   setOffline(false); // the server answered (even with an error status), so we're online
+  // Read the body once as text: an error from a wrong or misrouted server is an HTML page, and the text is
+  // what lets us say so instead of failing with a bare "JSON Parse error".
+  const text = await res.text().catch(() => '');
   if (!res.ok) {
-    const body: unknown = await res.json().catch(() => undefined);
-    const fields = body && typeof body === 'object' ? body as { code?: unknown; error?: unknown } : {};
-    if (res.status === 401 && fields.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
-    const message = typeof fields.error === 'string' ? fields.error : `HTTP ${res.status}`;
-    throw new ApiError(`${method} ${path}: ${message}`, { status: res.status, path, code: typeof fields.code === 'string' ? fields.code : undefined });
+    const { message, fields } = describeHttpFailure({ method, path: cleanPath, status: res.status, base: API_BASE, body: text });
+    if (res.status === 401 && fields?.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
+    throw new ApiError(message, { status: res.status, path: cleanPath, code: fields?.code });
   }
-  if (res.status === 204) return undefined as T;
+  if (res.status === 204 || text.trim() === '') return undefined as T;
   try {
-    return await res.json();
+    return JSON.parse(text) as T;
   } catch {
-    throw new ApiError(`${method} ${path} returned HTTP ${res.status} with an invalid JSON response`, { status: res.status, path });
+    throw new ApiError(describeBadSuccessBody({ method, path: cleanPath, status: res.status, base: API_BASE, body: text }), { status: res.status, path: cleanPath });
   }
 }
 
@@ -145,7 +149,8 @@ export const api = {
         form.append('audio', audio.file as unknown as Blob);
       }
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE}/api/videos`);
+      xhr.open('POST', buildApiUrl(API_BASE, '/api/videos'));
+      xhr.setRequestHeader('Accept', 'application/json');
       xhr.setRequestHeader('X-Session-Id', getSessionId());
       // Same key on every retry of this upload, so a retry after a dropped connection returns the
       // video the server already created instead of posting a duplicate.
@@ -159,22 +164,19 @@ export const api = {
           try {
             resolve(JSON.parse(xhr.responseText));
           } catch {
-            reject(new ApiError(`POST /api/videos returned HTTP ${xhr.status} with an invalid JSON response`, { status: xhr.status, path: '/api/videos' }));
+            reject(new ApiError(describeBadSuccessBody({ method: 'POST', path: '/api/videos', status: xhr.status, base: API_BASE, body: xhr.responseText }), { status: xhr.status, path: '/api/videos' }));
           }
           return;
         }
-        try {
-          const body = JSON.parse(xhr.responseText);
-          if (xhr.status === 401 && body.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
-          reject(new ApiError(`POST /api/videos: ${body.error || `HTTP ${xhr.status}`}`, { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds, status: xhr.status, path: '/api/videos' }));
-        } catch {
-          reject(new ApiError(`POST /api/videos failed with HTTP ${xhr.status}`, { status: xhr.status, path: '/api/videos' }));
-        }
+        const { message, fields } = describeHttpFailure({ method: 'POST', path: '/api/videos', status: xhr.status, base: API_BASE, body: xhr.responseText });
+        if (xhr.status === 401 && fields?.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
+        reject(new ApiError(message, { code: fields?.code, duration: fields?.duration, maxSeconds: fields?.maxSeconds, status: xhr.status, path: '/api/videos' }));
       };
       xhr.onerror = () => {
         setOffline(true);
-        reject(new Error('POST /api/videos failed — network error'));
+        reject(new ApiError(`POST /api/videos failed — can’t reach ${hostLabel(API_BASE)}. Check your connection and try again.`, { path: '/api/videos' }));
       };
+      xhr.onabort = () => reject(new ApiError('POST /api/videos was cancelled', { path: '/api/videos' }));
       xhr.send(form);
     }),
 

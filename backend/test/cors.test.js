@@ -27,6 +27,8 @@ test('configured origins retain production, WebView, and local development acces
   process.env.ALLOWED_ORIGIN = 'https://app.example';
   try {
     assert.equal(await isAllowed('https://app.example'), true);
+    assert.equal(await isAllowed('https://videos.piitrade.com'), true);
+    assert.equal(await isAllowed('https://v.piitrade.com'), true);
     assert.equal(await isAllowed('https://yotweek.com'), true);
     assert.equal(await isAllowed('capacitor://localhost'), true);
     assert.equal(await isAllowed('http://localhost:5173'), true);

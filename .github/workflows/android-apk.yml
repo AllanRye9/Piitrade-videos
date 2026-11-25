@@ -38,7 +38,7 @@ jobs:
 
       - name: Validate backend URL
         working-directory: .
-        run: test -n "$EXPO_PUBLIC_API_BASE_URL" || { echo 'Set the API_BASE_URL repository variable (Settings → Secrets and variables → Actions → Variables), e.g. https://api.yotweek.com' >&2; exit 1; }
+        run: test -n "$EXPO_PUBLIC_API_BASE_URL" || { echo 'Set the API_BASE_URL repository variable (Settings → Secrets and variables → Actions → Variables), e.g. https://v.piitrade.com' >&2; exit 1; }
 
       - uses: actions/setup-node@v4
         with:
@@ -59,6 +59,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Warning only (a backend outage must not block a build). Catches the "HTTP 404 on every request" build:
+      # the address baked into the app doesn't serve /api.
+      - name: Check the backend answers
+        run: |
+          BASE=$(node --experimental-strip-types --no-warnings -e "import('./src/lib/apiBase.ts').then((m) => console.log(m.resolveApiBase(process.env.EXPO_PUBLIC_API_BASE_URL)))")
+          echo "API address baked into the app: $BASE"
+          if curl -fsS --max-time 20 "$BASE/api/health" | grep -q '"ok":true'; then
+            echo "Backend health check passed."
+          else
+            echo "::warning::$BASE/api/health did not answer {\"ok\":true}. An APK built now gets HTTP 404 on every request until /api is routed to the backend on that host."
+          fi
 
       - name: Typecheck
         run: npm run typecheck
