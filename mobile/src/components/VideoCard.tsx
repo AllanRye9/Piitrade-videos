@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, GestureResponderEvent, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Easing, GestureResponderEvent, Platform, Pressable, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -103,7 +103,7 @@ function RailButton({ icon, label, onPress, color = colors.text, a11y, size }: {
 function HeartBurst({ x, y, onDone }: { x: number; y: number; onDone: () => void }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.timing(v, { toValue: 1, duration: 750, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start(onDone);
+    Animated.timing(v, { toValue: 1, duration: 750, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web' }).start(onDone);
   }, [v, onDone]);
   const scale = v.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0.4, 1.15, 1] });
   const opacity = v.interpolate({ inputRange: [0, 0.15, 0.7, 1], outputRange: [0, 1, 1, 0] });
@@ -196,6 +196,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   const [savedIds, setSavedIds] = useState<string[]>(() => (video.products ?? []).filter((p) => p.saved).map((p) => p.id));
   const sortedProducts = useMemo(() => [...(video.products ?? [])].sort((a, b) => a.startMs - b.startMs), [video.products]);
   const [burst, setBurst] = useState<{ x: number; y: number; key: number } | null>(null);
+  const watchingToken = useRef(Symbol('video-watcher')).current;
 
   // Pick cover/contain from the real video dimensions (decoder track events), falling back to the poster's.
   useEffect(() => {
@@ -282,9 +283,9 @@ export default function VideoCard({ video, active, preload = false, suspended = 
 
   // Tell the guest-nudge timer whether a video is actually being watched.
   useEffect(() => {
-    setWatching(shouldPlay);
-    return () => setWatching(false);
-  }, [shouldPlay, setWatching]);
+    setWatching(watchingToken, shouldPlay);
+    return () => setWatching(watchingToken, false);
+  }, [shouldPlay, setWatching, watchingToken]);
 
   // Count a view once the video has really been watched for a moment (the server de-duplicates per session).
   const viewedRef = useRef(false);

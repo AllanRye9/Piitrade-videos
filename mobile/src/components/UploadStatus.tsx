@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { ActivityIndicator, Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../state/AppContext';
 import { dismissUpload, retryUpload, useUploadState } from '../state/uploads';
@@ -24,7 +24,7 @@ export default function UploadStatus() {
   const visible = s.phase !== 'idle';
 
   useEffect(() => {
-    Animated.timing(enter, { toValue: visible ? 1 : 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    Animated.timing(enter, { toValue: visible ? 1 : 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web' }).start();
   }, [visible, enter]);
 
   useEffect(() => {
@@ -34,7 +34,7 @@ export default function UploadStatus() {
   useEffect(() => {
     if (s.phase !== 'processing') return;
     shimmer.setValue(0);
-    const loop = Animated.loop(Animated.timing(shimmer, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.quad), useNativeDriver: true }));
+    const loop = Animated.loop(Animated.timing(shimmer, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.quad), useNativeDriver: Platform.OS !== 'web' }));
     loop.start();
     return () => loop.stop();
   }, [s.phase, shimmer]);
@@ -42,7 +42,7 @@ export default function UploadStatus() {
   useEffect(() => {
     if (s.phase !== 'done') return;
     pop.setValue(0);
-    Animated.spring(pop, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }).start();
+    Animated.spring(pop, { toValue: 1, friction: 4, tension: 120, useNativeDriver: Platform.OS !== 'web' }).start();
     const t = setTimeout(dismissUpload, 6000);
     return () => clearTimeout(t);
   }, [s.phase, pop]);

@@ -30,7 +30,9 @@ test('configured origins retain production, WebView, and local development acces
     assert.equal(await isAllowed('https://yotweek.com'), true);
     assert.equal(await isAllowed('capacitor://localhost'), true);
     assert.equal(await isAllowed('http://localhost:5173'), true);
+    assert.equal(await isAllowed('https://organic-rotary-phone-q777g5p44vx7c4qr-8081.app.github.dev'), true);
     assert.equal(await isAllowed('https://unlisted.example'), false);
+    assert.equal(await isAllowed('https://app.github.dev.evil.example'), false);
   } finally {
     if (previous === undefined) delete process.env.ALLOWED_ORIGIN;
     else process.env.ALLOWED_ORIGIN = previous;

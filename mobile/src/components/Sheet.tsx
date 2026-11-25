@@ -30,8 +30,8 @@ export default function Sheet({ title, onClose, children, maxHeight = 0.9, fill,
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(backdrop, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(backdrop, { toValue: 1, duration: 220, useNativeDriver: Platform.OS !== 'web' }),
     ]).start();
   }, [translateY, backdrop]);
 
@@ -39,8 +39,8 @@ export default function Sheet({ title, onClose, children, maxHeight = 0.9, fill,
     if (closing.current) return;
     closing.current = true;
     Animated.parallel([
-      Animated.timing(translateY, { toValue: SCREEN_H, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(backdrop, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: SCREEN_H, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: Platform.OS !== 'web' }),
+      Animated.timing(backdrop, { toValue: 0, duration: 180, useNativeDriver: Platform.OS !== 'web' }),
     ]).start(() => onClose());
   }, [translateY, backdrop, onClose]);
 
@@ -55,7 +55,7 @@ export default function Sheet({ title, onClose, children, maxHeight = 0.9, fill,
         if (g.dy > 110 || g.vy > 0.9) {
           dismiss();
         } else {
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: Platform.OS !== 'web', bounciness: 4 }).start();
         }
       },
     })

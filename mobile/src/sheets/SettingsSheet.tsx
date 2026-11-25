@@ -77,11 +77,12 @@ export default function SettingsSheet() {
 
   async function sendReset() {
     if (!email) return;
+    setError(null);
     try {
       await api.forgotPassword(email);
       setResetSent(true);
-    } catch {
-      // leave the button available for another try
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not send the reset link');
     }
   }
 

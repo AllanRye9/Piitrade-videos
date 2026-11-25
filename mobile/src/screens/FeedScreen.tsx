@@ -1,5 +1,5 @@
-import React, { useSyncExternalStore, useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useSyncExternalStore, useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
 import type { Video } from '../types';
@@ -30,27 +30,35 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
   const [height, setHeight] = useState(0);
 
   const offline = useSyncExternalStore(networkStore.subscribe, networkStore.isOffline);
+  const requestId = useRef(0);
+  const previousSignedIn = useRef(signedIn);
 
   // `quiet` = a background retry while the offline screen is up: don't clear the error first (that
   // flashed "No videos yet"), and don't touch the search state.
   const loadFeed = useCallback(async (m: Mode, quiet = false) => {
+    const id = ++requestId.current;
     if (!quiet) {
       setError(null);
       setSearching(false);
+      setLoading(true);
     }
     try {
       if (m === 'trending') {
         const res = await api.getTrendingVideos();
+        if (id !== requestId.current) return;
         setVideos(res.videos);
         setNextCursor(null);
       } else {
         const res = await api.listVideos();
+        if (id !== requestId.current) return;
         setVideos(res.videos);
         setNextCursor(res.nextCursor);
       }
       setError(null);
     } catch (err) {
-      if (!quiet) setError(err instanceof Error ? err.message : 'Failed to load videos');
+      if (id === requestId.current && !quiet) setError(err instanceof Error ? err.message : 'Failed to load videos');
+    } finally {
+      if (id === requestId.current && !quiet) setLoading(false);
     }
   }, []);
 
@@ -64,26 +72,30 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
   }, [error, offline, searching, mode, loadFeed]);
 
   useEffect(() => {
-    setLoading(true);
-    loadFeed(mode).finally(() => setLoading(false));
+    void loadFeed(mode);
   }, [mode, loadFeed]);
 
   // Guests browse with an anonymous session; once they sign in the feed reloads so liked/saved state is theirs.
   useEffect(() => {
-    if (!loading) loadFeed(mode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signedIn]);
+    if (previousSignedIn.current === signedIn) return;
+    previousSignedIn.current = signedIn;
+    void loadFeed(mode);
+  }, [signedIn, mode, loadFeed]);
 
   const loadMore = useCallback(() => {
     if (mode !== 'latest' || searching || loadingMore || !nextCursor) return;
+    const id = requestId.current;
     setLoadingMore(true);
     api
       .listVideos(nextCursor)
       .then((res) => {
+        if (id !== requestId.current) return;
         setVideos((prev) => [...prev, ...res.videos]);
         setNextCursor(res.nextCursor);
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (id === requestId.current) Alert.alert('Could not load more videos', err instanceof Error ? err.message : 'Please try again.');
+      })
       .finally(() => setLoadingMore(false));
   }, [mode, searching, loadingMore, nextCursor]);
 
@@ -91,20 +103,24 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
     const q = query.trim();
     if (!q) {
       setSearching(false);
-      loadFeed(mode);
+      void loadFeed(mode);
       return;
     }
+    const id = ++requestId.current;
     addRecentSearch(q);
     setLoading(true);
+    setError(null);
     setSearching(true);
     setNextCursor(null);
     try {
       const res = await api.searchVideos(q);
+      if (id !== requestId.current) return;
       setVideos(res.videos);
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed');
+      if (id === requestId.current) setError(err instanceof Error ? err.message : 'Search failed');
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }
 
@@ -112,8 +128,7 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
     setSearchOpen(false);
     setQuery('');
     if (searching) {
-      setLoading(true);
-      loadFeed(mode).finally(() => setLoading(false));
+      void loadFeed(mode);
     }
   }
 
@@ -135,13 +150,13 @@ export default function FeedScreen({ onLayoutHeight }: { onLayoutHeight?: (h: nu
             <Icon name="cloud-offline-outline" size={44} color={colors.textMuted} />
             <Text style={styles.offlineTitle}>You’re offline</Text>
             <Text style={styles.muted}>Check your connection. We’ll reconnect automatically.</Text>
-            <Button title="Try again" variant="secondary" onPress={() => { setLoading(true); loadFeed(mode).finally(() => setLoading(false)); }} style={{ marginTop: space.md }} />
+            <Button title="Try again" variant="secondary" onPress={() => { void loadFeed(mode); }} style={{ marginTop: space.md }} />
           </View>
         )}
         {height > 0 && !loading && error && !offline && (
           <View style={styles.center}>
             <Text style={styles.muted}>{error}</Text>
-            <Button title="Retry" variant="secondary" onPress={() => { setLoading(true); loadFeed(mode).finally(() => setLoading(false)); }} style={{ marginTop: space.md }} />
+            <Button title="Retry" variant="secondary" onPress={() => { void loadFeed(mode); }} style={{ marginTop: space.md }} />
           </View>
         )}
         {height > 0 && !loading && !error && videos.length === 0 && (

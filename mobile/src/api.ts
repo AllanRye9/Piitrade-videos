@@ -8,11 +8,15 @@ export class ApiError extends Error {
   code?: string;
   duration?: number;
   maxSeconds?: number;
-  constructor(message: string, extra: { code?: string; duration?: number; maxSeconds?: number } = {}) {
+  status?: number;
+  path?: string;
+  constructor(message: string, extra: { code?: string; duration?: number; maxSeconds?: number; status?: number; path?: string } = {}) {
     super(message);
     this.code = extra.code;
     this.duration = extra.duration;
     this.maxSeconds = extra.maxSeconds;
+    this.status = extra.status;
+    this.path = extra.path;
   }
 }
 
@@ -44,6 +48,7 @@ export function setSignInRequiredHandler(fn: (() => void) | null) {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
   let res: Response;
   try {
     res = await fetchWithTimeout(fetch, `${API_BASE}${path}`, {
@@ -56,12 +61,18 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   setOffline(false); // the server answered (even with an error status), so we're online
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    if (res.status === 401 && body.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
-    throw new Error(body.error || `Request failed: ${res.status}`);
+    const body: unknown = await res.json().catch(() => undefined);
+    const fields = body && typeof body === 'object' ? body as { code?: unknown; error?: unknown } : {};
+    if (res.status === 401 && fields.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
+    const message = typeof fields.error === 'string' ? fields.error : `HTTP ${res.status}`;
+    throw new ApiError(`${method} ${path}: ${message}`, { status: res.status, path, code: typeof fields.code === 'string' ? fields.code : undefined });
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  try {
+    return await res.json();
+  } catch {
+    throw new ApiError(`${method} ${path} returned HTTP ${res.status} with an invalid JSON response`, { status: res.status, path });
+  }
 }
 
 const json = (method: string, body: unknown): RequestInit => ({
@@ -143,19 +154,27 @@ export const api = {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
       };
       xhr.onload = () => {
+        setOffline(false);
         if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText));
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new ApiError(`POST /api/videos returned HTTP ${xhr.status} with an invalid JSON response`, { status: xhr.status, path: '/api/videos' }));
+          }
           return;
         }
         try {
           const body = JSON.parse(xhr.responseText);
           if (xhr.status === 401 && body.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
-          reject(new ApiError(body.error || 'Upload failed', { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds }));
+          reject(new ApiError(`POST /api/videos: ${body.error || `HTTP ${xhr.status}`}`, { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds, status: xhr.status, path: '/api/videos' }));
         } catch {
-          reject(new ApiError('Upload failed'));
+          reject(new ApiError(`POST /api/videos failed with HTTP ${xhr.status}`, { status: xhr.status, path: '/api/videos' }));
         }
       };
-      xhr.onerror = () => reject(new Error('Upload failed — network error'));
+      xhr.onerror = () => {
+        setOffline(true);
+        reject(new Error('POST /api/videos failed — network error'));
+      };
       xhr.send(form);
     }),
 

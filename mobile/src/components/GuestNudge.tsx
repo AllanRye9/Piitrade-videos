@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSiteConfig } from '../state/siteConfig';
 import { useApp } from '../state/AppContext';
@@ -23,11 +23,11 @@ export default function GuestNudge() {
     if (nudgeVisible && !signedIn) {
       setMounted(true);
       slide.setValue(0);
-      Animated.timing(slide, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+      Animated.timing(slide, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web' }).start();
       const t = setTimeout(dismissNudge, autoHideSeconds * 1000);
       return () => clearTimeout(t);
     }
-    Animated.timing(slide, { toValue: 0, duration: 180, useNativeDriver: true }).start(({ finished }) => {
+    Animated.timing(slide, { toValue: 0, duration: 180, useNativeDriver: Platform.OS !== 'web' }).start(({ finished }) => {
       if (finished) setMounted(false);
     });
   }, [nudgeVisible, signedIn, slide, dismissNudge, autoHideSeconds]);

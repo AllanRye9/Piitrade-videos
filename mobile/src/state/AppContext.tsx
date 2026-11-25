@@ -61,7 +61,7 @@ interface AppContextValue {
   setUnreadCount(n: number): void;
 
   /** The feed reports whether a video is actually playing — this drives the guest nudge timer. */
-  setWatching(watching: boolean): void;
+  setWatching(watcher: symbol, watching: boolean): void;
   nudgeVisible: boolean;
   dismissNudge(): void;
   acceptNudge(): void;
@@ -182,12 +182,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ------------------------------------------------------- guest nudges
   const watchingRef = useRef(false);
+  const watchingTokens = useRef(new Set<symbol>());
   const promptRef = useRef<PromptState>(initialPromptState());
   const blockedRef = useRef(false);
   blockedRef.current = sheets.length > 0 || nudgeVisible;
 
-  const setWatching = useCallback((w: boolean) => {
-    watchingRef.current = w;
+  const setWatching = useCallback((watcher: symbol, isWatching: boolean) => {
+    if (isWatching) watchingTokens.current.add(watcher);
+    else watchingTokens.current.delete(watcher);
+    watchingRef.current = watchingTokens.current.size > 0;
   }, []);
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import { api } from '../api';
 import type { AccountSummary, Video } from '../types';
 import Sheet from '../components/Sheet';
 import VideoGrid from '../components/VideoGrid';
-import { Avatar, Button, IconButton, formatCount } from '../components/ui';
+import { Avatar, Button, ErrorText, IconButton, formatCount } from '../components/ui';
 import { useApp, useProfile } from '../state/AppContext';
 import { colors, radius, space } from '../theme';
 
@@ -19,18 +19,25 @@ export default function ProfileSheet() {
   const [mine, setMine] = useState<Video[]>([]);
   const [feed, setFeed] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     (async () => {
-      try {
-        if (profile.handle) {
+      if (profile.handle) {
+        try {
           const res = await api.getAccount(profile.handle);
           if (!cancelled) {
             setAccount(res.account);
             setMine(res.videos);
           }
+        } catch (e) {
+          if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load your profile');
         }
+      }
+      try {
         // Liked / saved come from the per-session state on the feed (first few pages).
         let cursor: string | null = null;
         const all: Video[] = [];
@@ -41,8 +48,8 @@ export default function ProfileSheet() {
           if (!cursor) break;
         }
         if (!cancelled) setFeed(all);
-      } catch {
-        // leave whatever loaded
+      } catch (e) {
+        if (!cancelled) setError((current) => current ? `${current}\n${e instanceof Error ? e.message : 'Could not load your videos'}` : e instanceof Error ? e.message : 'Could not load your videos');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -105,6 +112,7 @@ export default function ProfileSheet() {
         ListHeaderComponent={
           <>
             {header}
+            {error ? <ErrorText>{error}</ErrorText> : null}
             {loading && <ActivityIndicator color={colors.text} style={{ marginVertical: space.xl }} />}
           </>
         }

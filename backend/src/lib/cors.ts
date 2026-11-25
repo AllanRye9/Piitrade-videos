@@ -31,6 +31,15 @@ function localDevelopmentOrigin(origin: string): boolean {
   }
 }
 
+function codespacesPreviewOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'https:' && url.hostname.endsWith('.app.github.dev');
+  } catch {
+    return false;
+  }
+}
+
 export function corsOptions(): CorsOptions {
   const configured = process.env.ALLOWED_ORIGIN;
   if (!configured?.trim()) {
@@ -50,7 +59,7 @@ export function corsOptions(): CorsOptions {
 
   return {
     origin(origin, callback) {
-      callback(null, !origin || allowed.has(origin) || localDevelopmentOrigin(origin));
+      callback(null, !origin || allowed.has(origin) || localDevelopmentOrigin(origin) || codespacesPreviewOrigin(origin));
     },
     maxAge: 86_400,
   };

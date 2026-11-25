@@ -51,11 +51,13 @@ export default function SavedItemsSheet() {
           contentContainerStyle={styles.body}
           ListHeaderComponent={<ErrorText>{error}</ErrorText>}
           ListEmptyComponent={
+            error ? null : (
             <View style={styles.empty}>
               <Icon name="bookmark-outline" size={40} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>Nothing saved yet</Text>
               <Text style={styles.emptyText}>While you watch, tap a product tag to save it. The video keeps playing, and your items wait here for when you’re ready.</Text>
             </View>
+            )
           }
           renderItem={({ item }) => (
             <View style={styles.row}>

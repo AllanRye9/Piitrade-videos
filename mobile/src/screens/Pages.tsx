@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
 import type { AccountSummary, TrendingHashtag, Video } from '../types';
 import VideoFeed from '../components/VideoFeed';
 import VideoGrid from '../components/VideoGrid';
-import { Avatar, Button, Icon, IconButton, formatCount } from '../components/ui';
+import { Avatar, Button, ErrorText, Icon, IconButton, formatCount } from '../components/ui';
 import { PageDescriptor, useApp } from '../state/AppContext';
 import { colors, radius, space } from '../theme';
 
@@ -43,13 +43,20 @@ function Viewer({ videos, index, title }: { videos: Video[]; index: number; titl
 function SingleVideo({ id }: { id: string }) {
   const [video, setVideo] = useState<Video | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    api.getVideo(id).then((r) => setVideo(r.video)).catch((e) => setError(e instanceof Error ? e.message : 'Video not found'));
-  }, [id]);
+    let cancelled = false;
+    setVideo(null);
+    setError(null);
+    api.getVideo(id).then((r) => { if (!cancelled) setVideo(r.video); }).catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Video not found'); });
+    return () => { cancelled = true; };
+  }, [id, attempt]);
   if (video) return <Viewer videos={[video]} index={0} />;
   return (
     <PageShell title="Video">
-      <View style={styles.center}>{error ? <Text style={styles.muted}>{error}</Text> : <ActivityIndicator color={colors.text} />}</View>
+      <View style={styles.center}>
+        {error ? <><ErrorText>{error}</ErrorText><Button title="Retry" variant="secondary" onPress={() => setAttempt((n) => n + 1)} /></> : <ActivityIndicator color={colors.text} />}
+      </View>
     </PageShell>
   );
 }
@@ -60,24 +67,73 @@ function TagPage({ tag }: { tag: string }) {
   const [videos, setVideos] = useState<Video[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
+  const loadingMoreRef = useRef(false);
 
-  useEffect(() => {
-    api.getHashtagVideos(tag).then((r) => { setVideos(r.videos); setCursor(r.nextCursor); }).catch(() => {}).finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    const id = ++requestId.current;
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await api.getHashtagVideos(tag);
+      if (id !== requestId.current) return;
+      setVideos(r.videos);
+      setCursor(r.nextCursor);
+    } catch (e) {
+      if (id === requestId.current) setError(e instanceof Error ? e.message : 'Could not load videos');
+    } finally {
+      if (id === requestId.current) setLoading(false);
+    }
   }, [tag]);
 
-  const more = useCallback(() => {
-    if (!cursor) return;
-    const c = cursor;
-    setCursor(null);
-    api.getHashtagVideos(tag, c).then((r) => { setVideos((v) => [...v, ...r.videos]); setCursor(r.nextCursor); }).catch(() => {});
+  useEffect(() => {
+    void load();
+    return () => { requestId.current++; };
+  }, [load]);
+
+  const more = useCallback(async () => {
+    if (!cursor || loadingMoreRef.current) return;
+    const id = requestId.current;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const r = await api.getHashtagVideos(tag, cursor);
+      if (id !== requestId.current) return;
+      setVideos((v) => [...v, ...r.videos]);
+      setCursor(r.nextCursor);
+    } catch (e) {
+      if (id === requestId.current) setError(e instanceof Error ? e.message : 'Could not load more videos');
+    } finally {
+      if (id === requestId.current) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
+    }
   }, [cursor, tag]);
 
   return (
     <PageShell title={`#${tag}`}>
-      {loading ? (
+      {loading && videos.length === 0 ? (
         <ActivityIndicator color={colors.text} style={{ marginTop: 40 }} />
+      ) : error && videos.length === 0 ? (
+        <View style={styles.center}>
+          <ErrorText>{error}</ErrorText>
+          <Button title="Retry" variant="secondary" onPress={() => { void load(); }} />
+        </View>
       ) : (
-        <VideoGrid videos={videos} emptyLabel={`No videos tagged #${tag} yet.`} onOpen={(i) => pushPage({ name: 'viewer', videos, index: i, title: `#${tag}` })} onEndReached={more} onEndReachedThreshold={0.6} />
+        <VideoGrid
+          videos={videos}
+          emptyLabel={`No videos tagged #${tag} yet.`}
+          onOpen={(i) => pushPage({ name: 'viewer', videos, index: i, title: `#${tag}` })}
+          onEndReached={more}
+          onEndReachedThreshold={0.6}
+          ListFooterComponent={loadingMore ? <ActivityIndicator color={colors.textMuted} /> : error ? <View style={{ alignItems: 'center', gap: space.sm }}><ErrorText>{error}</ErrorText><Button title="Retry" variant="secondary" onPress={() => { void more(); }} /></View> : undefined}
+        />
       )}
     </PageShell>
   );
@@ -89,20 +145,35 @@ function AccountPage({ handle }: { handle: string }) {
   const [account, setAccount] = useState<AccountSummary | null>(null);
   const [videos, setVideos] = useState<Video[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [followError, setFollowError] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
 
   useEffect(() => {
-    api.getAccount(handle).then((r) => { setAccount(r.account); setVideos(r.videos); setFollowing(!!r.account.isFollowing); }).catch((e) => setError(e instanceof Error ? e.message : 'Account not found'));
-  }, [handle]);
+    let cancelled = false;
+    setAccount(null);
+    setVideos([]);
+    setError(null);
+    api.getAccount(handle)
+      .then((r) => {
+        if (cancelled) return;
+        setAccount(r.account);
+        setVideos(r.videos);
+        setFollowing(!!r.account.isFollowing);
+      })
+      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Account not found'); });
+    return () => { cancelled = true; };
+  }, [handle, attempt]);
 
   function follow() {
     requireAuth('Sign in to follow creators.', async () => {
       try {
+        setFollowError(null);
         const res = await api.followAccount(handle);
         setFollowing(res.following);
         setAccount((a) => (a ? { ...a, followersCount: res.followersCount } : a));
-      } catch {
-        // leave state as-is
+      } catch (e) {
+        setFollowError(e instanceof Error ? e.message : 'Could not follow this creator');
       }
     });
   }
@@ -110,7 +181,7 @@ function AccountPage({ handle }: { handle: string }) {
   return (
     <PageShell title={`@${handle}`}>
       {error ? (
-        <View style={styles.center}><Text style={styles.muted}>{error}</Text></View>
+        <View style={styles.center}><ErrorText>{error}</ErrorText><Button title="Retry" variant="secondary" onPress={() => setAttempt((n) => n + 1)} /></View>
       ) : !account ? (
         <ActivityIndicator color={colors.text} style={{ marginTop: 40 }} />
       ) : (
@@ -132,6 +203,7 @@ function AccountPage({ handle }: { handle: string }) {
                 ))}
               </View>
               <Button title={following ? 'Following' : 'Follow'} variant={following ? 'secondary' : 'primary'} onPress={follow} style={{ alignSelf: 'stretch' }} />
+              {followError ? <ErrorText>{followError}</ErrorText> : null}
             </View>
           }
         />
@@ -147,15 +219,26 @@ function DiscoverPage() {
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [tags, setTags] = useState<TrendingHashtag[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
 
   const load = useCallback((query?: string) => {
+    const id = ++requestId.current;
     setLoading(true);
-    api.discoverAccounts(query || undefined).then((r) => setAccounts(r.accounts)).catch(() => {}).finally(() => setLoading(false));
+    setError(null);
+    api.discoverAccounts(query || undefined).then((r) => {
+      if (id === requestId.current) setAccounts(r.accounts);
+    }).catch((e) => {
+      if (id === requestId.current) setError(e instanceof Error ? e.message : 'Could not load creators');
+    }).finally(() => {
+      if (id === requestId.current) setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
     load();
     api.getTrendingHashtags().then((r) => setTags(r.hashtags)).catch(() => {});
+    return () => { requestId.current++; };
   }, [load]);
 
   return (
@@ -183,7 +266,7 @@ function DiscoverPage() {
             </View>
           ) : undefined
         }
-        ListEmptyComponent={loading ? <ActivityIndicator color={colors.text} style={{ marginTop: 30 }} /> : <Text style={styles.muted}>No creators found.</Text>}
+        ListEmptyComponent={loading ? <ActivityIndicator color={colors.text} style={{ marginTop: 30 }} /> : error ? <View style={{ alignItems: 'center', gap: space.sm }}><ErrorText>{error}</ErrorText><Button title="Retry" variant="secondary" onPress={() => load(q.trim() || undefined)} /></View> : <Text style={styles.muted}>No creators found.</Text>}
         renderItem={({ item }) => (
           <Pressable onPress={() => pushPage({ name: 'account', handle: item.handle })} style={styles.account}>
             <Avatar uri={item.avatar} name={item.displayName || item.handle} size={48} />

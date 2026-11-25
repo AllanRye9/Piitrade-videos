@@ -68,18 +68,22 @@ function Thread({ c, onReply, isVideoOwner, onDelete }: { c: Comment; onReply: (
   const [open, setOpen] = useState(false);
   const [replies, setReplies] = useState<Comment[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function loadReplies() {
+    setLoading(true);
+    setError(null);
+    api
+      .getReplies(c.videoId, c.id)
+      .then((r) => setReplies(r.replies))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load replies'))
+      .finally(() => setLoading(false));
+  }
 
   function toggle() {
     if (open) return setOpen(false);
     setOpen(true);
-    if (replies === null) {
-      setLoading(true);
-      api
-        .getReplies(c.videoId, c.id)
-        .then((r) => setReplies(r.replies))
-        .catch(() => setReplies([]))
-        .finally(() => setLoading(false));
-    }
+    if (replies === null && !loading) loadReplies();
   }
 
   return (
@@ -91,6 +95,7 @@ function Thread({ c, onReply, isVideoOwner, onDelete }: { c: Comment; onReply: (
         </Pressable>
       )}
       {open && loading && <ActivityIndicator color={colors.textMuted} style={{ margin: space.sm }} />}
+      {open && error && <Pressable onPress={loadReplies} style={styles.viewReplies}><Text style={styles.viewRepliesText}>{error} · Retry</Text></Pressable>}
       {open && replies?.map((r) => <Row key={r.id} c={r} isReply onReply={onReply} canDelete={!!r.mine || isVideoOwner} onDelete={(x) => { setReplies((rs) => (rs ?? []).filter((y) => y.id !== x.id)); onDelete(x); }} />)}
     </View>
   );
@@ -108,6 +113,7 @@ export default function CommentsSheet({ video, onCountChange }: { video: Video; 
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     api
       .getComments(video.id)
       .then((r) => setComments(r.comments))
@@ -157,7 +163,7 @@ export default function CommentsSheet({ video, onCountChange }: { video: Video; 
         renderItem={({ item }) => <Thread c={item} onReply={setReplyTo} isVideoOwner={!!video.uploader?.isOwn} onDelete={removeComment} />}
         contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.lg }}
         keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={loading ? <ActivityIndicator color={colors.textMuted} style={{ marginTop: 40 }} /> : <Text style={styles.empty}>No comments yet — be the first.</Text>}
+        ListEmptyComponent={loading ? <ActivityIndicator color={colors.textMuted} style={{ marginTop: 40 }} /> : error ? null : <Text style={styles.empty}>No comments yet — be the first.</Text>}
       />
       <ErrorText>{error}</ErrorText>
       {replyTo && (

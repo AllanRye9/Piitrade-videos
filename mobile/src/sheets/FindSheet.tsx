@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { api } from '../api';
@@ -20,6 +20,7 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
   const [unavailable, setUnavailable] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
 
   // Taps are logged against this video (so the creator and shop can be credited); with no video
   // context (shouldn't happen) fall back to opening the link directly.
@@ -27,24 +28,28 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
 
   const search = useCallback(async (q: string) => {
     if (!q.trim()) return;
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
+    setResults(null);
+    setBrowseUrl(null);
     try {
       const res = await api.marketplaceSearch(q.trim());
+      if (id !== requestId.current) return;
       setResults(res.results);
       setBrowseUrl(res.browseUrl ?? null);
       setUnavailable((res.shops?.failed ?? []).map((f) => f.name));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Search failed');
+      if (id === requestId.current) setError(e instanceof Error ? e.message : 'Search failed');
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (query.trim()) search(query);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (initialQuery?.trim()) void search(initialQuery.replace(/^#/, ''));
+    return () => { requestId.current++; };
+  }, [initialQuery, search]);
 
   // Name the shop on each row only when the results come from more than one.
   const showShop = new Set((results ?? []).map((r) => r.shop?.id).filter(Boolean)).size > 1;
