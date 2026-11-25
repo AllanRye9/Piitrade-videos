@@ -6,7 +6,7 @@
 // caching strategy /uploads already has server-side (see index.ts's
 // `maxAge: '7d', immutable`), not this service worker.
 
-const CACHE_NAME = 'piitrade-shell-v3';
+const CACHE_NAME = 'piitrade-shell-v4';
 const SHELL_URLS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -60,8 +60,10 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => cached || caches.match('/'));
-      // Stale-while-revalidate: serve the cached shell instantly if
-      // we have one, refresh it in the background either way.
+      // Page loads (index.html) go network-first so a new deploy is picked up
+      // immediately; a stale shell pointed at an old API host after a deploy.
+      // Everything else: stale-while-revalidate (cached copy now, refresh in background).
+      if (request.mode === 'navigate') return network;
       return cached || network;
     })
   );
