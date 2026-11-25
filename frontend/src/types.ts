@@ -174,3 +174,33 @@ export interface TrendingHashtag {
   tag: string;
   count: number;
 }
+
+/** The partner application form (POST /api/partners/apply). */
+export interface PartnerApplicationForm {
+  name: string;
+  baseUrl: string;
+  apiBase: string;
+  contactEmail: string;
+  contactName?: string;
+  country?: string;
+  currency?: string;
+  notes?: string;
+}
+
+export interface PartnerApplicationStatus {
+  id: string;
+  name: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewNote: string;
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
+/** Result of the server's check of a partner's listing API against docs/LISTING_SPEC.md. */
+export interface PartnerApiCheck {
+  ok: boolean;
+  status?: number;
+  ms: number;
+  issues: Array<{ level: 'error' | 'warning'; message: string }>;
+  sampleCount?: number;
+}

@@ -1,18 +1,25 @@
 import type { SavedItem, Video, Comment, MarketplaceSearchResponse, AccountSummary, AppNotification, TrendingHashtag, Earnings, ProductPin, ProductSuggestion, SiteInfo } from './types';
 import { fetchWithTimeout, isNetworkError } from './lib/net';
+import { describeUploadFailure } from './lib/uploadErrors';
 import { setOffline } from './state/network';
 import { API_BASE } from './config';
 import { getSessionId } from './lib/session';
+
+/** Longest an upload may take end to end (sending + server encoding) before the app stops waiting on that connection. */
+const UPLOAD_TIMEOUT_MS = 20 * 60 * 1000;
 
 export class ApiError extends Error {
   code?: string;
   duration?: number;
   maxSeconds?: number;
-  constructor(message: string, extra: { code?: string; duration?: number; maxSeconds?: number } = {}) {
+  /** An upload whose connection died after the whole file was sent: the video may still have been saved. */
+  recoverable?: boolean;
+  constructor(message: string, extra: { code?: string; duration?: number; maxSeconds?: number; recoverable?: boolean } = {}) {
     super(message);
     this.code = extra.code;
     this.duration = extra.duration;
     this.maxSeconds = extra.maxSeconds;
+    this.recoverable = extra.recoverable;
   }
 }
 
@@ -134,6 +141,14 @@ export const api = {
       }
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${API_BASE}/api/videos`);
+      // Without a deadline a stalled connection left the upload spinning forever. This covers sending the
+      // file AND the server encoding it; if it fires after the file was sent, the app checks the video's
+      // status instead of re-uploading.
+      xhr.timeout = UPLOAD_TIMEOUT_MS;
+      let sent = false; // the whole file has left the phone
+      xhr.upload.onload = () => {
+        sent = true;
+      };
       xhr.setRequestHeader('X-Session-Id', getSessionId());
       // Same key on every retry of this upload, so a retry after a dropped connection returns the
       // video the server already created instead of posting a duplicate.
@@ -146,17 +161,31 @@ export const api = {
           resolve(JSON.parse(xhr.responseText));
           return;
         }
+        // The server's own message states the real cause (damaged file, unsupported codec, storage full…).
+        // A proxy's HTML error page has no usable body, so those are described from the status code.
+        let body: { error?: string; code?: string; duration?: number; maxSeconds?: number } = {};
         try {
-          const body = JSON.parse(xhr.responseText);
-          if (xhr.status === 401 && body.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
-          reject(new ApiError(body.error || 'Upload failed', { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds }));
+          body = JSON.parse(xhr.responseText);
         } catch {
-          reject(new ApiError('Upload failed'));
+          body = {};
         }
+        if (xhr.status === 401 && body.code === 'SIGN_IN_REQUIRED') onSignInRequired?.();
+        const failure = describeUploadFailure({ status: xhr.status, serverMessage: body.error, sent });
+        reject(new ApiError(failure.message, { code: failure.recoverable ? 'UPLOAD_INTERRUPTED' : body.code, duration: body.duration, maxSeconds: body.maxSeconds, recoverable: failure.recoverable }));
       };
-      xhr.onerror = () => reject(new Error('Upload failed — network error'));
+      const interrupted = (timedOut: boolean) => {
+        const failure = describeUploadFailure({ status: 0, sent, timedOut });
+        reject(new ApiError(failure.message, { code: failure.recoverable ? 'UPLOAD_INTERRUPTED' : 'UPLOAD_NETWORK', recoverable: failure.recoverable }));
+      };
+      xhr.onerror = () => interrupted(false);
+      xhr.ontimeout = () => interrupted(true);
+      xhr.onabort = () => interrupted(false);
       xhr.send(form);
     }),
+
+  /** What became of an upload sent with this idempotency key — used after its connection died with the file already sent. */
+  getUploadStatus: (key: string) =>
+    request<{ status: 'done'; video: Video } | { status: 'processing' } | { status: 'unknown' }>(`/api/videos/upload-status/${encodeURIComponent(key)}`),
 
   like: (id: string) => request<{ liked: boolean; likes: number }>(`/api/videos/${id}/like`, { method: 'POST' }),
   favorite: (id: string) => request<{ favorited: boolean }>(`/api/videos/${id}/favorite`, { method: 'POST' }),

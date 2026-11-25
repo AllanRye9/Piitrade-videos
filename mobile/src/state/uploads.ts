@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { ApiError, AudioUpload, LocalFile, TrimRange, api } from '../api';
 import type { Video } from '../types';
 import { MAX_VIDEO_SECONDS } from '../config';
+import { pollUploadStatus } from '../lib/uploadPoll';
 
 /**
  * Uploads run here, not inside the upload popup: the popup hands over the
@@ -68,7 +69,24 @@ export function startUpload(params: UploadParams, onDone?: (v: Video) => void, k
       set({ phase: 'done', progress: 100, video: res.video });
       onDone?.(res.video);
     })
-    .catch((err) => {
+    .catch(async (err) => {
+      // The file was fully sent but the connection died while the server was still encoding it (a proxy
+      // timeout on a big video). The server carries on regardless, so ask what became of it rather than
+      // making the person upload the whole file again.
+      if (err instanceof ApiError && err.recoverable && lastKey) {
+        const key = lastKey;
+        set({ phase: 'processing', progress: 100, error: null });
+        const video = await pollUploadStatus<Video>(() => api.getUploadStatus(key));
+        if (video) {
+          lastParams = null;
+          lastKey = null;
+          set({ phase: 'done', progress: 100, video });
+          onDone?.(video);
+          return;
+        }
+        set({ phase: 'error', error: 'The server stopped before finishing this video — it may be damaged or too large. Tap Retry, or choose a shorter or lower-resolution clip.' });
+        return;
+      }
       if (err instanceof ApiError && err.code === 'VIDEO_TOO_LONG' && err.duration) {
         set({
           phase: 'error',

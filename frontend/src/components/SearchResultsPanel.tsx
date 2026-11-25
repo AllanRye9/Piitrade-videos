@@ -69,7 +69,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
       >
         <div className="flex items-start justify-between gap-3 px-4 pt-3 pb-2">
           <div className="min-w-0">
-            <p className="text-white text-sm font-semibold">Find on Piitrade</p>
+            <p className="text-white text-sm font-semibold">Find on Piitrade &amp; partner shops</p>
             {identification && <p className="text-[11px] text-white/50 truncate">Looks like “{identification}”</p>}
           </div>
           <button type="button" onClick={onClose} aria-label="Close results" className="tap-target -mr-2 -mt-1 text-white/60 shrink-0">
@@ -83,7 +83,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
             <input
               value={manualQuery}
               onChange={(e) => setManualQuery(e.target.value)}
-              placeholder="Search piitrade.com…"
+              placeholder="Search Piitrade &amp; partner shops…"
               className="flex-1 bg-transparent text-white text-sm outline-none focus-visible:outline-none placeholder:text-white/40 min-w-0"
             />
           </div>
@@ -97,7 +97,7 @@ export default function SearchResultsPanel({ loading, error, results, identifica
         </form>
 
         <div className="flex-1 overflow-y-auto px-4 pb-3">
-          {loading && <p className="text-white/60 text-sm py-10 text-center">Searching Piitrade…</p>}
+          {loading && <p className="text-white/60 text-sm py-10 text-center">Searching shops…</p>}
           {error && <p className="text-red-400 text-sm py-10 text-center">{error}</p>}
 
           {!loading && !error && showShortenedNotice && (

@@ -11,6 +11,7 @@ import locationsRouter from './locations';
 import adminsRouter from './admins';
 import auditRouter from './audit';
 import sitesRouter from './sites';
+import partnerApplicationsRouter from './partnerApplications';
 import attributionAdminRouter from './attribution';
 
 /**
@@ -95,6 +96,7 @@ router.use('/locations', locationsRouter);
 router.use('/admins', adminsRouter);
 router.use('/audit', auditRouter);
 router.use('/sites', sitesRouter);
+router.use('/partner-applications', partnerApplicationsRouter);
 router.use('/attribution', attributionAdminRouter);
 
 export default router;

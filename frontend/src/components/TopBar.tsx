@@ -12,6 +12,7 @@ import {
   Store,
   ShieldCheck,
   PlusCircle,
+  Handshake,
 } from 'lucide-react';
 import Avatar from './Avatar';
 import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
@@ -251,6 +252,12 @@ export default function TopBar({ mode, onModeChange, onSearch, onUploadClick, on
                     <span className="flex-1">Safety tips</span>
                     <ExternalLink size={14} className="text-white/30" />
                   </a>
+
+                  <div className="my-1.5 border-t border-white/10" />
+                  <Link role="menuitem" to="/partners" onClick={() => setMenuOpen(false)} className={menuItem}>
+                    <Handshake size={18} className="text-brand-orange" />
+                    <span className="flex-1">Partner with us</span>
+                  </Link>
 
                   <div className="mt-1.5 border-t border-white/10 px-4 pt-2 pb-1.5 flex items-center gap-3 text-[11px] text-white/35">
                     <Link to="/legal/terms" onClick={() => setMenuOpen(false)} className="hover:text-white/60">

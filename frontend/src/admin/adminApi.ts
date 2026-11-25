@@ -174,6 +174,25 @@ export interface SiteTestResult {
   sampleCount?: number;
 }
 
+export interface PartnerApplicationRecord {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiBase: string;
+  country: string;
+  currency: string;
+  contactName: string;
+  contactEmail: string;
+  notes: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewNote: string;
+  siteId: string | null;
+  /** The listing-API check made when the shop applied. */
+  verification: { ok: boolean; ms: number; sampleCount: number; issues: SpecIssue[] } | null;
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
 export interface AttributionOverview {
   days: number;
   totals: { saves: number; clicks: number; conversions: number; revenue: Record<string, number>; credited: Record<string, number> };
@@ -354,6 +373,11 @@ export const adminApi = {
   rotateSiteSecret: (id: string) => post<{ postbackSecret: string }>(`/api/admin/sites/${id}/rotate-secret`),
   testSite: (id: string) => post<SiteTestResult>(`/api/admin/sites/${id}/test`),
   deleteSite: (id: string) => del(`/api/admin/sites/${id}`),
+  listPartnerApplications: (status?: string) => get<{ applications: PartnerApplicationRecord[] }>('/api/admin/partner-applications', { status }),
+  recheckPartnerApplication: (id: string) => post<SiteTestResult>(`/api/admin/partner-applications/${id}/recheck`),
+  approvePartnerApplication: (id: string, commissionPct: number, reviewNote?: string) =>
+    post<{ siteId: string }>(`/api/admin/partner-applications/${id}/approve`, { commissionPct, reviewNote }),
+  rejectPartnerApplication: (id: string, reviewNote?: string) => post<{ ok: boolean }>(`/api/admin/partner-applications/${id}/reject`, { reviewNote }),
   attributionOverview: (q: { days?: number; siteId?: string }) => get<AttributionOverview>('/api/admin/attribution/overview', q),
   guardrail: (days: number) => get<GuardrailReport>('/api/admin/attribution/guardrail', { days }),
   listPayouts: (q: { status?: string; page?: number; limit?: number }) => get<{ entries: PayoutRecord[] } & PageMeta>('/api/admin/attribution/payouts', q),

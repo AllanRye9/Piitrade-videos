@@ -76,7 +76,7 @@ export default function UploadStatus() {
               {label}
             </Text>
             <Text style={styles.sub} numberOfLines={2}>
-              {s.phase === 'error' ? s.error : s.title || 'Untitled'}
+              {s.phase === 'error' ? s.error : s.phase === 'processing' ? 'Large videos can take a few minutes — you can keep watching.' : s.title || 'Untitled'}
             </Text>
           </View>
 

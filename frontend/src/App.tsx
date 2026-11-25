@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { api } from './api';
+import { api, isSignedIn, requestSignIn } from './api';
 import type { Video } from './types';
 import VideoFeed from './components/VideoFeed';
 import TopBar, { FeedMode } from './components/TopBar';
@@ -142,7 +142,7 @@ export default function App() {
         mode={mode}
         onModeChange={switchMode}
         onSearch={handleSearch}
-        onUploadClick={() => setShowUpload(true)}
+        onUploadClick={() => (isSignedIn() ? setShowUpload(true) : requestSignIn())}
         onSettingsClick={() => setShowSettings(true)}
         onNotificationsClick={() => setShowNotifications(true)}
         unreadCount={unreadCount}

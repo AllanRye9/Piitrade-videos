@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Banknote, BarChart3, Flag, Film, LayoutDashboard, LogOut, MapPin, Menu, MessageSquare, ScrollText, ShieldCheck, ShoppingBag, Store, UserCircle, Users, X } from 'lucide-react';
+import { Banknote, BarChart3, Handshake, Flag, Film, LayoutDashboard, LogOut, MapPin, Menu, MessageSquare, ScrollText, ShieldCheck, ShoppingBag, Store, UserCircle, Users, X } from 'lucide-react';
 import { useAdminAuth } from './AdminAuthContext';
 import { ADMIN_BASE } from './paths';
 import { Badge, PageErrorBoundary, cx } from './ui';
@@ -31,6 +31,7 @@ const NAV: Array<{ heading?: string; items: NavItem[] }> = [
     heading: 'Commerce',
     items: [
       { to: 'shops', label: 'Shops', icon: Store, permission: 'sites.view' },
+      { to: 'applications', label: 'Partner applications', icon: Handshake, permission: 'sites.view' },
       { to: 'attribution', label: 'Attribution', icon: BarChart3, permission: 'attribution.view' },
       { to: 'payouts', label: 'Payouts', icon: Banknote, permission: 'payouts.view' },
     ],

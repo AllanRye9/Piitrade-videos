@@ -40,7 +40,7 @@ async function loadShopCache(): Promise<ShopCache> {
   if (shopCache && shopCache.expiresAt > now) return shopCache;
   if (shopCacheRequest) return shopCacheRequest;
 
-  shopCacheRequest = prisma.site.findMany({
+  const request: Promise<ShopCache> = prisma.site.findMany({
     select: { id: true, name: true, baseUrl: true, apiBase: true, country: true, currency: true, active: true },
   }).then((sites: SearchShop[]) => {
     const cache: ShopCache = {
@@ -62,7 +62,8 @@ async function loadShopCache(): Promise<ShopCache> {
   }).finally(() => {
     shopCacheRequest = null;
   });
-  return shopCacheRequest;
+  shopCacheRequest = request;
+  return request;
 }
 
 export async function searchConfigured(): Promise<boolean> {

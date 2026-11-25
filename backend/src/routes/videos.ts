@@ -6,6 +6,7 @@ import { prisma } from '../db';
 import { uploadVideoWithAudio } from '../middleware/upload';
 import { extractPoster, getVideoDuration, hasAudioStream } from '../lib/thumbnail';
 import { transcodeToMp4, TranscodeOptions } from '../lib/videoTranscode';
+import { describeTranscodeFailure, referenceId } from '../lib/mediaErrors';
 import { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit, TrimWindow } from '../lib/videoLimits';
 import { MAX_AUDIO_BYTES, resolveAudioMix } from '../lib/audioMix';
 import { uploadToR2 } from '../lib/r2';
@@ -421,7 +422,7 @@ const createVideo = async (req: Request, res: Response) => {
   const sourceDuration = await getVideoDuration(file.path);
   if (sourceDuration === null) {
     cleanup();
-    throw new HttpError(422, 'Could not read this video — please upload a valid video file');
+    throw new HttpError(422, 'Could not read this video — the file may be damaged, incomplete, or in an unsupported format. Re-export it as MP4 and try again.', { code: 'VIDEO_UNREADABLE' });
   }
 
   let keep: TrimWindow;
@@ -498,8 +499,12 @@ const createVideo = async (req: Request, res: Response) => {
     await transcodeToMp4(file.path, transcodedPath, transcodeOptions);
   } catch (err) {
     if (fs.existsSync(transcodedPath)) fs.unlinkSync(transcodedPath);
-    console.error('Video transcode failed:', (err as Error).message);
-    throw new HttpError(422, audio ? 'Could not add this audio to the video — try a different audio file' : 'Could not process this video — please upload a valid video file');
+    // Say what actually went wrong (damaged file, unsupported codec, server out of space/memory, timeout…)
+    // instead of one generic message; the reference id ties the uploader's report to the full ffmpeg log.
+    const failure = describeTranscodeFailure(err, { withAudio: !!audio });
+    const ref = referenceId();
+    console.error(`Video transcode failed [${ref}] (${failure.code}, ${file.size} bytes, ${file.originalname}):`, (err as Error).message, (err as { stderr?: string }).stderr || '');
+    throw new HttpError(failure.status, `${failure.message} (ref ${ref})`, { code: failure.code, details: { reference: ref, serverSide: failure.serverSide, ...(failure.reason ? { reason: failure.reason } : {}) } });
   } finally {
     // The originals (whatever format they were) are never served —
     // only the normalized transcodedPath is, from here on.
@@ -634,6 +639,28 @@ router.post('/', requireAccount, uploadLimiter, uploadVideoWithAudio, async (req
   } finally {
     uploadsInFlight.delete(flightKey);
   }
+});
+
+// GET /api/videos/upload-status/:key — what became of an upload the app sent with this idempotency key.
+// A long encode can outlast a proxy's timeout, cutting the connection after the video was in fact saved;
+// the app then polls here instead of re-uploading the whole (large) file. Only the uploading session can ask.
+//   { status: 'done', video }   the video exists
+//   { status: 'processing' }    the server is still working on it
+//   { status: 'unknown' }       nothing yet (still arriving, or it never made it)
+router.get('/upload-status/:key', requireAccount, async (req: Request, res: Response) => {
+  const key = String(req.params.key || '').trim().slice(0, 64);
+  const sessionId = getSessionId(req);
+  if (!key) {
+    res.json({ status: 'unknown' });
+    return;
+  }
+  const existing: VideoRecord | null = await prisma.video.findUnique({ where: { uploadKey: key } });
+  if (existing && existing.uploaderSessionId === sessionId) {
+    const uploaderMap = await fetchUploadersFor([existing], sessionId);
+    res.json({ status: 'done', video: (await attachProducts([serialize(existing, undefined, existing.uploaderSessionId ? uploaderMap.get(existing.uploaderSessionId) : null)]))[0] });
+    return;
+  }
+  res.json({ status: uploadsInFlight.has(`${sessionId}:${key}`) ? 'processing' : 'unknown' });
 });
 
 /**

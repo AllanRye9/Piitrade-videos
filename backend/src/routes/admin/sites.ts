@@ -5,8 +5,7 @@ import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
 import { HttpError } from '../../lib/httpError';
 import { audit } from '../../lib/audit';
-import { isPublicHttpUrl, newPostbackSecret, slugify } from '../../lib/sites';
-import { validateListingsResponse } from '../../lib/listingSpec';
+import { checkListingApi, isPublicHttpUrl, newPostbackSecret, slugify } from '../../lib/sites';
 
 const router = Router();
 
@@ -129,30 +128,7 @@ router.post('/:id/test', requirePermission('sites.view'), async (req: AuthedRequ
   if (!site) throw new HttpError(404, 'Shop not found');
   if (!site.apiBase) throw new HttpError(400, 'This shop has no API base set');
   if (!isPublicHttpUrl(site.apiBase)) throw new HttpError(400, 'API base must be a public http(s) URL');
-
-  const started = Date.now();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const r = await fetch(`${site.apiBase}/api/listings?q=a&sort=relevance&limit=3${site.country ? `&country=${encodeURIComponent(site.country)}` : ''}`, { signal: controller.signal, redirect: 'error' });
-    const ms = Date.now() - started;
-    if (!r.ok) {
-      res.json({ ok: false, status: r.status, ms, issues: [{ level: 'error', message: `The listing endpoint answered HTTP ${r.status}` }] });
-      return;
-    }
-    let body: unknown;
-    try {
-      body = await r.json();
-    } catch {
-      res.json({ ok: false, status: r.status, ms, issues: [{ level: 'error', message: 'The response was not valid JSON (is this the API host rather than the website?)' }] });
-      return;
-    }
-    res.json({ status: r.status, ms, ...validateListingsResponse(body) });
-  } catch (err: any) {
-    res.json({ ok: false, ms: Date.now() - started, issues: [{ level: 'error', message: err?.name === 'AbortError' ? 'Timed out after 10 seconds' : `Could not reach the API: ${err?.message || err}` }] });
-  } finally {
-    clearTimeout(timer);
-  }
+  res.json(await checkListingApi(site.apiBase, site.country));
 });
 
 // DELETE /api/admin/sites/:id — only shops with no click history; otherwise disable (the ledger must stay intact).

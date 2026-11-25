@@ -386,6 +386,7 @@ model Site {
   conversions Conversion[]
   savedItems  SavedItem[]
   dailyStats  SiteDailyStat[]
+  applications PartnerApplication[]
 }
 
 // One product pinned to a video, optionally only during [startMs, endMs] and at a
@@ -525,4 +526,37 @@ model SiteDailyStat {
   impressions Int      @default(0)
 
   @@unique([siteId, day])
+}
+
+// A shop/app asking to become a partner: it submits its listing API (see docs/LISTING_SPEC.md and
+// docs/PARTNERS.md), the server checks it against the spec, and an admin approves it into a Site.
+// Piitrade Videos then promotes the partner (search, product tags, embeds) and sends it attributed traffic.
+model PartnerApplication {
+  id                   String    @id @default(cuid())
+  name                 String
+  baseUrl              String
+  // Hostname of baseUrl without "www." — used to refuse duplicates.
+  host                 String
+  apiBase              String
+  country              String    @default("")
+  currency             String    @default("")
+  contactName          String    @default("")
+  contactEmail         String
+  notes                String    @default("")
+  // pending | approved | rejected
+  status               String    @default("pending")
+  reviewNote           String    @default("")
+  // sha256 of the status token handed to the applicant once, at submission.
+  tokenHash            String
+  // JSON: result of the automatic listing-API check made at submission.
+  verification         String    @default("")
+  siteId               String?
+  site                 Site?     @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  // Set when the applicant has collected the credentials (postback secret) — they are shown only once.
+  credentialsClaimedAt DateTime?
+  createdAt            DateTime  @default(now())
+  reviewedAt           DateTime?
+
+  @@index([status, createdAt])
+  @@index([host])
 }

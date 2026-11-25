@@ -1,0 +1,15 @@
+{
+  "name": "piitrade-videos",
+  "private": true,
+  "description": "Repo-level scripts and tests. Backend, web (frontend), mobile and worker each keep their own dependencies; nothing is installed at the root.",
+  "scripts": {
+    "migrate": "docker compose run --rm --build --entrypoint npm backend run prisma:migrate",
+    "test": "npm run test:root && npm run test:backend && npm run test:web && npm run test:mobile",
+    "test:root": "node --experimental-strip-types --test \"tests/*.test.mjs\"",
+    "test:backend": "npm --prefix backend test",
+    "test:web": "npm --prefix frontend test",
+    "test:mobile": "npm --prefix mobile test",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck && npm --prefix mobile run typecheck",
+    "check": "npm run typecheck && npm test"
+  }
+}

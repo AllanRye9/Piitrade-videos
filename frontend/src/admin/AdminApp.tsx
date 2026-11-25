@@ -14,6 +14,7 @@ import ProductsPage from './pages/ProductsPage';
 import LocationsPage from './pages/LocationsPage';
 import AdminsPage from './pages/AdminsPage';
 import ShopsPage from './pages/ShopsPage';
+import PartnerApplicationsPage from './pages/PartnerApplicationsPage';
 import AttributionPage from './pages/AttributionPage';
 import PayoutsPage from './pages/PayoutsPage';
 import ActivityPage from './pages/ActivityPage';
@@ -43,6 +44,7 @@ export default function AdminApp() {
             <Route path="products" element={<RequirePermission permission="products.view"><ProductsPage /></RequirePermission>} />
             <Route path="locations" element={<RequirePermission permission="locations.view"><LocationsPage /></RequirePermission>} />
             <Route path="shops" element={<RequirePermission permission="sites.view"><ShopsPage /></RequirePermission>} />
+            <Route path="applications" element={<RequirePermission permission="sites.view"><PartnerApplicationsPage /></RequirePermission>} />
             <Route path="attribution" element={<RequirePermission permission="attribution.view"><AttributionPage /></RequirePermission>} />
             <Route path="payouts" element={<RequirePermission permission="payouts.view"><PayoutsPage /></RequirePermission>} />
             <Route path="admins" element={<RequirePermission primaryOnly><AdminsPage /></RequirePermission>} />

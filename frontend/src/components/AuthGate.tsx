@@ -10,10 +10,9 @@ interface Props {
   onAuthenticated: () => void;
 }
 
-// Shown before anything else in the app — see main.tsx's RequireConsumerAuth.
-// Signing up here does the same session-adoption dance ProfileSettings used
-// to do inline; this is now the ONLY place that happens, since Settings is
-// only reachable once already signed in.
+// Sign-in / sign-up, shown inside SignInDialog the first time a guest does something that needs an account
+// (browsing and watching never do), and at /reset-password. Signing up here does the session-adoption
+// dance (adopt the account's canonical session id); this is the ONLY place that happens.
 export default function AuthGate({ onAuthenticated }: Props) {
   const [searchParams] = useSearchParams();
   const resetToken = searchParams.get('token');

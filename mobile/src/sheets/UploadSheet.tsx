@@ -7,6 +7,7 @@ import type { LocalFile } from '../api';
 import Sheet from '../components/Sheet';
 import { Button, ErrorText, Icon, SectionLabel, TextField } from '../components/ui';
 import { MAX_VIDEO_SECONDS } from '../config';
+import { MAX_UPLOAD_MB } from '../lib/uploadErrors';
 import { PickedVideo, pickVideo } from '../lib/pickers';
 import { useApp } from '../state/AppContext';
 import { UploadDraft, isUploadBusy, startUpload } from '../state/uploads';
@@ -14,6 +15,7 @@ import { colors, radius, space } from '../theme';
 
 const AUDIO_EXT = ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'oga', 'opus', 'flac', 'weba'];
 const MAX_AUDIO_MB = 50;
+const fmtSize = (bytes: number) => (bytes >= 1024 * 1024 * 1024 ? `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB` : `${Math.round(bytes / (1024 * 1024))} MB`);
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 function Preview({ uri }: { uri: string }) {
@@ -37,7 +39,7 @@ function Tune({ label, value, min, max, step, onChange }: { label: string; value
 /** Upload popup: pick → (trim to 60s) → caption → optional music → Post. Closes on Post; progress continues in <UploadStatus />. */
 export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
   const { closeSheet } = useApp();
-  const [picked, setPicked] = useState<PickedVideo | null>(draft ? { file: draft.file, uri: draft.uri, duration: draft.duration } : null);
+  const [picked, setPicked] = useState<PickedVideo | null>(draft ? { file: draft.file, uri: draft.uri, duration: draft.duration, size: null } : null);
   const [sourceDuration, setSourceDuration] = useState<number | null>(draft?.duration ?? null);
   const [trimStart, setTrimStart] = useState(0);
   const [trimLength, setTrimLength] = useState(MAX_VIDEO_SECONDS);
@@ -67,6 +69,11 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
     try {
       const v = await pickVideo();
       if (!v) return;
+      // Fail now, with the reason, rather than after sending hundreds of MB that the server will refuse.
+      if (v.size !== null && v.size > MAX_UPLOAD_MB * 1024 * 1024) {
+        setError(`That video is ${fmtSize(v.size)} — the limit is ${MAX_UPLOAD_MB} MB. Choose a smaller file or export it at a lower resolution.`);
+        return;
+      }
       setPicked(v);
       setSourceDuration(v.duration);
       setTrimStart(0);
@@ -137,6 +144,7 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
             <View style={styles.fileRow}>
               <Text style={styles.fileName} numberOfLines={1}>
                 {picked.file.name}
+                {picked.size !== null ? ` · ${fmtSize(picked.size)}` : ''}
               </Text>
               <Pressable onPress={choose} hitSlop={8}>
                 <Text style={styles.link}>Change</Text>

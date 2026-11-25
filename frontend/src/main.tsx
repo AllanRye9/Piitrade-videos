@@ -8,7 +8,8 @@ import DiscoverPage from './components/DiscoverPage';
 import VideoPermalinkPage from './components/VideoPermalinkPage';
 import HashtagPage from './components/HashtagPage';
 import AuthGate from './components/AuthGate';
-import RequireConsumerAuth from './components/RequireConsumerAuth';
+import SignInDialog from './components/SignInDialog';
+import PartnersPage from './components/PartnersPage';
 import TermsPage from './components/legal/TermsPage';
 import PrivacyPage from './components/legal/PrivacyPage';
 import DmcaPage from './components/legal/DmcaPage';
@@ -43,31 +44,26 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               and a person arriving from the emailed link is by
               definition not signed in here yet. */}
           <Route path="/reset-password" element={<AuthGate onAuthenticated={() => window.location.assign('/')} />} />
-          {/* Legal pages — reachable outside the login gate too, same
-              reasoning as /reset-password: a prospective user should be
-              able to read these before signing up, not only after. */}
+          {/* Legal pages — a prospective user can read these before signing up. */}
           {/* Shared video links (the mobile app's Share button points here) —
               anyone with the link can watch without an account; liking and
               commenting still need one, and the page says so. */}
           <Route path="/v/:id" element={<VideoPermalinkPage />} />
+          {/* Partner onboarding — public: a shop applies with its listing API and checks the result here. */}
+          <Route path="/partners" element={<PartnersPage />} />
           <Route path="/legal/terms" element={<TermsPage />} />
           <Route path="/legal/privacy" element={<PrivacyPage />} />
           <Route path="/legal/dmca" element={<DmcaPage />} />
-          <Route
-            path="/*"
-            element={
-              <RequireConsumerAuth>
-                <Routes>
-                  <Route path="/profile" element={<ProfilePage />} />
-                  <Route path="/discover" element={<DiscoverPage />} />
-                  <Route path="/u/:handle" element={<AccountPage />} />
-                  <Route path="/tag/:tag" element={<HashtagPage />} />
-                  <Route path="/*" element={<App />} />
-                </Routes>
-              </RequireConsumerAuth>
-            }
-          />
+          {/* Everyone can watch without an account (the whole point is to send viewers on to Piitrade and its
+              partners). Writes — like, comment, follow, upload — are refused by the server for guests with
+              401 SIGN_IN_REQUIRED, and SignInDialog (below) turns that into a sign-in prompt. */}
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/u/:handle" element={<AccountPage />} />
+          <Route path="/tag/:tag" element={<HashtagPage />} />
+          <Route path="/*" element={<App />} />
         </Routes>
+        <SignInDialog />
     </BrowserRouter>
   </React.StrictMode>
 );

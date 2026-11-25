@@ -7,10 +7,7 @@ interface Props {
   children: React.ReactNode;
 }
 
-// Deliberately reachable outside the login gate (see main.tsx — these
-// routes sit alongside /reset-password, not under RequireConsumerAuth)
-// since a prospective user should be able to read these before
-// creating an account, not only after.
+// Public, like the rest of the app: a prospective user can read these before creating an account.
 export default function LegalLayout({ title, lastUpdated, children }: Props) {
   return (
     <div className="min-h-dvh w-full bg-black">

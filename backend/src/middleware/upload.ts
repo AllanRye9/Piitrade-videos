@@ -4,6 +4,9 @@ import { v4 as uuid } from 'uuid';
 import { UPLOAD_ROOT } from '../paths';
 import { HttpError } from '../lib/httpError';
 
+/** Largest video file accepted. Keep in sync with MAX_UPLOAD_MB in mobile/src/config.ts and client_max_body_size in frontend/nginx.conf. */
+export const MAX_VIDEO_UPLOAD_BYTES = 500 * 1024 * 1024;
+
 function makeStorage(subdir: string) {
   return multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, path.join(UPLOAD_ROOT, subdir)),
@@ -20,7 +23,7 @@ const ACCEPTED_VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm', '.3g
 
 export const uploadVideo = multer({
   storage: makeStorage('videos'),
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
+  limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES }, // 500MB
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (!ACCEPTED_VIDEO_EXTENSIONS.has(ext)) {
@@ -72,7 +75,7 @@ export const AUDIO_FORMATS_LABEL = 'MP3, M4A, AAC, WAV, OGG, Opus, FLAC';
  *  normalized MP4 has been produced. */
 export const uploadVideoWithAudio = multer({
   storage: makeStorage('videos'),
-  limits: { fileSize: 500 * 1024 * 1024, files: 2 },
+  limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES, files: 2 },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (file.fieldname === 'audio') {

@@ -1,11 +1,11 @@
 import type {
   Video,
   Comment,
-  VisualSearchResult,
   MarketplaceSearchResponse,
   AccountSummary,
   AppNotification,
-  TrendingHashtag, SavedItem, ProductPin, ProductSuggestion, SiteInfo
+  TrendingHashtag, SavedItem, ProductPin, ProductSuggestion, SiteInfo,
+  PartnerApplicationForm, PartnerApplicationStatus, PartnerApiCheck
 } from './types';
 import { API_BASE } from './config';
 
@@ -107,12 +107,32 @@ export class ApiError extends Error {
   code?: string;
   duration?: number;
   maxSeconds?: number;
-  constructor(message: string, extra: { code?: string; duration?: number; maxSeconds?: number } = {}) {
+  status?: number;
+  /** The whole JSON error body, for callers that need more than the message (e.g. the partner API check's issue list). */
+  body?: any;
+  constructor(message: string, extra: { code?: string; duration?: number; maxSeconds?: number; status?: number; body?: any } = {}) {
     super(message);
     this.code = extra.code;
     this.duration = extra.duration;
     this.maxSeconds = extra.maxSeconds;
+    this.status = extra.status;
+    this.body = extra.body;
   }
+}
+
+/**
+ * Anyone can watch without an account; the server answers 401 SIGN_IN_REQUIRED to a write (like, comment,
+ * follow, upload…) from a guest. Every such answer raises this event so one dialog (SignInDialog) can ask
+ * the person to sign in, instead of each screen showing a raw error.
+ */
+export const SIGN_IN_REQUIRED_EVENT = 'piitrade:sign-in-required';
+
+export function requestSignIn() {
+  window.dispatchEvent(new Event(SIGN_IN_REQUIRED_EVENT));
+}
+
+export function isSignedIn(): boolean {
+  return !!getAccountEmail();
 }
 
 /** An audio file to add to a video, and how it's mixed in. Volumes are 0–1. */
@@ -143,7 +163,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || `Request failed: ${res.status}`);
+    if (res.status === 401 && body.code === 'SIGN_IN_REQUIRED') requestSignIn();
+    throw new ApiError(body.error || `Request failed: ${res.status}`, { code: body.code, status: res.status, body });
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -187,6 +208,19 @@ export const api = {
   sendEvents: (events: unknown[]) =>
     request<{ accepted: number }>('/api/events', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }) }),
   getSites: () => request<{ sites: SiteInfo[] }>('/api/marketplace/sites'),
+
+  // Partner onboarding — see backend/src/routes/partners.ts and docs/PARTNERS.md. Public; no account needed.
+  applyAsPartner: (form: PartnerApplicationForm) =>
+    request<{ application: PartnerApplicationStatus; statusToken: string; check: PartnerApiCheck }>('/api/partners/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    }),
+  getPartnerApplication: (id: string, token: string) =>
+    request<{ application: PartnerApplicationStatus; partner?: { slug: string; name: string; commissionPct: number }; credentials?: { postbackSecret: string; note: string } }>(
+      `/api/partners/applications/${encodeURIComponent(id)}`,
+      { headers: { 'X-Application-Token': token } }
+    ),
   getMyProducts: (videoId: string) => request<{ products: ProductPin[] }>(`/api/videos/${videoId}/products`),
   setProducts: (videoId: string, products: ProductPin[]) =>
     request<{ products: unknown[] }>(`/api/videos/${videoId}/products`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ products }) }),
@@ -224,7 +258,8 @@ export const api = {
         } else {
           try {
             const body = JSON.parse(xhr.responseText);
-            reject(new ApiError(body.error || 'Upload failed', { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds }));
+            if (xhr.status === 401 && body.code === 'SIGN_IN_REQUIRED') requestSignIn();
+            reject(new ApiError(body.error || 'Upload failed', { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds, status: xhr.status }));
           } catch {
             reject(new ApiError('Upload failed'));
           }

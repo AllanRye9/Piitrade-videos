@@ -1,6 +1,6 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
-import { api, getAccountEmail, setAccountEmail, resetSessionId } from '../api';
+import { api, getAccountEmail, setAccountEmail, resetSessionId, requestSignIn } from '../api';
 import { setProfileDisplayName, setProfileHandle } from '../profileStore';
 import { getMuted, setMuted, subscribeMuted } from '../soundPreference';
 import { X, Volume2, VolumeX, Store, Loader2, Check, ExternalLink, KeyRound, LogOut } from 'lucide-react';
@@ -25,10 +25,8 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
 
   const muted = useSyncExternalStore(subscribeMuted, getMuted);
 
-  // Settings is now only reachable once already signed in (login/
-  // register is the first thing the app shows otherwise — see
-  // AuthGate/RequireConsumerAuth), so this is always populated here;
-  // no inline signup/login form needed in Settings any more.
+  // null for a guest (anyone can browse without an account): the Account section then offers sign-in
+  // through the shared SignInDialog instead of an inline form.
   const accountEmail = getAccountEmail();
   const [resetBusy, setResetBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
@@ -52,9 +50,8 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
   function signOut() {
     // Clears the "signed in" flag AND starts a fresh, unlinked session
     // id (see resetSessionId's own comment for exactly why the second
-    // part is required, not optional) — then reloads so
-    // RequireConsumerAuth re-reads both and shows AuthGate again,
-    // exactly like a first-ever visit. Does NOT delete the account or
+    // part is required, not optional) — then reloads so the app starts
+    // over as a guest, exactly like a first-ever visit. Does NOT delete the account or
     // its videos, which stay reachable by logging back in with the
     // same email/handle from any device.
     setAccountEmail(null);
@@ -112,21 +109,29 @@ export default function ProfileSettings({ displayName, handle, onClose }: Props)
           {/* Account */}
           <section className="space-y-2">
             <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Account</label>
-            <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2.5">
-              <span className="text-white text-sm truncate">Signed in as {accountEmail}</span>
-              <button type="button" onClick={signOut} className="tap-target shrink-0 text-white/60 text-xs flex items-center gap-1">
-                <LogOut size={14} /> Sign out
+            {accountEmail ? (
+              <>
+                <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2.5">
+                  <span className="text-white text-sm truncate">Signed in as {accountEmail}</span>
+                  <button type="button" onClick={signOut} className="tap-target shrink-0 text-white/60 text-xs flex items-center gap-1">
+                    <LogOut size={14} /> Sign out
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={requestPasswordReset}
+                  disabled={resetBusy || resetSent}
+                  className="w-full flex items-center justify-center gap-1.5 text-white/60 text-xs py-1 disabled:opacity-60"
+                >
+                  {resetBusy ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+                  {resetSent ? 'Reset link sent — check your email' : 'Change password'}
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={() => { onClose(); requestSignIn(); }} className="w-full bg-brand-orange text-white text-sm font-semibold rounded-lg px-3 py-2.5">
+                Sign in or create an account
               </button>
-            </div>
-            <button
-              type="button"
-              onClick={requestPasswordReset}
-              disabled={resetBusy || resetSent}
-              className="w-full flex items-center justify-center gap-1.5 text-white/60 text-xs py-1 disabled:opacity-60"
-            >
-              {resetBusy ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
-              {resetSent ? 'Reset link sent — check your email' : 'Change password'}
-            </button>
+            )}
           </section>
 
           {/* Display name */}

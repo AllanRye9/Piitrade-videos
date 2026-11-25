@@ -19,6 +19,8 @@ export interface PickedVideo {
   /** Seconds, or null when the OS didn't report it. */
   duration: number | null;
   uri: string;
+  /** File size in bytes, or null when the OS didn't report it. */
+  size: number | null;
 }
 
 /** Opens the system gallery for a video. Returns null if cancelled. Throws a readable Error if blocked. */
@@ -32,6 +34,7 @@ export async function pickVideo(): Promise<PickedVideo | null> {
     file: { uri: a.uri, name: a.fileName && extOf(a.fileName) ? a.fileName : `video.${ext}`, type: a.mimeType || MIME_BY_EXT[ext] || 'video/mp4' },
     duration: a.duration != null ? a.duration / 1000 : null,
     uri: a.uri,
+    size: typeof a.fileSize === 'number' && a.fileSize > 0 ? a.fileSize : null,
   };
 }
 

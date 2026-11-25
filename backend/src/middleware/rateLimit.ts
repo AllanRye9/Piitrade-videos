@@ -89,3 +89,24 @@ export const searchLimiter = rateLimit({
   keyGenerator: keyBySession,
   message: { error: 'Too many searches — please wait a moment and try again.' },
 });
+
+// Partner applications: public, unauthenticated, and each one makes the server call the applicant's URL,
+// so keep it to a handful per IP per hour.
+export const partnerApplyLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
+  message: { error: 'Too many applications from this network — please try again later.' },
+});
+
+// Status checks by application id + token.
+export const partnerStatusLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.ip ? ipKeyGenerator(req.ip) : 'unknown'),
+  message: { error: 'Too many requests — please try again shortly.' },
+});
