@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import { PRODUCTION_API_BASE, resolveApiBase } from '../src/apiBase.ts';
 
 test('production domain ignores stale build-time API overrides', () => {
-  assert.equal(resolveApiBase('https://stale.example.com/', 'yotweek.com'), PRODUCTION_API_BASE);
-  assert.equal(resolveApiBase('', 'www.yotweek.com'), PRODUCTION_API_BASE);
+  assert.equal(resolveApiBase('https://stale.example.com/', 'videos.piitrade.com'), PRODUCTION_API_BASE);
+  assert.equal(resolveApiBase('', 'videos.piitrade.com'), PRODUCTION_API_BASE);
 });
 
 test('non-production hosts use a normalized configured API base', () => {

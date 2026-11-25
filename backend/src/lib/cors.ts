@@ -1,6 +1,7 @@
 import type { CorsOptions } from 'cors';
 
 const REQUIRED_ORIGINS = [
+  'https://videos.piitrade.com',
   'https://yotweek.com',
   'https://www.yotweek.com',
   'https://piitrade.com',
