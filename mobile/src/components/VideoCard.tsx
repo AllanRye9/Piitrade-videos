@@ -5,14 +5,14 @@ import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
 import type { Video, VideoProduct } from '../types';
-import { activeProducts, frameRect, openProduct, type Frame } from '../lib/products';
+import { activeProducts, frameRect, type Frame } from '../lib/products';
 import { isNetworkError } from '../lib/net';
 import { track } from '../lib/analytics';
 import { OFFLINE_BODY, OFFLINE_TITLE } from '../lib/links';
 import { WEB_URL, mediaUrl } from '../config';
 import { useApp } from '../state/AppContext';
 import { mutedStore, setMuted } from '../state/stores';
-import { colors } from '../theme';
+import { colors, space } from '../theme';
 import { Avatar, Icon, formatCount } from './ui';
 
 interface Props {
@@ -120,7 +120,7 @@ function HeartBurst({ x, y, onDone }: { x: number; y: number; onDone: () => void
  * second re-render this only when a chip actually appears or disappears.
  * Chips without a hotspot dock above the caption; chips with one sit on the picture at (x, y).
  */
-const ProductChips = React.memo(function ProductChips({ products, frame, cardW, onOpen, onVisit, docked, saved }: { products: VideoProduct[]; frame: Frame; cardW: number; onOpen: (p: VideoProduct) => void; onVisit: (p: VideoProduct) => void; docked: boolean; saved: Set<string> }) {
+const ProductChips = React.memo(function ProductChips({ products, frame, cardW, onOpen, docked, saved }: { products: VideoProduct[]; frame: Frame; cardW: number; onOpen: (p: VideoProduct) => void; docked: boolean; saved: Set<string> }) {
   const list = products.filter((p) => (p.x === null || p.y === null) === docked);
   if (list.length === 0) return null;
   if (docked) {
@@ -128,24 +128,18 @@ const ProductChips = React.memo(function ProductChips({ products, frame, cardW, 
       <View style={styles.chipRow}>
         {list.map((p) => {
           const isSaved = saved.has(p.id);
-          // Two choices side by side: Save (default — the video keeps playing) or Visit (go to the site now).
           return (
-            <View key={p.id} style={styles.chipPair}>
-              <Pressable
-                onPress={() => onOpen(p)}
-                accessibilityRole="button"
-                accessibilityLabel={isSaved ? `${p.title || p.host} is saved. Open saved items` : `Save ${p.title || p.host} for later`}
-                style={[styles.productChip, styles.chipPairMain, isSaved && styles.productChipSaved]}
-              >
-                <Icon name={isSaved ? 'checkmark-circle' : 'bookmark-outline'} size={15} color="#fff" />
-                <Text style={styles.productChipText} numberOfLines={1}>{isSaved ? 'Saved' : p.title || 'Save this item'}</Text>
-                <Text style={styles.productChipHost} numberOfLines={1}>{isSaved ? 'View list' : p.host}</Text>
-              </Pressable>
-              <Pressable onPress={() => onVisit(p)} hitSlop={6} accessibilityRole="link" accessibilityLabel={`Visit ${p.title || p.host} on ${p.host}`} style={styles.visitChip}>
-                <Text style={styles.visitChipText}>Visit</Text>
-                <Icon name="open-outline" size={14} color="#fff" />
-              </Pressable>
-            </View>
+            <Pressable
+              key={p.id}
+              onPress={() => onOpen(p)}
+              accessibilityRole="button"
+              accessibilityLabel={isSaved ? `${p.title || p.host} is saved. Open saved items` : `Save ${p.title || p.host} for later`}
+              style={[styles.productChip, isSaved && styles.productChipSaved]}
+            >
+              <Icon name={isSaved ? 'checkmark-circle' : 'bookmark-outline'} size={15} color="#fff" />
+              <Text style={styles.productChipText} numberOfLines={1}>{isSaved ? 'Saved' : p.title || 'Save this item'}</Text>
+              <Text style={styles.productChipHost} numberOfLines={1}>{isSaved ? 'View list' : p.host}</Text>
+            </Pressable>
           );
         })}
       </View>
@@ -451,13 +445,6 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     },
     [savedIds, video.id, openSheet]
   );
-  // The other choice: leave for the product page right now (the tap is attributed to this video and tag).
-  const onChipVisit = useCallback(
-    (p: VideoProduct) => {
-      openProduct(video.id, { productId: p.id }).catch(() => {});
-    },
-    [video.id]
-  );
   const uploader = video.uploader;
   const showFollowBadge = !!uploader && !uploader.isOwn && !following;
   const hasCaption = !!video.title || !!video.description;
@@ -531,7 +518,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
         </View>
       ) : null}
 
-      <ProductChips docked={false} products={visibleProducts} frame={frame} cardW={width} onOpen={onChipTap} onVisit={onChipVisit} saved={savedSet} />
+      <ProductChips docked={false} products={visibleProducts} frame={frame} cardW={width} onOpen={onChipTap} saved={savedSet} />
 
       {burst ? <HeartBurst key={burst.key} x={burst.x} y={burst.y} onDone={() => setBurst(null)} /> : null}
 
@@ -571,7 +558,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
       </View>
 
       <View pointerEvents="box-none" style={[styles.bottom, { paddingBottom: bottomInset + BOTTOM_MARGIN, paddingRight: RAIL_WIDTH + SIDE_MARGIN * 2 }]}>
-        <ProductChips docked products={visibleProducts} frame={frame} cardW={width} onOpen={onChipTap} onVisit={onChipVisit} saved={savedSet} />
+        <ProductChips docked products={visibleProducts} frame={frame} cardW={width} onOpen={onChipTap} saved={savedSet} />
         {uploader ? (
           <Pressable onPress={() => pushPage({ name: 'account', handle: uploader.handle })} accessibilityRole="button" accessibilityLabel={`Open ${uploader.handle}`} hitSlop={6}>
             <Text style={styles.handle} numberOfLines={1}>
@@ -623,10 +610,6 @@ const styles = StyleSheet.create({
   tag: { color: colors.brandSoft, fontWeight: '700' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   productChip: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%', height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: colors.brand },
-  chipPair: { flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '100%' },
-  chipPairMain: { flexShrink: 1 },
-  visitChip: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 32, paddingHorizontal: 11, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.55)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)' },
-  visitChipText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   productChipSaved: { backgroundColor: 'rgba(0,0,0,0.65)', borderWidth: 1, borderColor: colors.success },
   productChipText: { color: '#fff', fontSize: 13, fontWeight: '800', flexShrink: 1 },
   productChipHost: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '500' },

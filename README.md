@@ -58,6 +58,12 @@ does not need CORS. Serving the bucket from a custom domain also lets Cloudflare
   for guest sessions. Both apps react to that by opening the sign-in popup.
 * Sharing is open to guests (it only increments a counter).
 
+## Guests and the admin area
+* **Watch first.** Web and app open straight on the videos. After the guest has been watching for a while a closable
+  sign-in card appears (timing is set in the admin), and a write (like, comment, follow, upload) asks for an account.
+* **Admin** lives at **`/const/admin`** — first-run registration, sign-in, an analytics dashboard, site & app settings
+  (guest-prompt timing, announcement, maintenance, feature switches, mobile version policy) and a system page. See `docs/ADMIN.md`.
+
 ## Partners (how traffic is promoted)
 Piitrade Videos exists to send viewers to Piitrade **and** to the shops and apps that connect to it. A shop connects
 itself: it exposes the open listing API (`docs/LISTING_SPEC.md`) and applies at **`/partners`** (or
@@ -69,19 +75,3 @@ collects its postback secret once. See `docs/PARTNERS.md`.
 * Crop-to-search visual search, watermarked downloads and a live music preview in the upload popup exist on the
   web app only; the mobile app has typed "Find on Piitrade" search instead.
 * The web app no longer has a login wall: like the mobile app, anyone can watch, and a write (like, comment, follow, upload…) answers `401 SIGN_IN_REQUIRED`, which opens a closable sign-in dialog (`SignInDialog`).
-
-## Testing
-
-Each package has its own tests; the root scripts run them all (install dependencies in `backend/`, `frontend/` and `mobile/` first).
-
-| Command (repo root) | What it runs |
-|---|---|
-| `npm test` | everything below, in order |
-| `npm run test:root` | repo-level tests in `tests/` — **no installs needed** |
-| `npm run test:backend` | backend unit and HTTP tests, including real ffmpeg transcodes |
-| `npm run test:web` | web app (`frontend/`): vitest + logic tests |
-| `npm run test:mobile` | mobile app (`mobile/`): vitest + logic tests |
-| `npm run typecheck` | `tsc` for backend, web and mobile |
-| `npm run check` | typecheck, then all tests |
-
-`tests/` guards what no single package can see: the upload size and video-length limits agree across backend, web, mobile and nginx; every `/api` route the apps call is mounted by the backend; web and mobile show the same product tags at the same moments and place them identically; the Android SDK in `app.json`, the APK workflow and React Native agree; no merge-conflict markers; every test file is registered so it actually runs. CI runs all of this (`.github/workflows/ci.yml`).

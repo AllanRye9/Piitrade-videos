@@ -13,6 +13,9 @@ import auditRouter from './audit';
 import sitesRouter from './sites';
 import partnerApplicationsRouter from './partnerApplications';
 import attributionAdminRouter from './attribution';
+import settingsRouter from './settings';
+import analyticsRouter from './analytics';
+import systemRouter from './system';
 
 /**
  * Everything under /api/admin. Every request is authenticated by requireAdmin
@@ -98,5 +101,8 @@ router.use('/audit', auditRouter);
 router.use('/sites', sitesRouter);
 router.use('/partner-applications', partnerApplicationsRouter);
 router.use('/attribution', attributionAdminRouter);
+router.use('/settings', settingsRouter);
+router.use('/analytics', analyticsRouter);
+router.use('/system', systemRouter);
 
 export default router;

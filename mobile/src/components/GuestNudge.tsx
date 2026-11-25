@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { NUDGE } from '../config';
+import { useSiteConfig } from '../state/siteConfig';
 import { useApp } from '../state/AppContext';
 import { colors, radius, space } from '../theme';
 import { Icon, IconButton } from './ui';
@@ -10,10 +10,11 @@ import { Icon, IconButton } from './ui';
  * Non-blocking, cancellable "sign in" card shown to signed-out viewers
  * every so often while they watch. It floats above the feed (the video
  * keeps playing underneath), closes with ✕ / "Maybe later", swipes away,
- * and hides itself after NUDGE.autoHideSeconds if ignored.
+ * and hides itself after the admin-set time if ignored.
  */
 export default function GuestNudge() {
   const { nudgeVisible, dismissNudge, acceptNudge, signedIn } = useApp();
+  const autoHideSeconds = useSiteConfig().guestPrompt.autoHideSeconds;
   const insets = useSafeAreaInsets();
   const slide = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = React.useState(false);
@@ -23,13 +24,13 @@ export default function GuestNudge() {
       setMounted(true);
       slide.setValue(0);
       Animated.timing(slide, { toValue: 1, duration: 280, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-      const t = setTimeout(dismissNudge, NUDGE.autoHideSeconds * 1000);
+      const t = setTimeout(dismissNudge, autoHideSeconds * 1000);
       return () => clearTimeout(t);
     }
     Animated.timing(slide, { toValue: 0, duration: 180, useNativeDriver: true }).start(({ finished }) => {
       if (finished) setMounted(false);
     });
-  }, [nudgeVisible, signedIn, slide, dismissNudge]);
+  }, [nudgeVisible, signedIn, slide, dismissNudge, autoHideSeconds]);
 
   if (!mounted) return null;
 

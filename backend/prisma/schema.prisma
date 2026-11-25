@@ -25,6 +25,12 @@ model Video {
   // perfectly normal thing to do, it's a raw activity counter, not a
   // vote.
   shares         Int      @default(0)
+  // Admin moderation/curation (routes/admin/videos.ts). hidden videos are
+  // excluded from every public surface; pinRank (lower = earlier) puts a
+  // video at the top of the Latest feed, null = not pinned.
+  hidden         Boolean  @default(false)
+  hiddenAt       DateTime?
+  pinRank        Int?
   // Parsed from title+description at upload/edit time (see
   // lib/hashtags.ts) — a native Postgres text array rather than a
   // separate Hashtag model + join table, since all this needs is
@@ -59,6 +65,7 @@ model Video {
   @@index([createdAt])
   @@index([uploaderSessionId])
   @@index([locationId])
+  @@index([hidden, pinRank])
 }
 
 // A top-level comment or a reply (see parentId). Replies are flattened
@@ -559,4 +566,13 @@ model PartnerApplication {
 
   @@index([status, createdAt])
   @@index([host])
+}
+
+// Admin-managed site & app settings (Admin → Site & app settings). Key "site" holds one JSON document —
+// see lib/settings.ts for its shape, validation and defaults. Served to web and mobile by GET /api/config.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @default(now())
+  updatedBy String   @default("")
 }

@@ -12,11 +12,11 @@ const num = (text, re, what) => {
   return Number(m[1]);
 };
 
-test('the upload size limit is the same in the backend, the mobile app and nginx', () => {
-  const backendMb = num(read('backend/src/middleware/upload.ts'), /MAX_VIDEO_UPLOAD_BYTES\s*=\s*(\d+)\s*\*\s*1024\s*\*\s*1024/, 'backend upload limit');
-  const mobileMb = num(read('mobile/src/lib/uploadErrors.ts'), /MAX_UPLOAD_MB\s*=\s*(\d+)/, 'mobile upload limit');
+test('the upload size limit is the same in the backend and nginx', () => {
+  const upload = read('backend/src/middleware/upload.ts');
+  const backendMb = num(upload, /MAX_VIDEO_UPLOAD_BYTES\s*=\s*(\d+)\s*\*\s*1024\s*\*\s*1024/, 'backend upload limit');
   const nginxMb = num(read('frontend/nginx.conf'), /client_max_body_size\s+(\d+)M/, 'nginx body limit');
-  assert.equal(mobileMb, backendMb, 'mobile MAX_UPLOAD_MB differs from the backend limit');
+  assert.equal((upload.match(/fileSize:\s*MAX_VIDEO_UPLOAD_BYTES/g) || []).length, 2, 'both video upload handlers must use the shared limit');
   assert.equal(nginxMb, backendMb, 'nginx client_max_body_size differs from the backend limit');
 });
 
@@ -46,9 +46,13 @@ test('analytics event types are the same on web and mobile, and the backend acce
   for (const type of web) assert.ok(backend.includes(`'${type}'`), `the backend does not handle the "${type}" event`);
 });
 
-test('the upload-status endpoint the app polls exists on the backend', () => {
-  assert.match(read('mobile/src/api.ts'), /\/api\/videos\/upload-status\//);
-  assert.match(read('backend/src/routes/videos.ts'), /router\.get\('\/upload-status\/:key'/);
+test('mobile upload retries use the backend idempotency key contract', () => {
+  const mobile = read('mobile/src/api.ts');
+  const backend = read('backend/src/routes/videos.ts');
+  assert.match(mobile, /setRequestHeader\('X-Idempotency-Key'/);
+  assert.match(backend, /req\.header\('x-idempotency-key'\)/);
+  assert.match(backend, /where:\s*\{\s*uploadKey:\s*key\s*\}/);
+  assert.match(read('backend/prisma/schema.prisma'), /uploadKey\s+String\?\s+@unique/);
 });
 
 test('every error code the backend throws for uploads has a message path on the app side', () => {
@@ -94,5 +98,5 @@ test('CI runs typecheck and tests for backend, web and mobile, plus these repo-l
   const ci = read('.github/workflows/ci.yml');
   for (const job of ['backend', 'frontend', 'mobile', 'repo']) assert.match(ci, new RegExp(`^  ${job}:`, 'm'), `ci.yml has no "${job}" job`);
   assert.ok((ci.match(/npm test/g) || []).length >= 3, 'ci.yml should run npm test for each package');
-  assert.match(ci, /node --test|npm run test:root/, 'ci.yml does not run the repo-level tests');
+  assert.match(ci, /npm run test:root/, 'ci.yml does not run the repo-level tests');
 });

@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { api, getAccountEmail, setAccountEmail, resetSessionId, requestSignIn } from '../api';
 import { setProfileDisplayName, setProfileHandle } from '../profileStore';

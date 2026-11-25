@@ -3,7 +3,7 @@ import { CheckCircle2, Plug, XCircle } from 'lucide-react';
 import { adminApi, PartnerApplicationRecord, SiteTestResult } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useFetch } from '../hooks';
-import { Badge, Button, EmptyState, ErrorState, Field, FormModal, PageHeader, Select, Spinner, Table, Td, Th, fmtDateTime, inputCls, useToast } from '../ui';
+import { Badge, Button, EmptyState, ErrorState, Field, FormModal, Modal, PageHeader, Select, Spinner, Table, Td, Th, fmtDateTime, inputCls, useToast } from '../ui';
 
 const TONE = { pending: 'amber', approved: 'green', rejected: 'red' } as const;
 

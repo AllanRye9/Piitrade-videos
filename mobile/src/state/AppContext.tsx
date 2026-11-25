@@ -3,7 +3,8 @@ import { BackHandler } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api, setSignInRequiredHandler } from '../api';
 import type { Video } from '../types';
-import { NUDGE } from '../config';
+import { getSiteConfig } from './siteConfig';
+import { initialPromptState, tickPrompt, PromptState } from '../lib/guestPrompt';
 import { bootstrapSession, getAccountEmail, setAccountEmail, setSessionId, resetSessionId } from '../lib/session';
 import type { UploadDraft } from './uploads';
 import { clearProfile, ensureProfileLoaded, hydrateMuted, profileStore } from './stores';
@@ -181,9 +182,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ------------------------------------------------------- guest nudges
   const watchingRef = useRef(false);
-  const watchSecondsRef = useRef(0);
-  const nudgesShownRef = useRef(0);
-  const nextAtRef = useRef<number>(NUDGE.firstAfterSeconds);
+  const promptRef = useRef<PromptState>(initialPromptState());
   const blockedRef = useRef(false);
   blockedRef.current = sheets.length > 0 || nudgeVisible;
 
@@ -197,18 +196,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     // Reset the schedule whenever the viewer becomes a guest (app start or sign-out).
-    watchSecondsRef.current = 0;
-    nudgesShownRef.current = 0;
-    nextAtRef.current = NUDGE.firstAfterSeconds;
+    promptRef.current = initialPromptState();
 
     const tick = setInterval(() => {
-      // Only real watch time counts, and never while another popup is up.
+      // Only real watch time counts, and never while another popup is up. The timing comes from the admin's
+      // "Site & app settings" (read each tick, so a change applies without restarting the app).
       if (!watchingRef.current || blockedRef.current) return;
-      watchSecondsRef.current += 1;
-      if (watchSecondsRef.current >= nextAtRef.current && nudgesShownRef.current < NUDGE.maxPerSession) {
-        nudgesShownRef.current += 1;
-        const gap = NUDGE.baseGapSeconds * Math.pow(NUDGE.backoff, nudgesShownRef.current - 1);
-        nextAtRef.current = watchSecondsRef.current + gap;
+      const r = tickPrompt(promptRef.current, getSiteConfig().guestPrompt);
+      promptRef.current = r.state;
+      if (r.show) {
         setNudgeVisible(true);
         AsyncStorage.setItem(NUDGE_STATE_KEY, '1').catch(() => {});
       }

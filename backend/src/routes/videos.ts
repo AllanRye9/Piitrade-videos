@@ -6,7 +6,6 @@ import { prisma } from '../db';
 import { uploadVideoWithAudio } from '../middleware/upload';
 import { extractPoster, getVideoDuration, hasAudioStream } from '../lib/thumbnail';
 import { transcodeToMp4, TranscodeOptions } from '../lib/videoTranscode';
-import { describeTranscodeFailure, referenceId } from '../lib/mediaErrors';
 import { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit, TrimWindow } from '../lib/videoLimits';
 import { MAX_AUDIO_BYTES, resolveAudioMix } from '../lib/audioMix';
 import { uploadToR2 } from '../lib/r2';
@@ -165,19 +164,25 @@ router.get('/', async (req: Request, res: Response) => {
   const cursor = decodeCursor(req.query.cursor);
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(req.query.limit) || DEFAULT_PAGE_SIZE));
 
+  // Hidden videos never appear. Admin-pinned videos are excluded from the cursor
+  // walk and prepended (in pin order) to the first page only, so pagination stays valid.
   const videos: VideoRecord[] = await prisma.video.findMany({
-    where: cursor ? olderThan(cursor) : undefined,
+    where: { hidden: false, pinRank: null, ...(cursor ? olderThan(cursor) : {}) },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1, // fetch one extra to know whether there's a next page
   });
   const hasMore = videos.length > limit;
-  const page = hasMore ? videos.slice(0, limit) : videos;
+  const regular = hasMore ? videos.slice(0, limit) : videos;
+  const pinned: VideoRecord[] = cursor
+    ? []
+    : await prisma.video.findMany({ where: { hidden: false, pinRank: { not: null } }, orderBy: [{ pinRank: 'asc' }, { createdAt: 'desc' }], take: 20 });
+  const page = [...pinned, ...regular];
 
   const stateMap = await fetchStatesFor(page.map((v) => v.id), sessionId);
   const uploaderMap = await fetchUploadersFor(page, sessionId);
   res.json({
     videos: await attachProducts(page.map((v) => serialize(v, stateMap.get(v.id), v.uploaderSessionId ? uploaderMap.get(v.uploaderSessionId) : null)), sessionId),
-    nextCursor: hasMore ? encodeCursor(page[page.length - 1].createdAt, page[page.length - 1].id) : null,
+    nextCursor: hasMore ? encodeCursor(regular[regular.length - 1].createdAt, regular[regular.length - 1].id) : null,
   });
 });
 
@@ -206,6 +211,7 @@ router.get('/trending', async (req: Request, res: Response) => {
     // Rank the newest 500 in JS so the score can include each video's click→sale record
     // (lib/feedRank.ts). Older videos decay out of contention anyway.
     const candidates = await prisma.video.findMany({
+      where: { hidden: false },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 500,
       select: { id: true, likes: true, comments: true, shares: true, views: true, createdAt: true },
@@ -236,7 +242,7 @@ router.get('/trending', async (req: Request, res: Response) => {
     return;
   }
 
-  const videos: VideoRecord[] = await prisma.video.findMany({ where: { id: { in: ids } } });
+  const videos: VideoRecord[] = await prisma.video.findMany({ where: { id: { in: ids }, hidden: false } });
   const videoMap = new Map<string, VideoRecord>(videos.map((v) => [v.id, v]));
   // `IN (...)` doesn't preserve order — re-sort to match the SQL's
   // actual ranking rather than whatever order Postgres happened to
@@ -267,6 +273,7 @@ router.get('/search', async (req: Request, res: Response) => {
   });
   const videos: VideoRecord[] = await prisma.video.findMany({
     where: {
+      hidden: false,
       OR: [
         { title: { contains: q, mode: 'insensitive' } },
         { description: { contains: q, mode: 'insensitive' } },
@@ -295,7 +302,7 @@ router.get('/hashtag/:tag', async (req: Request, res: Response) => {
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(req.query.limit) || DEFAULT_PAGE_SIZE));
 
   const videos: VideoRecord[] = await prisma.video.findMany({
-    where: { hashtags: { has: tag }, ...(cursor ? olderThan(cursor) : {}) },
+    where: { hidden: false, hashtags: { has: tag }, ...(cursor ? olderThan(cursor) : {}) },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
   });
@@ -367,7 +374,7 @@ router.post('/:id/view', writeLimiter, async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   const sessionId = getSessionId(req);
   const video: VideoRecord | null = await prisma.video.findUnique({ where: { id: req.params.id } });
-  if (!video) throw new HttpError(404, 'Video not found');
+  if (!video || (video as any).hidden) throw new HttpError(404, 'Video not found');
 
   await recordView(sessionId, video.id); // once per session, not once per refresh/crawler hit
   const fresh: VideoRecord = (await prisma.video.findUnique({ where: { id: video.id } })) ?? video;
@@ -422,7 +429,7 @@ const createVideo = async (req: Request, res: Response) => {
   const sourceDuration = await getVideoDuration(file.path);
   if (sourceDuration === null) {
     cleanup();
-    throw new HttpError(422, 'Could not read this video — the file may be damaged, incomplete, or in an unsupported format. Re-export it as MP4 and try again.', { code: 'VIDEO_UNREADABLE' });
+    throw new HttpError(422, 'Could not read this video — please upload a valid video file');
   }
 
   let keep: TrimWindow;
@@ -499,12 +506,8 @@ const createVideo = async (req: Request, res: Response) => {
     await transcodeToMp4(file.path, transcodedPath, transcodeOptions);
   } catch (err) {
     if (fs.existsSync(transcodedPath)) fs.unlinkSync(transcodedPath);
-    // Say what actually went wrong (damaged file, unsupported codec, server out of space/memory, timeout…)
-    // instead of one generic message; the reference id ties the uploader's report to the full ffmpeg log.
-    const failure = describeTranscodeFailure(err, { withAudio: !!audio });
-    const ref = referenceId();
-    console.error(`Video transcode failed [${ref}] (${failure.code}, ${file.size} bytes, ${file.originalname}):`, (err as Error).message, (err as { stderr?: string }).stderr || '');
-    throw new HttpError(failure.status, `${failure.message} (ref ${ref})`, { code: failure.code, details: { reference: ref, serverSide: failure.serverSide, ...(failure.reason ? { reason: failure.reason } : {}) } });
+    console.error('Video transcode failed:', (err as Error).message);
+    throw new HttpError(422, audio ? 'Could not add this audio to the video — try a different audio file' : 'Could not process this video — please upload a valid video file');
   } finally {
     // The originals (whatever format they were) are never served —
     // only the normalized transcodedPath is, from here on.
@@ -639,28 +642,6 @@ router.post('/', requireAccount, uploadLimiter, uploadVideoWithAudio, async (req
   } finally {
     uploadsInFlight.delete(flightKey);
   }
-});
-
-// GET /api/videos/upload-status/:key — what became of an upload the app sent with this idempotency key.
-// A long encode can outlast a proxy's timeout, cutting the connection after the video was in fact saved;
-// the app then polls here instead of re-uploading the whole (large) file. Only the uploading session can ask.
-//   { status: 'done', video }   the video exists
-//   { status: 'processing' }    the server is still working on it
-//   { status: 'unknown' }       nothing yet (still arriving, or it never made it)
-router.get('/upload-status/:key', requireAccount, async (req: Request, res: Response) => {
-  const key = String(req.params.key || '').trim().slice(0, 64);
-  const sessionId = getSessionId(req);
-  if (!key) {
-    res.json({ status: 'unknown' });
-    return;
-  }
-  const existing: VideoRecord | null = await prisma.video.findUnique({ where: { uploadKey: key } });
-  if (existing && existing.uploaderSessionId === sessionId) {
-    const uploaderMap = await fetchUploadersFor([existing], sessionId);
-    res.json({ status: 'done', video: (await attachProducts([serialize(existing, undefined, existing.uploaderSessionId ? uploaderMap.get(existing.uploaderSessionId) : null)]))[0] });
-    return;
-  }
-  res.json({ status: uploadsInFlight.has(`${sessionId}:${key}`) ? 'processing' : 'unknown' });
 });
 
 /**

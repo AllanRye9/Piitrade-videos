@@ -4,9 +4,6 @@ import { v4 as uuid } from 'uuid';
 import { UPLOAD_ROOT } from '../paths';
 import { HttpError } from '../lib/httpError';
 
-/** Largest video file accepted. Keep in sync with MAX_UPLOAD_MB in mobile/src/config.ts and client_max_body_size in frontend/nginx.conf. */
-export const MAX_VIDEO_UPLOAD_BYTES = 500 * 1024 * 1024;
-
 function makeStorage(subdir: string) {
   return multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, path.join(UPLOAD_ROOT, subdir)),
@@ -21,9 +18,11 @@ function makeStorage(subdir: string) {
 // recorders/desktop tools most commonly produce for short clips.
 const ACCEPTED_VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.webm', '.3gp', '.avi', '.mkv', '.wmv', '.flv']);
 
+export const MAX_VIDEO_UPLOAD_BYTES = 500 * 1024 * 1024;
+
 export const uploadVideo = multer({
   storage: makeStorage('videos'),
-  limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES }, // 500MB
+  limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (!ACCEPTED_VIDEO_EXTENSIONS.has(ext)) {

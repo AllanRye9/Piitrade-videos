@@ -26,6 +26,7 @@ export const RESOURCES: ResourceDef[] = [
   { key: 'sites', label: 'Shops (sites)', actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'attribution', label: 'Attribution reports', actions: ['view'] },
   { key: 'payouts', label: 'Creator payouts', actions: ['view', 'manage'] },
+  { key: 'settings', label: 'Site & app settings', actions: ['view', 'edit'] },
 ];
 
 export const ALL_PERMISSIONS: string[] = RESOURCES.flatMap((r) => r.actions.map((a) => `${r.key}.${a}`));

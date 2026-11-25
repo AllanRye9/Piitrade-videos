@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pencil, Play, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Pin, PinOff, Play, Trash2 } from 'lucide-react';
 import { adminApi, ProductPin, VideoRecord } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useDebounced, useFetch } from '../hooks';
@@ -153,20 +153,46 @@ export default function VideosPage() {
   const [sort, setSort] = useState('newest');
   const [locationId, setLocationId] = useState('');
   const [reported, setReported] = useState(false);
+  const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
   const dq = useDebounced(q);
-  useEffect(() => setPage(1), [dq, sort, locationId, reported]);
-  const { data, loading, error, reload } = useFetch(() => adminApi.listVideos({ q: dq, sort, locationId, reported, page, limit: 15 }), [dq, sort, locationId, reported, page]);
+  useEffect(() => setPage(1), [dq, sort, locationId, reported, status]);
+  const { data, loading, error, reload } = useFetch(() => adminApi.listVideos({ q: dq, sort, locationId, reported, status, page, limit: 15 }), [dq, sort, locationId, reported, status, page]);
 
   const [viewing, setViewing] = useState<VideoRecord | null>(null);
   const [editing, setEditing] = useState<VideoRecord | null>(null);
   const [deleting, setDeleting] = useState<VideoRecord | null>(null);
+
+  const run = async (fn: () => Promise<unknown>, ok: string) => {
+    try {
+      await fn();
+      toast(ok);
+      reload();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Something went wrong', 'error');
+    }
+  };
+  const pinnedView = status === 'pinned';
+  const move = (v: VideoRecord, dir: -1 | 1) => {
+    const ids = (data?.videos ?? []).map((x) => x.id);
+    const i = ids.indexOf(v.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    void run(() => adminApi.reorderPins(ids), 'Order updated');
+  };
 
   return (
     <>
       <PageHeader title="Videos" subtitle="Browse, edit and remove uploaded videos. New videos are uploaded from the app." />
       <Toolbar>
         <SearchInput value={q} onChange={setQ} placeholder="Search title or description…" />
+        <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
+          <option value="">All videos</option>
+          <option value="visible">Visible</option>
+          <option value="hidden">Hidden</option>
+          <option value="pinned">Pinned (feed order)</option>
+        </Select>
         <Select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort">
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
@@ -210,6 +236,8 @@ export default function VideosPage() {
                       <span className="min-w-0">
                         <span className="block truncate text-white font-medium group-hover:underline">{v.title || 'Untitled'}</span>
                         <span className="text-white/40 text-xs">{formatDuration(v.duration)}</span>
+                        {v.hidden && <span className="ml-2"><Badge tone="red">Hidden</Badge></span>}
+                        {v.pinRank !== null && <span className="ml-2"><Badge tone="amber">Pinned #{v.pinRank + 1}</Badge></span>}
                         {v.reportCount > 0 && <span className="ml-2"><Badge tone="red">{v.reportCount} reported</Badge></span>}
                       </span>
                     </button>
@@ -222,6 +250,22 @@ export default function VideosPage() {
                   <Td className="whitespace-nowrap">{fmtDate(v.createdAt)}</Td>
                   <Td className="text-right whitespace-nowrap">
                     <IconButton label="View" onClick={() => setViewing(v)}><Play size={16} /></IconButton>
+                    {can('videos.edit') && pinnedView && (
+                      <>
+                        <IconButton label="Move up" onClick={() => move(v, -1)}><ArrowUp size={16} /></IconButton>
+                        <IconButton label="Move down" onClick={() => move(v, 1)}><ArrowDown size={16} /></IconButton>
+                      </>
+                    )}
+                    {can('videos.edit') && !v.hidden && (
+                      <IconButton label={v.pinRank !== null ? 'Unpin from top of feed' : 'Pin to top of feed'} onClick={() => run(() => adminApi.pinVideo(v.id, v.pinRank === null), v.pinRank !== null ? 'Unpinned' : 'Pinned to top of feed')}>
+                        {v.pinRank !== null ? <PinOff size={16} /> : <Pin size={16} />}
+                      </IconButton>
+                    )}
+                    {can('videos.edit') && (
+                      <IconButton label={v.hidden ? 'Unhide' : 'Hide from the app and site'} onClick={() => run(() => (v.hidden ? adminApi.unhideVideo(v.id) : adminApi.hideVideo(v.id)), v.hidden ? 'Video is visible again' : 'Video hidden')}>
+                        {v.hidden ? <Eye size={16} /> : <EyeOff size={16} />}
+                      </IconButton>
+                    )}
                     {can('videos.edit') && <IconButton label="Edit" onClick={() => setEditing(v)}><Pencil size={16} /></IconButton>}
                     {can('videos.delete') && <IconButton label="Delete" danger onClick={() => setDeleting(v)}><Trash2 size={16} /></IconButton>}
                   </Td>

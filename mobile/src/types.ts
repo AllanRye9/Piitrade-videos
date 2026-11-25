@@ -216,3 +216,12 @@ export interface TrendingHashtag {
   tag: string;
   count: number;
 }
+
+/** GET /api/config — admin-managed settings (see backend/src/lib/settings.ts). */
+export interface SiteConfig {
+  guestPrompt: { enabled: boolean; firstAfterSeconds: number; baseGapSeconds: number; backoff: number; maxPerSession: number; autoHideSeconds: number };
+  maintenance: { enabled: boolean; message: string };
+  announcement: { enabled: boolean; text: string; link: string; level: 'info' | 'success' | 'warning'; version: string };
+  features: { signups: boolean; uploads: boolean; comments: boolean; partnerApplications: boolean };
+  app: { minVersion: string; latestVersion: string; updateUrl: string; updateMessage: string };
+}

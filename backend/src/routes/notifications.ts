@@ -45,7 +45,7 @@ async function fetchActorsFor(notifications: NotificationRecord[]): Promise<Map<
 async function fetchVideosFor(notifications: NotificationRecord[]): Promise<Map<string, { id: string; title: string; posterFilename: string | null }>> {
   const videoIds = [...new Set(notifications.map((n) => n.videoId).filter((id): id is string => !!id))];
   if (videoIds.length === 0) return new Map();
-  const videos = await prisma.video.findMany({ where: { id: { in: videoIds } } });
+  const videos = await prisma.video.findMany({ where: { id: { in: videoIds }, hidden: false } });
   return new Map(videos.map((v: { id: string; title: string; posterFilename: string | null }) => [v.id, v]));
 }
 

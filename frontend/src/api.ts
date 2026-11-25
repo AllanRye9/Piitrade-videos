@@ -1,11 +1,12 @@
 import type {
   Video,
   Comment,
+  VisualSearchResult,
   MarketplaceSearchResponse,
   AccountSummary,
   AppNotification,
   TrendingHashtag, SavedItem, ProductPin, ProductSuggestion, SiteInfo,
-  PartnerApplicationForm, PartnerApplicationStatus, PartnerApiCheck
+  PartnerApplicationForm, PartnerApplicationStatus, PartnerApiCheck, SiteConfig
 } from './types';
 import { API_BASE } from './config';
 
@@ -207,6 +208,7 @@ export const api = {
   /** Batched viewing analytics (watch time, tag impressions). Best-effort; see analytics.ts. */
   sendEvents: (events: unknown[]) =>
     request<{ accepted: number }>('/api/events', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }) }),
+  getConfig: () => request<SiteConfig>('/api/config'),
   getSites: () => request<{ sites: SiteInfo[] }>('/api/marketplace/sites'),
 
   // Partner onboarding — see backend/src/routes/partners.ts and docs/PARTNERS.md. Public; no account needed.

@@ -1,23 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg';
 import { buildAudioFilter } from './audioMix';
-import { createLimiter } from './concurrencyLimiter';
-import { TranscodeError } from './mediaErrors';
-
-/** Longest side of the stored video, in pixels. Larger sources (4K phone footage) are scaled down — never up —
- *  which is what makes big uploads encode in a fraction of the time; 1080p is plenty for a phone feed. */
-const MAX_LONG_EDGE = Math.max(480, Number(process.env.TRANSCODE_MAX_LONG_EDGE) || 1920);
-/** A single ffmpeg run is killed after this long, so a stuck or hopeless encode can't hold the server forever. */
-const TRANSCODE_TIMEOUT_MS = Math.max(30_000, Number(process.env.TRANSCODE_TIMEOUT_MS) || 12 * 60 * 1000);
-/** How many encodes run at once. More than a small server can feed just makes every one of them slower
- *  (and risks running out of memory), so extra uploads wait their turn. */
-const MAX_CONCURRENT = Math.max(1, Math.floor(Number(process.env.TRANSCODE_CONCURRENCY) || 2));
-
-const encodeLimiter = createLimiter(MAX_CONCURRENT);
-
-/** Scales the longer side down to MAX_LONG_EDGE (keeping aspect ratio, even dimensions), never enlarging. */
-export function scaleFilter(maxLongEdge: number = MAX_LONG_EDGE): string {
-  return `scale='if(gt(iw,ih),min(${maxLongEdge},iw),-2)':'if(gt(iw,ih),-2,min(${maxLongEdge},ih))'`;
-}
 
 /** An audio track to lay over the video during the transcode. */
 export interface AddedAudio {
@@ -73,10 +55,6 @@ export interface TranscodeOptions {
  * serving a corrupt file.
  */
 export function transcodeToMp4(inputPath: string, outputPath: string, options: TranscodeOptions = {}): Promise<void> {
-  return encodeLimiter.run(() => runTranscode(inputPath, outputPath, options));
-}
-
-function runTranscode(inputPath: string, outputPath: string, options: TranscodeOptions): Promise<void> {
   return new Promise((resolve, reject) => {
     const command = ffmpeg(inputPath);
     if (options.startSeconds && options.startSeconds > 0) command.setStartTime(options.startSeconds);
@@ -90,32 +68,14 @@ function runTranscode(inputPath: string, outputPath: string, options: TranscodeO
       command.outputOptions(['-map 0:v:0', '-map [aout]']);
     }
 
-    let timedOut = false;
-    let settled = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      command.kill('SIGKILL');
-    }, TRANSCODE_TIMEOUT_MS);
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      fn();
-    };
-
     command
       .videoCodec('libx264')
-      .videoFilters(scaleFilter())
       .audioCodec('aac')
       .audioBitrate('128k')
-      // maxrate/bufsize keep a pathological source from producing an enormous file.
-      .outputOptions(['-movflags +faststart', '-pix_fmt yuv420p', '-preset veryfast', '-crf 23', '-maxrate 8M', '-bufsize 16M'])
+      .outputOptions(['-movflags +faststart', '-pix_fmt yuv420p', '-preset veryfast', '-crf 23'])
       .format('mp4')
-      .on('end', () => finish(() => resolve()))
-      .on('error', (err: Error, _stdout: string | null, stderr: string | null) => {
-        const tail = String(stderr || '').split(/\r?\n/).slice(-25).join('\n');
-        finish(() => reject(new TranscodeError(err?.message || 'ffmpeg failed', tail, timedOut)));
-      })
+      .on('end', () => resolve())
+      .on('error', (err) => reject(err))
       .save(outputPath);
   });
 }

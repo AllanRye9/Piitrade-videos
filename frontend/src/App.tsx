@@ -1,5 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { api, isSignedIn, requestSignIn } from './api';
+import GuestNudge from './components/GuestNudge';
+import SiteBanners from './components/SiteBanners';
 import type { Video } from './types';
 import VideoFeed from './components/VideoFeed';
 import TopBar, { FeedMode } from './components/TopBar';
@@ -138,6 +140,7 @@ export default function App() {
     // the same layout TikTok/Reels/Shorts use on the web — instead of
     // one video stretching edge-to-edge across a wide monitor.
     <div className="h-dvh w-full bg-neutral-950 flex flex-col overflow-hidden">
+      <SiteBanners />
       <TopBar
         mode={mode}
         onModeChange={switchMode}
@@ -183,6 +186,7 @@ export default function App() {
       {showNotifications && (
         <NotificationsPanel onClose={() => setShowNotifications(false)} onRead={() => setUnreadCount(0)} />
       )}
+      <GuestNudge />
     </div>
   );
 }

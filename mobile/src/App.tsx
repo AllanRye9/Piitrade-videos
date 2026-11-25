@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import GuestNudge from './components/GuestNudge';
+import SiteNotice from './components/SiteNotice';
 import UploadStatus from './components/UploadStatus';
 import FeedScreen from './screens/FeedScreen';
 import PageHost from './screens/Pages';
@@ -76,6 +77,7 @@ function Shell() {
       <GuestNudge />
       <UploadStatus />
       <SheetHost />
+      <SiteNotice />
     </View>
   );
 }

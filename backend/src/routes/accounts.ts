@@ -64,7 +64,7 @@ router.get('/', async (req: Request, res: Response) => {
   const [grouped, followerGroups] = await Promise.all([
     prisma.video.groupBy({
       by: ['uploaderSessionId'],
-      where: { uploaderSessionId: { in: sessionIds } },
+      where: { uploaderSessionId: { in: sessionIds }, hidden: false },
       _count: { _all: true },
       _sum: { likes: true },
     }),
@@ -106,7 +106,7 @@ router.get('/:handle', async (req: Request, res: Response) => {
   if (!profile) throw new HttpError(404, 'Account not found');
 
   const [videos, followersCount, followingCount, existingFollow] = await Promise.all([
-    prisma.video.findMany({ where: { uploaderSessionId: profile.sessionId }, orderBy: { createdAt: 'desc' } }),
+    prisma.video.findMany({ where: { uploaderSessionId: profile.sessionId, hidden: false }, orderBy: { createdAt: 'desc' } }),
     prisma.follow.count({ where: { followingSessionId: profile.sessionId } }),
     prisma.follow.count({ where: { followerSessionId: profile.sessionId } }),
     prisma.follow.findUnique({ where: { followerSessionId_followingSessionId: { followerSessionId: sessionId, followingSessionId: profile.sessionId } } }),

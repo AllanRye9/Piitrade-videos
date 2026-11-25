@@ -80,6 +80,10 @@ export interface VideoRecord {
   location: LocationOption | null;
   uploader: { handle: string | null; displayName: string | null; userId: string | null } | null;
   reportCount: number;
+  hidden: boolean;
+  hiddenAt: string | null;
+  /** 0-based position in the pinned list (top of the feed); null = not pinned. */
+  pinRank: number | null;
 }
 
 export interface CommentRecord {
@@ -193,6 +197,46 @@ export interface PartnerApplicationRecord {
   reviewedAt: string | null;
 }
 
+/** Mirrors backend/src/lib/settings.ts. */
+export interface SiteSettings {
+  guestPrompt: { enabled: boolean; firstAfterSeconds: number; baseGapSeconds: number; backoff: number; maxPerSession: number; autoHideSeconds: number };
+  maintenance: { enabled: boolean; message: string };
+  announcement: { enabled: boolean; text: string; link: string; level: 'info' | 'success' | 'warning'; version: string };
+  features: { signups: boolean; uploads: boolean; comments: boolean; partnerApplications: boolean };
+  app: { minVersion: string; latestVersion: string; updateUrl: string; updateMessage: string };
+}
+export interface SettingsRecord {
+  settings: SiteSettings;
+  updatedAt: string | null;
+  updatedBy: string;
+}
+
+export interface SeriesBlock {
+  series: Array<{ day: string; value: number }>;
+  total: number;
+  /** The same count over the equally long period before this one. */
+  previous: number;
+}
+export interface AnalyticsData {
+  days: number;
+  signups?: SeriesBlock;
+  uploads?: SeriesBlock;
+  comments?: SeriesBlock;
+  clicks?: SeriesBlock;
+  conversions?: SeriesBlock;
+  topVideos?: Array<{ id: string; title: string; views: number; likes: number; shares: number }>;
+  topShops?: Array<{ siteId: string; name: string; clicks: number }>;
+  funnel?: { impressions: number; saves: number; clicks: number; conversions: number };
+  partners?: { pendingApplications: number; activeShops: number; totalShops: number };
+}
+
+export interface SystemInfo {
+  db: { ok: boolean; ms: number; error?: string };
+  migrations: { applied: number; failed: number; latest: string | null; expected: number } | null;
+  runtime: { node: string; uptimeSeconds: number; rssMb: number; env: string; version: string };
+  config: Record<string, boolean>;
+}
+
 export interface AttributionOverview {
   days: number;
   totals: { saves: number; clicks: number; conversions: number; revenue: Record<string, number>; credited: Record<string, number> };
@@ -285,6 +329,7 @@ async function req<T>(method: string, path: string, body?: unknown, query?: Quer
 const get = <T,>(path: string, query?: Query) => req<T>('GET', path, undefined, query);
 const post = <T,>(path: string, body?: unknown) => req<T>('POST', path, body ?? {});
 const patch = <T,>(path: string, body: unknown) => req<T>('PATCH', path, body);
+const put = <T,>(path: string, body: unknown) => req<T>('PUT', path, body);
 const del = <T = void,>(path: string, query?: Query) => req<T>('DELETE', path, undefined, query);
 
 type List = { q?: string; page?: number; limit?: number };
@@ -302,6 +347,11 @@ export const adminApi = {
 
   // dashboard
   stats: () => get<DashboardStats>('/api/admin/stats'),
+  analytics: (days: number) => get<AnalyticsData>('/api/admin/analytics', { days }),
+  getSettings: () => get<SettingsRecord>('/api/admin/settings'),
+  saveSettings: (patch: Partial<{ [K in keyof SiteSettings]: Partial<SiteSettings[K]> }>) => put<SettingsRecord & { changed: string[] }>('/api/admin/settings', patch),
+  systemInfo: () => get<SystemInfo>('/api/admin/system'),
+  clearCaches: () => post<{ ok: boolean }>('/api/admin/system/clear-caches'),
   permissionCatalog: () => get<{ resources: ResourceDef[] }>('/api/admin/permissions'),
 
   // users
@@ -314,12 +364,16 @@ export const adminApi = {
   deleteUser: (id: string, deleteContent: boolean) => del(`/api/admin/users/${id}`, { deleteContent }),
 
   // videos
-  listVideos: (q: List & { sort?: string; locationId?: string; reported?: boolean; uploader?: string }) =>
+  listVideos: (q: List & { sort?: string; locationId?: string; reported?: boolean; uploader?: string; status?: string }) =>
     get<{ videos: VideoRecord[] } & PageMeta>('/api/admin/videos', q),
   getVideo: (id: string) => get<{ video: VideoRecord; reports: Array<{ reason: string; createdAt: string }> }>(`/api/admin/videos/${id}`),
   updateVideo: (id: string, data: { title?: string; description?: string; locationId?: string | null }) =>
     patch<{ video: VideoRecord }>(`/api/admin/videos/${id}`, data),
   deleteVideo: (id: string) => del(`/api/admin/videos/${id}`),
+  hideVideo: (id: string) => post<{ video: VideoRecord }>(`/api/admin/videos/${id}/hide`, {}),
+  unhideVideo: (id: string) => post<{ video: VideoRecord }>(`/api/admin/videos/${id}/unhide`, {}),
+  pinVideo: (id: string, pinned: boolean, position?: number) => put<{ pinned: boolean; ids: string[] }>(`/api/admin/videos/${id}/pin`, { pinned, position }),
+  reorderPins: (ids: string[]) => put<{ ids: string[] }>('/api/admin/videos/pins/order', { ids }),
   videoComments: (id: string) => get<{ comments: Array<{ id: string; author: string; text: string; createdAt: string }> }>(`/api/admin/videos/${id}/comments`),
 
   // comments

@@ -20,10 +20,11 @@ import publicRouter from './routes/public';
 import savedItemsRouter from './routes/savedItems';
 import eventsRouter from './routes/events';
 import partnersRouter from './routes/partners';
+import configRouter from './routes/config';
+import { enforceSiteSettings } from './middleware/siteSettings';
 import { ensureDefaultSite } from './lib/sites';
 import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
 import { HttpError } from './lib/httpError';
-import { MAX_VIDEO_UPLOAD_BYTES } from './middleware/upload';
 
 for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -51,6 +52,9 @@ app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf;
 app.use('/uploads', express.static(UPLOAD_ROOT, { maxAge: '7d', immutable: true }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+// Maintenance mode and feature switches (Admin → Site & app settings) apply to everything below.
+app.use('/api', enforceSiteSettings);
+app.use('/api/config', configRouter);
 app.use('/api/videos', videosRouter);
 app.use('/api/visual-search', visualSearchRouter);
 app.use('/api/auth', authRouter);
@@ -72,23 +76,8 @@ app.use(publicRouter); // /embed, /v, /embed.js, /api/oembed, /api/embed/by-prod
 // ends up here instead of hanging the request or crashing the process.
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      const mb = Math.round(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024));
-      res.status(413).json({ error: `This file is too large — the limit is ${mb} MB. Trim the clip or export it at a lower resolution and try again.`, code: 'FILE_TOO_LARGE', maxBytes: MAX_VIDEO_UPLOAD_BYTES });
-      return;
-    }
-    res.status(400).json({ error: err.message, code: err.code });
-    return;
-  }
-  // The phone dropped the connection mid-upload (tunnel, signal loss, app closed): nobody is listening.
-  if (err?.type === 'request.aborted' || err?.code === 'ECONNRESET') {
-    console.warn('Upload connection was closed before it finished');
-    if (!res.headersSent) res.status(400).json({ error: 'The upload was interrupted before it finished — check your connection and try again.', code: 'UPLOAD_INTERRUPTED' });
-    return;
-  }
-  if (err?.code === 'ENOSPC') {
-    console.error('Disk full while saving an upload:', err.message);
-    res.status(507).json({ error: 'The server has run out of storage space, so your upload could not be saved. This is not a problem with your file — please try again later.', code: 'SERVER_STORAGE_FULL' });
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    res.status(status).json({ error: err.message });
     return;
   }
   if (err instanceof HttpError) {
@@ -101,13 +90,6 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 ensureDefaultSite().catch((err) => console.error('Could not ensure the default shop:', err));
 
-const server = app.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`Piitrade backend listening on port ${PORT}`);
 });
-
-// Node's defaults (5 min to receive a whole request, 5 s keep-alive) cut off large uploads on slow mobile
-// connections and make proxies sporadically answer 502 on a connection the backend just closed.
-// UPLOAD_REQUEST_TIMEOUT_MS bounds how long one upload may take to arrive (default 30 min).
-server.requestTimeout = Math.max(60_000, Number(process.env.UPLOAD_REQUEST_TIMEOUT_MS) || 30 * 60 * 1000);
-server.keepAliveTimeout = 65_000; // longer than the usual 60 s proxy idle timeout
-server.headersTimeout = 66_000; // must exceed keepAliveTimeout

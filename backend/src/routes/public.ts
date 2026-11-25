@@ -35,7 +35,7 @@ async function loadPage(id: string, ctx: PageCtx): Promise<{ video: PageVideo; p
     where: { id },
     include: { products: { where: { site: { active: true } }, orderBy: [{ position: 'asc' }, { startMs: 'asc' }], include: { site: { select: { baseUrl: true, embedOrigins: true } } } } },
   });
-  if (!v) return null;
+  if (!v || v.hidden) return null;
   const profile = v.uploaderSessionId ? await prisma.sessionProfile.findUnique({ where: { sessionId: v.uploaderSessionId }, select: { handle: true } }) : null;
   const host = (u: string) => {
     try {
