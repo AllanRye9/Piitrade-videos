@@ -4,11 +4,11 @@
  * API_BASE_URL repository variable (CI — see .github/workflows/android-apk.yml).
  */
 /** The production backend (Railway, behind this domain). Used when EXPO_PUBLIC_API_BASE_URL isn't set. */
-export const DEFAULT_API_BASE = 'https://api.yotweek.com';
+export const DEFAULT_API_BASE = 'https://v.piitrade.com';
 export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || DEFAULT_API_BASE).replace(/\/$/, '');
 
 /** The public website — used for share links, legal pages and the password-reset link. */
-export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || API_BASE || 'https://piitrade.com').replace(/\/$/, '');
+export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || 'https://videos.piitrade.com').replace(/\/$/, '');
 
 export const PIITRADE_SITE_URL = (process.env.EXPO_PUBLIC_PIITRADE_SITE_URL || 'https://piitrade.com').replace(/\/$/, '');
 
