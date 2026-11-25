@@ -10,6 +10,8 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY 40-backend-upstream.sh /docker-entrypoint.d/40-backend-upstream.sh
+RUN chmod +x /docker-entrypoint.d/40-backend-upstream.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 
