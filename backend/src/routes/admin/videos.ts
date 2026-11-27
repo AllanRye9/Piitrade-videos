@@ -1,15 +1,15 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
-import { HttpError } from '../../lib/httpError';
-import { audit } from '../../lib/audit';
-import { parsePage, pageMeta } from '../../lib/pagination';
-import { extractHashtags } from '../../lib/hashtags';
+import { HttpError } from '../../lib/core/httpError';
+import { audit } from '../../lib/core/audit';
+import { parsePage, pageMeta } from '../../lib/core/pagination';
+import { extractHashtags } from '../../lib/feed/hashtags';
 import { resolveAssetUrl } from '../videos';
 import { VIDEOS_DIR, POSTERS_DIR } from '../../paths';
 import { removeStoredFile, optionalId } from './helpers';
-import { loadActiveSites, replaceVideoProducts } from '../../lib/videoProducts';
-import { validateProducts } from '../../lib/shoppable';
+import { loadActiveSites, replaceVideoProducts } from '../../lib/shops/videoProducts';
+import { validateProducts } from '../../lib/shops/shoppable';
 
 const router = Router();
 

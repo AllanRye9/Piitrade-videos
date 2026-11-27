@@ -1,10 +1,10 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
-import { HttpError } from '../../lib/httpError';
-import { audit } from '../../lib/audit';
-import { checkListingApi, newPostbackSecret, uniqueSlug } from '../../lib/sites';
-import { invalidateShopCache } from '../../lib/searchSites';
+import { HttpError } from '../../lib/core/httpError';
+import { audit } from '../../lib/core/audit';
+import { checkListingApi, newPostbackSecret, uniqueSlug } from '../../lib/shops/sites';
+import { invalidateShopCache } from '../../lib/search/searchSites';
 
 const router = Router();
 

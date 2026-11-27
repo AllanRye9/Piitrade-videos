@@ -4,7 +4,7 @@ import { useAdminAuth } from '../AdminAuthContext';
 import { useFetch } from '../hooks';
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, PageHeader, Pagination, Select, Spinner, Table, Td, Th, Toolbar, fmtDateTime, useToast } from '../ui';
 
-// Mirrors backend/src/lib/attribution.ts — the server enforces it; this only decides which buttons to show.
+// Mirrors backend/src/lib/shops/attribution.ts — the server enforces it; this only decides which buttons to show.
 const NEXT: Record<PayoutStatus, PayoutStatus[]> = { pending: ['approved', 'reversed'], approved: ['paid', 'reversed'], paid: ['reversed'], reversed: [] };
 const LABEL: Record<PayoutStatus, string> = { pending: 'Pending', approved: 'Approved', paid: 'Paid', reversed: 'Reversed' };
 const TONE: Record<PayoutStatus, 'amber' | 'blue' | 'green' | 'red'> = { pending: 'amber', approved: 'blue', paid: 'green', reversed: 'red' };

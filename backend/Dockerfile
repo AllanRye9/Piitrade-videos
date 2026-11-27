@@ -1,11 +1,13 @@
 FROM node:20-bookworm-slim
 
+# fonts-dejavu-core gives ffmpeg a font for the text overlays of the video editor.
 # ffmpeg is required for real poster-frame extraction and (in the seed
 # script) generating sample videos. sharp's prebuilt binaries need
 # libvips' runtime deps, which this base image already ships with glibc
 # for, so no extra libvips install is needed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    fonts-dejavu-core \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 

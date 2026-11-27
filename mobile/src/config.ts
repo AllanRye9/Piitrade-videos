@@ -14,7 +14,7 @@ export const WEB_URL = resolveWebUrl(process.env.EXPO_PUBLIC_WEB_URL, API_BASE);
 
 export const PIITRADE_SITE_URL = (process.env.EXPO_PUBLIC_PIITRADE_SITE_URL || 'https://piitrade.com').trim().replace(/\/+$/, '');
 
-/** Keep in sync with MAX_VIDEO_SECONDS in backend/src/lib/videoLimits.ts. */
+/** Keep in sync with MAX_VIDEO_SECONDS in backend/src/lib/video/videoLimits.ts. */
 export const MAX_VIDEO_SECONDS = 60;
 
 /**

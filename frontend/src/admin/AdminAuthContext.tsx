@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
-import { getAdminToken, setAdminToken } from '../api';
+import { getAdminToken, setAdminToken } from '../lib/api';
 import { adminApi, Admin, UNAUTHORIZED_EVENT } from './adminApi';
 
 interface AdminAuthContextValue {

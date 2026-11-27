@@ -3,15 +3,15 @@ const assert = require('node:assert/strict');
 const dbPath = require.resolve('../dist/db');
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma: {} } };
 
-const A = require('../dist/lib/attribution');
-const M = require('../dist/lib/money');
-const R = require('../dist/lib/feedRank');
-const S = require('../dist/lib/shoppable');
-const L = require('../dist/lib/listingSpec');
-const E = require('../dist/lib/embedPages');
-const K = require('../dist/lib/keyframes');
-const { isPublicHttpUrl } = require('../dist/lib/sites');
-const { normalizePermissions, ALL_PERMISSIONS } = require('../dist/lib/permissions');
+const A = require('../dist/lib/shops/attribution');
+const M = require('../dist/lib/core/money');
+const R = require('../dist/lib/feed/feedRank');
+const S = require('../dist/lib/shops/shoppable');
+const L = require('../dist/lib/search/listingSpec');
+const E = require('../dist/lib/shops/embedPages');
+const K = require('../dist/lib/video/keyframes');
+const { isPublicHttpUrl } = require('../dist/lib/shops/sites');
+const { normalizePermissions, ALL_PERMISSIONS } = require('../dist/lib/core/permissions');
 
 // ---- money
 test('toMinor parses amounts exactly and rejects junk', () => {

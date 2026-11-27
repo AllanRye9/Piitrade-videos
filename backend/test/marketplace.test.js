@@ -1,4 +1,4 @@
-// Regression tests for backend/src/lib/marketplace.ts's search fallback
+// Regression tests for backend/src/lib/search/marketplace.ts's search fallback
 // ladder and the GET /api/marketplace/search route.
 //
 // WHY THIS FILE EXISTS: the real marketplace backend does a verbatim,
@@ -134,7 +134,7 @@ global.fetch = async (url, init) => {
 };
 process.env.MARKETPLACE_API = 'https://fake-marketplace.test';
 
-const { searchProductsWithFallback } = require('../dist/lib/marketplace.js');
+const { searchProductsWithFallback } = require('../dist/lib/search/marketplace.js');
 
 test('finds the real listing when the AI text leads with a word not in the title (the bug that was fixed)', async () => {
   const outcome = await searchProductsWithFallback('Vintage Wooden Dining Chair with Carved Legs');
@@ -228,7 +228,7 @@ before(async () => {
   require('express-async-errors');
   const express = require('express');
   const marketplaceRouter = require('../dist/routes/marketplace.js').default;
-  const { HttpError } = require('../dist/lib/httpError.js');
+  const { HttpError } = require('../dist/lib/core/httpError.js');
 
   const app = express();
   app.use(express.json());

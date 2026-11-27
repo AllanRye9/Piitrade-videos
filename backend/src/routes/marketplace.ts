@@ -1,14 +1,14 @@
 import { Router, Request, Response } from 'express';
-import { HttpError } from '../lib/httpError';
+import { HttpError } from '../lib/core/httpError';
 import { prisma } from '../db';
-import { toSearchResultDto, browseUrlFor } from '../lib/marketplace';
-import { searchSites } from '../lib/searchSites';
+import { toSearchResultDto, browseUrlFor } from '../lib/search/marketplace';
+import { searchSites } from '../lib/search/searchSites';
 import { searchLimiter } from '../middleware/rateLimit';
 
 const router = Router();
 
 // GET /api/marketplace/search?q=<text> — manual, user-typed search across every
-// connected shop (see lib/searchSites.ts; one failing shop never blocks the rest).
+// connected shop (see lib/search/searchSites.ts; one failing shop never blocks the rest).
 //
 // Independent of the AI-identify pipeline in visualSearch.ts: this
 // lets a viewer type their own words and search the marketplace

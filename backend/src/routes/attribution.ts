@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
-import { HttpError } from '../lib/httpError';
+import { HttpError } from '../lib/core/httpError';
 import { requireAccount } from '../middleware/requireAccount';
 import { getSessionId } from './videos';
 import { postbackLimiter, redirectLimiter, writeLimiter } from '../middleware/rateLimit';
@@ -12,8 +12,8 @@ import {
   parseConversion,
   verifyPostback,
   withClickParams,
-} from '../lib/attribution';
-import { commissionMinor, fromMinor, toMinor } from '../lib/money';
+} from '../lib/shops/attribution';
+import { commissionMinor, fromMinor, toMinor } from '../lib/core/money';
 
 /** Clicks by the same viewer on the same link within this window reuse one click row (double-taps, link re-opens). */
 const CLICK_DEDUPE_MS = 10_000;

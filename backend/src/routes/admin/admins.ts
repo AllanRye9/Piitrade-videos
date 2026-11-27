@@ -1,10 +1,10 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePrimary } from '../../middleware/requireAdmin';
-import { HttpError } from '../../lib/httpError';
-import { hashPassword } from '../../lib/auth';
-import { normalizePermissions } from '../../lib/permissions';
-import { audit } from '../../lib/audit';
+import { HttpError } from '../../lib/core/httpError';
+import { hashPassword } from '../../lib/core/auth';
+import { normalizePermissions } from '../../lib/core/permissions';
+import { audit } from '../../lib/core/audit';
 
 /**
  * Admin management — PRIMARY admin only.

@@ -1,9 +1,9 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
-import { HttpError } from '../../lib/httpError';
-import { audit } from '../../lib/audit';
-import { parsePage, pageMeta } from '../../lib/pagination';
+import { HttpError } from '../../lib/core/httpError';
+import { audit } from '../../lib/core/audit';
+import { parsePage, pageMeta } from '../../lib/core/pagination';
 import { recountComments } from './helpers';
 
 const router = Router();

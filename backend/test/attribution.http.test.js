@@ -33,7 +33,7 @@ require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
 
 require('express-async-errors'); // same as src/index.ts: lets async handlers throw HttpError
 const express = require('express');
-const { signPostback, hashId } = require('../dist/lib/attribution');
+const { signPostback, hashId } = require('../dist/lib/shops/attribution');
 const attribution = require('../dist/routes/attribution');
 
 let server, base;

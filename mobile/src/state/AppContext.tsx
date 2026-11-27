@@ -18,7 +18,7 @@ export type SheetDescriptor =
   | { type: 'notifications' }
   | { type: 'comments'; video: Video; onCountChange?: (n: number) => void }
   | { type: 'more'; video: Video; onDeleted?: () => void }
-  | { type: 'find'; initialQuery?: string; videoId?: string }
+  | { type: 'find'; initialQuery?: string; videoId?: string; /** Where the viewer was in the video, ms — the screenshot is taken there. */ positionMs?: number }
   | { type: 'products'; video: Video }
   | { type: 'earnings' }
   | { type: 'saved' };

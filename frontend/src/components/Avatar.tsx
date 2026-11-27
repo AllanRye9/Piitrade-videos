@@ -1,5 +1,5 @@
 import { CircleUserRound } from 'lucide-react';
-import { mediaUrl } from '../config';
+import { mediaUrl } from '../lib/config';
 
 interface Props {
   /** Resolved avatar URL (already absolute or backend-relative) or null/undefined for the fallback icon. */

@@ -15,8 +15,8 @@ import {
   Handshake,
 } from 'lucide-react';
 import Avatar from './Avatar';
-import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../profileStore';
-import { piitradeUrl } from '../config';
+import { ensureProfileLoaded, getProfileState, subscribeProfile } from '../features/account/profileStore';
+import { piitradeUrl } from '../lib/config';
 
 export type FeedMode = 'latest' | 'trending';
 

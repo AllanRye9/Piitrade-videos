@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
 import { eventsLimiter } from '../middleware/rateLimit';
 import { getSessionId } from './videos';
-import { Cohort, inHoldout, parseEvents, utcDay, watchFacts } from '../lib/guardrail';
+import { Cohort, inHoldout, parseEvents, utcDay, watchFacts } from '../lib/feed/guardrail';
 
 /**
  * Viewing analytics from the app, batched. Stores only per-video / per-day SUMS (no per-viewer rows):

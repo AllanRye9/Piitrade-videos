@@ -1,8 +1,8 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
-import { HttpError } from '../../lib/httpError';
-import { audit } from '../../lib/audit';
+import { HttpError } from '../../lib/core/httpError';
+import { audit } from '../../lib/core/audit';
 
 const router = Router();
 

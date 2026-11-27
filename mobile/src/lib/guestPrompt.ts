@@ -1,5 +1,5 @@
 /**
- * When to ask a guest to sign in — the same rule as the website (frontend/src/guestPrompt.ts), driven by the
+ * When to ask a guest to sign in — the same rule as the website (frontend/src/features/feed/guestPrompt.ts), driven by the
  * same admin-managed numbers (Admin → Site & app settings). Only real watch time counts and each gap is
  * `backoff` × the previous one, so the prompt never nags.
  */

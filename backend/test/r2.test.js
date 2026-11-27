@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { publicUrlForKey, keyFromPublicUrl, objectKey, contentTypeFor } = require('../dist/lib/r2');
+const { publicUrlForKey, keyFromPublicUrl, objectKey, contentTypeFor } = require('../dist/lib/core/r2');
 
 test('builds public URLs and round-trips them back to keys', () => {
   const base = 'https://media.example.com/';

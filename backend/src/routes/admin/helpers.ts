@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '../../db';
-import { deleteFromR2ByUrl } from '../../lib/r2';
+import { deleteFromR2ByUrl } from '../../lib/core/r2';
 
 /** Deletes a stored file from R2 (when the DB holds an R2 URL) or from local disk (when it holds a filename). Legacy ImageKit URLs are left alone. */
 export async function removeStoredFile(value: string, localDir: string): Promise<void> {

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const dbPath = require.resolve('../dist/db');
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma: {} } };
 
-const { normalizePermissions, ALL_PERMISSIONS } = require('../dist/lib/permissions');
+const { normalizePermissions, ALL_PERMISSIONS } = require('../dist/lib/core/permissions');
 const { requirePermission, requirePrimary, toCurrentAdmin } = require('../dist/middleware/requireAdmin');
 
 test('normalizePermissions drops unknown values and non-arrays', () => {

@@ -8,13 +8,13 @@ Piitrade Videos does not compete with TikTok on entertainment. It is the **open 
 
 | Asset | Where |
 |---|---|
-| Multi-site registry (name, API type, link templates, country, currency) | `backend/src/lib/sites.ts`, `siteUrls.ts`, Admin → Sites |
-| Parallel multi-site product search, one failing site isolated | `backend/src/lib/marketplace.ts` (`searchSites`) |
+| Multi-site registry (name, API type, link templates, country, currency) | `backend/src/lib/shops/sites.ts`, `siteUrls.ts`, Admin → Sites |
+| Parallel multi-site product search, one failing site isolated | `backend/src/lib/search/marketplace.ts` (`searchSites`) |
 | In-video visual search (crop → AI identify → catalog lookup) | `backend/src/routes/visualSearch.ts` |
-| Product link per video, restricted to connected-site domains | `resolveVideoLink` in `lib/sites.ts` |
+| Product link per video, restricted to connected-site domains | `resolveVideoLink` in `lib/shops/sites.ts` |
 | UTM attribution on outbound links | `UTM_SOURCE` in `siteUrls.ts` |
 | Video SEO: JSON-LD, video sitemap, crawler meta injection | `backend/src/lib/seo.ts`, `routes/seo.ts` |
-| Ranked "For you" feed with location boost | `backend/src/lib/feedRank.ts` |
+| Ranked "For you" feed with location boost | `backend/src/lib/feed/feedRank.ts` |
 
 ### What is missing
 

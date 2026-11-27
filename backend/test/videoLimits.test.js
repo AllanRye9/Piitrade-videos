@@ -1,4 +1,4 @@
-// Tests for backend/src/lib/videoLimits.ts — the 60-second cap and the
+// Tests for backend/src/lib/video/videoLimits.ts — the 60-second cap and the
 // trim-window rules behind the upload dialog's trim editor. Pure logic
 // (no ffmpeg/DB), so these run anywhere.
 //
@@ -6,8 +6,8 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit } = require('../dist/lib/videoLimits.js');
-const { HttpError } = require('../dist/lib/httpError.js');
+const { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit } = require('../dist/lib/video/videoLimits.js');
+const { HttpError } = require('../dist/lib/core/httpError.js');
 
 function expectError(fn, code, status = 400) {
   try {

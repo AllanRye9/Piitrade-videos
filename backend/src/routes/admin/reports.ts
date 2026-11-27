@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
-import { audit } from '../../lib/audit';
+import { audit } from '../../lib/core/audit';
 import { resolveAssetUrl } from '../videos';
 
 const router = Router();

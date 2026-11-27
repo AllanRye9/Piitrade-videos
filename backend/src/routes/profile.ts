@@ -4,10 +4,10 @@ import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { prisma } from '../db';
 import { uploadImage } from '../middleware/upload';
-import { uploadToR2, deleteFromR2ByUrl } from '../lib/r2';
+import { uploadToR2, deleteFromR2ByUrl } from '../lib/core/r2';
 import { AVATARS_DIR } from '../paths';
-import { HttpError } from '../lib/httpError';
-import { toJpeg } from '../lib/image';
+import { HttpError } from '../lib/core/httpError';
+import { toJpeg } from '../lib/core/image';
 import { writeLimiter } from '../middleware/rateLimit';
 import { requireAccount } from '../middleware/requireAccount';
 

@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { corsOptions } = require('../dist/lib/cors.js');
+const { corsOptions } = require('../dist/lib/core/cors.js');
 
 function isAllowed(origin) {
   return new Promise((resolve, reject) => {

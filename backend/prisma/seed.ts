@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import sharp from 'sharp';
 import { PrismaClient } from '@prisma/client';
-import { computeImageHash } from '../src/lib/phash';
+import { computeImageHash } from '../src/lib/search/phash';
 
 const execFileAsync = promisify(execFile);
 const prisma = new PrismaClient();

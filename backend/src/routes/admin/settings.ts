@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
-import { audit } from '../../lib/audit';
-import { changedSections, getSettingsRecord, saveSettings } from '../../lib/settings';
+import { audit } from '../../lib/core/audit';
+import { changedSections, getSettingsRecord, saveSettings } from '../../lib/core/settings';
 
 const router = Router();
 

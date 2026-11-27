@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, Info, CheckCircle2, Wrench, X } from 'lucide-react';
-import { useSiteConfig } from '../siteConfig';
+import { useSiteConfig } from '../lib/siteConfig';
 
 const DISMISSED_KEY = 'piitrade_dismissed_announcement';
 

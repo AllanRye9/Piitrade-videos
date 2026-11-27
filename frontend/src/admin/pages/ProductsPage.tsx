@@ -3,7 +3,7 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { adminApi, ProductRecord } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useDebounced, useFetch } from '../hooks';
-import { mediaUrl } from '../../config';
+import { mediaUrl } from '../../lib/config';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Field, FormModal, IconButton, PageHeader, SearchInput, Spinner, Toolbar, inputCls, useToast } from '../ui';
 
 function ProductForm({ initial, onClose, onSaved }: { initial?: ProductRecord; onClose: () => void; onSaved: () => void }) {

@@ -1,11 +1,11 @@
-import { invalidateShopCache } from '../../lib/searchSites';
-import { normalizeOriginsInput } from '../../lib/embedOrigins';
+import { invalidateShopCache } from '../../lib/search/searchSites';
+import { normalizeOriginsInput } from '../../lib/shops/embedOrigins';
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
-import { HttpError } from '../../lib/httpError';
-import { audit } from '../../lib/audit';
-import { checkListingApi, isPublicHttpUrl, newPostbackSecret, slugify } from '../../lib/sites';
+import { HttpError } from '../../lib/core/httpError';
+import { audit } from '../../lib/core/audit';
+import { checkListingApi, isPublicHttpUrl, newPostbackSecret, slugify } from '../../lib/shops/sites';
 
 const router = Router();
 

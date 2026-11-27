@@ -30,7 +30,7 @@ require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
 require('express-async-errors');
 const express = require('express');
 const savedRouter = require('../dist/routes/savedItems');
-const { attachProducts } = require('../dist/lib/videoProducts');
+const { attachProducts } = require('../dist/lib/shops/videoProducts');
 
 let server, base;
 before(async () => {

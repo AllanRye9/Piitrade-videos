@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { adminApi, UserRecord } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useDebounced, useFetch } from '../hooks';
-import { mediaUrl } from '../../config';
+import { mediaUrl } from '../../lib/config';
 import { ADMIN_BASE } from '../paths';
 import { LocationSelect, MiniAvatar } from '../shared';
 import {

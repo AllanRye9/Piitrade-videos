@@ -21,15 +21,15 @@ test('the upload size limit is the same in the backend and nginx', () => {
 });
 
 test('the maximum video length is the same in the backend, the web app and the mobile app', () => {
-  const backend = num(read('backend/src/lib/videoLimits.ts'), /MAX_VIDEO_SECONDS\s*=\s*(\d+)/, 'backend limit');
-  assert.equal(num(read('frontend/src/config.ts'), /MAX_VIDEO_SECONDS\s*=\s*(\d+)/, 'web limit'), backend);
+  const backend = num(read('backend/src/lib/video/videoLimits.ts'), /MAX_VIDEO_SECONDS\s*=\s*(\d+)/, 'backend limit');
+  assert.equal(num(read('frontend/src/lib/config.ts'), /MAX_VIDEO_SECONDS\s*=\s*(\d+)/, 'web limit'), backend);
   assert.equal(num(read('mobile/src/config.ts'), /MAX_VIDEO_SECONDS\s*=\s*(\d+)/, 'mobile limit'), backend);
 });
 
 test('every /api route family the web and mobile apps call is mounted by the backend', () => {
   const mounted = new Set(matches(read('backend/src/index.ts'), /app\.use\('\/api\/([a-z-]+)'/g));
   assert.ok(mounted.size >= 10, 'expected the backend route mounts to be found');
-  for (const client of ['mobile/src/api.ts', 'frontend/src/api.ts', 'frontend/src/admin/adminApi.ts']) {
+  for (const client of ['mobile/src/api.ts', 'frontend/src/lib/api.ts', 'frontend/src/admin/adminApi.ts']) {
     if (!exists(client)) continue;
     const called = matches(read(client), /\/api\/([a-z-]+)/g);
     assert.ok(called.length > 0, `${client}: no API calls found`);
@@ -38,7 +38,7 @@ test('every /api route family the web and mobile apps call is mounted by the bac
 });
 
 test('analytics event types are the same on web and mobile, and the backend accepts them', () => {
-  const web = matches(read('frontend/src/analytics.ts'), /type:\s*'([a-z-]+)'/g).sort();
+  const web = matches(read('frontend/src/lib/analytics.ts'), /type:\s*'([a-z-]+)'/g).sort();
   const mobile = matches(read('mobile/src/lib/analytics.ts'), /type:\s*'([a-z-]+)'/g).sort();
   assert.ok(web.length > 0 && mobile.length > 0, 'expected event types in both clients');
   assert.deepEqual(mobile, web, 'web and mobile send different analytics event types');
@@ -57,7 +57,7 @@ test('mobile upload retries use the backend idempotency key contract', () => {
 
 test('every error code the backend throws for uploads has a message path on the app side', () => {
   // The app shows the server's own message, so what matters is that the codes the app branches on exist.
-  const backend = read('backend/src/routes/videos.ts') + read('backend/src/lib/videoLimits.ts');
+  const backend = read('backend/src/routes/videos.ts') + read('backend/src/lib/video/videoLimits.ts');
   for (const code of matches(read('mobile/src/state/uploads.ts') + read('mobile/src/api.ts'), /code\s*===\s*'([A-Z_]+)'/g)) {
     if (code === 'UPLOAD_INTERRUPTED' || code === 'SIGN_IN_REQUIRED') continue; // raised by the app / a different router
     assert.ok(backend.includes(`'${code}'`), `the app branches on "${code}" but the backend never sends it`);

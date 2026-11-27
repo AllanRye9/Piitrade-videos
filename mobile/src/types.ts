@@ -169,6 +169,18 @@ export interface MarketplaceSearchResponse {
   shops?: { searched: Array<{ id: string; name: string; count: number }>; failed: Array<{ id: string; name: string }> };
 }
 
+/** Response of the screenshot search (POST /api/frame-search). */
+export interface FrameSearchResponse extends MarketplaceSearchResponse {
+  /** 'frame': found from the picture. 'title': the picture couldn't be interpreted (or what it shows isn't listed), so the video's title was searched. */
+  source: 'frame' | 'title';
+  note?: string;
+  query?: string;
+  /** Small JPEG data URL of the frame that was analysed. */
+  frame?: string;
+  atMs?: number;
+  attempts: Array<{ atMs: number; identification: string | null; results: number; stopped?: string }>;
+}
+
 export interface AdminUser {
   id: string;
   email: string;
@@ -217,7 +229,7 @@ export interface TrendingHashtag {
   count: number;
 }
 
-/** GET /api/config — admin-managed settings (see backend/src/lib/settings.ts). */
+/** GET /api/config — admin-managed settings (see backend/src/lib/core/settings.ts). */
 export interface SiteConfig {
   guestPrompt: { enabled: boolean; firstAfterSeconds: number; baseGapSeconds: number; backoff: number; maxPerSession: number; autoHideSeconds: number };
   maintenance: { enabled: boolean; message: string };

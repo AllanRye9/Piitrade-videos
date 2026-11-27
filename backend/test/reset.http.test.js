@@ -21,7 +21,7 @@ const fake = {
 };
 const dbPath = require.resolve('../dist/db');
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma: fake } };
-const emailPath = require.resolve('../dist/lib/email');
+const emailPath = require.resolve('../dist/lib/core/email');
 require.cache[emailPath] = { id: emailPath, filename: emailPath, loaded: true, exports: { sendEmail: async () => { if (db.emailFails) throw new Error('SMTP down'); } } };
 
 require('express-async-errors');

@@ -4,29 +4,31 @@ import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { prisma } from '../db';
 import { uploadVideoWithAudio } from '../middleware/upload';
-import { extractPoster, getVideoDuration } from '../lib/thumbnail';
-import { transcodeToMp4, TranscodeOptions } from '../lib/videoTranscode';
-import { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit, TrimWindow } from '../lib/videoLimits';
-import { MAX_AUDIO_BYTES, resolveAudioMix } from '../lib/audioMix';
-import { uploadToR2 } from '../lib/r2';
+import { extractPoster, getVideoDuration } from '../lib/video/thumbnail';
+import { transcodeToMp4, TranscodeOptions, findOverlayFont } from '../lib/video/videoTranscode';
+import { probeVideo } from '../lib/video/videoStandard';
+import { EditPlan, isPlainCut, resolveEdits } from '../lib/video/videoEdit';
+import { MAX_VIDEO_SECONDS, resolveTrimWindow, withinLimit, TrimWindow } from '../lib/video/videoLimits';
+import { MAX_AUDIO_BYTES, resolveAudioMix } from '../lib/video/audioMix';
+import { uploadToR2 } from '../lib/core/r2';
 import { VIDEOS_DIR, POSTERS_DIR } from '../paths';
-import { HttpError } from '../lib/httpError';
+import { HttpError } from '../lib/core/httpError';
 import { ensureHandle, resolveAvatarUrl } from './profile';
 import { uploadLimiter, writeLimiter } from '../middleware/rateLimit';
-import { extractHashtags } from '../lib/hashtags';
+import { extractHashtags } from '../lib/feed/hashtags';
 import { requireAccount } from '../middleware/requireAccount';
-import { decodeCursor, encodeCursor, olderThan } from '../lib/cursor';
+import { decodeCursor, encodeCursor, olderThan } from '../lib/core/cursor';
 import { removeStoredFile } from './admin/helpers';
-import { attachProducts, loadActiveSites, replaceVideoProducts } from '../lib/videoProducts';
-import { CleanProduct, validateProducts } from '../lib/shoppable';
-import { extractKeyframes } from '../lib/keyframes';
-import { identifyImage } from '../lib/aiSearch';
-import { searchSites, searchConfigured } from '../lib/searchSites';
-import { scoreVideo } from '../lib/feedRank';
+import { attachProducts, loadActiveSites, replaceVideoProducts } from '../lib/shops/videoProducts';
+import { CleanProduct, validateProducts } from '../lib/shops/shoppable';
+import { extractKeyframes } from '../lib/video/keyframes';
+import { identifyImage } from '../lib/search/aiSearch';
+import { searchSites, searchConfigured } from '../lib/search/searchSites';
+import { scoreVideo } from '../lib/feed/feedRank';
 
 const router = Router();
 
-// The 60-second cap (MAX_VIDEO_SECONDS, see lib/videoLimits.ts) is
+// The 60-second cap (MAX_VIDEO_SECONDS, see lib/video/videoLimits.ts) is
 // enforced server-side in addition to the instant client-side check,
 // since the client can't be trusted — never rely on it alone.
 
@@ -209,7 +211,7 @@ router.get('/trending', async (req: Request, res: Response) => {
     ids = trendingCache.ids;
   } else {
     // Rank the newest 500 in JS so the score can include each video's click→sale record
-    // (lib/feedRank.ts). Older videos decay out of contention anyway.
+    // (lib/feed/feedRank.ts). Older videos decay out of contention anyway.
     const candidates = await prisma.video.findMany({
       where: { hidden: false },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -431,12 +433,43 @@ const createVideo = async (req: Request, res: Response) => {
     throw new HttpError(422, 'Could not read this video — please upload a valid video file');
   }
 
+  // What the file actually contains (frame size, frame rate, sound). The frame standard is applied from this
+  // (see lib/video/videoStandard.ts), and an unreadable video stream is caught here rather than inside ffmpeg.
+  const probe = await probeVideo(file.path);
+  if (!probe) {
+    cleanup();
+    throw new HttpError(422, 'Could not read this video — please upload a valid video file');
+  }
+
+  // Edits (several kept sections, speed, rotate/flip, crop, look, fades, text) arrive as JSON in `edits`.
+  // Without them the older trimStart/trimEnd fields decide the kept section exactly as before. A set of edits
+  // that only cuts one section is treated as that plain trim, so it takes the simple path.
   let keep: TrimWindow;
+  let editPlan: EditPlan | undefined;
   try {
-    keep = resolveTrimWindow(sourceDuration, req.body.trimStart, req.body.trimEnd);
+    const rawEdits = typeof req.body.edits === 'string' ? req.body.edits.trim() : req.body.edits;
+    if (rawEdits) {
+      const plan = resolveEdits(rawEdits, sourceDuration);
+      const first = plan.edits.segments[0];
+      if (isPlainCut(plan.edits)) {
+        keep = { start: first.start, length: plan.outputSeconds, trimmed: first.start > 0.05 || first.end < sourceDuration - 0.05 };
+      } else {
+        editPlan = plan;
+        // Pinned-product times and the length cap are measured on the edited clip, which is what gets published.
+        keep = { start: first.start, length: plan.outputSeconds, trimmed: true };
+      }
+    } else {
+      keep = resolveTrimWindow(sourceDuration, req.body.trimStart, req.body.trimEnd);
+    }
   } catch (err) {
     cleanup();
     throw err;
+  }
+
+  const overlayFont = editPlan && editPlan.edits.texts.length ? findOverlayFont() : null;
+  if (editPlan && editPlan.edits.texts.length && !overlayFont) {
+    cleanup();
+    throw new HttpError(422, 'Text overlays are not available on this server right now (no font installed). Remove the text and try again.', { code: 'TEXT_UNAVAILABLE' });
   }
 
   // Pinned products (optional JSON array): validated now, before any transcoding, so a bad
@@ -488,11 +521,14 @@ const createVideo = async (req: Request, res: Response) => {
   // Normalize every upload to H.264/AAC MP4, whatever format it
   // arrived in. This guarantees the stored file is playable in every
   // browser's <video> tag and that its audio track is explicitly
-  // preserved (never re-encoded with -an) — see lib/videoTranscode.ts.
+  // preserved (never re-encoded with -an) — see lib/video/videoTranscode.ts.
   const transcodedFilename = `${uuid()}.mp4`;
   const transcodedPath = path.join(VIDEOS_DIR, transcodedFilename);
-  const transcodeOptions: TranscodeOptions = {};
-  if (keep.trimmed || audio) {
+  const transcodeOptions: TranscodeOptions = { probe };
+  if (editPlan) {
+    transcodeOptions.edit = editPlan;
+    transcodeOptions.fontFile = overlayFont;
+  } else if (keep.trimmed || audio) {
     // With added audio the output length must always be bounded: the
     // padded audio would otherwise never end.
     transcodeOptions.startSeconds = keep.start;
@@ -504,6 +540,8 @@ const createVideo = async (req: Request, res: Response) => {
   } catch (err) {
     if (fs.existsSync(transcodedPath)) fs.unlinkSync(transcodedPath);
     console.error('Video transcode failed:', (err as Error).message);
+    // A problem we already described (e.g. text overlays without a font) is more useful than the generic line below.
+    if (err instanceof HttpError) throw err;
     throw new HttpError(422, audio ? 'Could not add this audio to the video — try a different audio file' : 'Could not process this video — please upload a valid video file');
   } finally {
     // The originals (whatever format they were) are never served —

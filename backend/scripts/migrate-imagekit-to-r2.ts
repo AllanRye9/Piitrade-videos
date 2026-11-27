@@ -14,7 +14,7 @@
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { prisma } from '../src/db';
-import { isR2Configured, r2PublicUrl, uploadToR2, Folder } from '../src/lib/r2';
+import { isR2Configured, r2PublicUrl, uploadToR2, Folder } from '../src/lib/core/r2';
 
 const dry = process.argv.includes('--dry');
 

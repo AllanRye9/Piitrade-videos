@@ -7,8 +7,8 @@ require('express-async-errors');
 const express = require('express');
 const sharp = require('sharp');
 const { uploadImage } = require('../dist/middleware/upload');
-const { toJpeg } = require('../dist/lib/image');
-const { HttpError } = require('../dist/lib/httpError');
+const { toJpeg } = require('../dist/lib/core/image');
+const { HttpError } = require('../dist/lib/core/httpError');
 
 // Same middleware chain as POST /api/profile/avatar (multer filter → toJpeg), without the database.
 let server, base;

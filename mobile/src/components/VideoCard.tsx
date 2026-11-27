@@ -5,7 +5,7 @@ import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../api';
 import type { Video, VideoProduct } from '../types';
-import { activeProducts, frameRect, type Frame } from '../lib/products';
+import { activeProducts, frameFit, frameRect, type Frame } from '../lib/products';
 import { isNetworkError } from '../lib/net';
 import { track } from '../lib/analytics';
 import { OFFLINE_BODY, OFFLINE_TITLE } from '../lib/links';
@@ -173,13 +173,14 @@ export default function VideoCard({ video, active, preload = false, suspended = 
   const [shareCount, setShareCount] = useState(video.shares);
   const [expanded, setExpanded] = useState(false);
   const [following, setFollowing] = useState(!!video.uploader?.isFollowing);
-  const fit: Fit = 'cover';
   const [firstFrame, setFirstFrame] = useState(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'readyToPlay' | 'error'>('idle');
   /** The player's own explanation when it fails (e.g. the HTTP status of the file), shown under "Couldn't play this video". */
   const [failure, setFailure] = useState<string | null>(null);
   const [removed, setRemoved] = useState(false);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  // Fill the card only when little is cropped; show landscape/square clips whole (see frameFit).
+  const fit: Fit = useMemo(() => frameFit(width, height, dims), [width, height, dims]);
   const watchRef = useRef<{ startedAt: number | null; ms: number }>({ startedAt: null, ms: 0 });
   const impressedRef = useRef<Set<string>>(new Set());
   const [activeKey, setActiveKey] = useState('');
@@ -449,7 +450,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
     <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
       {/* The poster stays underneath until the first decoded frame so the swap never flashes black. */}
       {poster && !(active && firstFrame) ? (
-        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit="cover" onLoad={(e) => {
+        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit={fit} onLoad={(e) => {
           if (!active && e.source?.width && e.source?.height) setDims({ w: e.source.width, h: e.source.height });
         }} />
       ) : null}
@@ -458,7 +459,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
         <VideoView
           player={player}
           style={[StyleSheet.absoluteFill, !active && { opacity: 0 }]}
-          contentFit="cover"
+          contentFit={fit}
           nativeControls={false}
           onFirstFrameRender={() => setFirstFrame(true)}
         />
@@ -554,7 +555,7 @@ export default function VideoCard({ video, active, preload = false, suspended = 
           </Pressable>
         ) : null}
         <Pressable
-          onPress={() => openSheet({ type: 'find', initialQuery: video.hashtags[0] || video.title, videoId: video.id })}
+          onPress={() => openSheet({ type: 'find', initialQuery: video.hashtags[0] || video.title, videoId: video.id, positionMs: Math.round((player.currentTime || 0) * 1000) })}
           accessibilityRole="button"
           accessibilityLabel="Find this on Piitrade"
           style={styles.findChip}

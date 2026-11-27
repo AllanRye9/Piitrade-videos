@@ -2,7 +2,7 @@ import multer from 'multer';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { UPLOAD_ROOT } from '../paths';
-import { HttpError } from '../lib/httpError';
+import { HttpError } from '../lib/core/httpError';
 
 function makeStorage(subdir: string) {
   return multer.diskStorage({
@@ -51,7 +51,7 @@ export const uploadImage = multer({
   fileFilter: (_req, file, cb) => {
     // The MIME type is only a hint (phones send HEIC as image/heic, image/heif, application/octet-stream
     // or nothing). Reject files that positively claim to be something else; the real check is the
-    // content sniff in lib/image.ts toJpeg().
+    // content sniff in lib/core/image.ts toJpeg().
     const t = (file.mimetype || '').toLowerCase();
     if (t && !t.startsWith('image/') && t !== 'application/octet-stream' && t !== 'binary/octet-stream') {
       cb(new HttpError(400, 'Only image files are allowed'));

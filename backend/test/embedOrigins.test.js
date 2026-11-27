@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { normalizeOriginsInput, resolveFrameAncestors } = require('../dist/lib/embedOrigins.js');
+const { normalizeOriginsInput, resolveFrameAncestors } = require('../dist/lib/shops/embedOrigins.js');
 
 test('normalizes exact and wildcard origins and rejects paths', () => {
   assert.equal(

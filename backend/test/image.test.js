@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const sharp = require('sharp');
-const { sniffImage, toJpeg, UNSUPPORTED_IMAGE_MESSAGE } = require('../dist/lib/image');
+const { sniffImage, toJpeg, UNSUPPORTED_IMAGE_MESSAGE } = require('../dist/lib/core/image');
 
 const heic = fs.readFileSync(path.join(__dirname, 'fixtures', 'sample.heic'));
 const base = () => sharp({ create: { width: 200, height: 100, channels: 3, background: { r: 240, g: 90, b: 10 } } });

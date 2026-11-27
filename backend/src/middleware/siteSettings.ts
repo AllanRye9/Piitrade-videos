@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { getSettings } from '../lib/settings';
+import { getSettings } from '../lib/core/settings';
 
 // Reads are always allowed; only writes can be paused.
 const SAFE = new Set(['GET', 'HEAD', 'OPTIONS']);

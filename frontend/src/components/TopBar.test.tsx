@@ -11,7 +11,7 @@ const profileSnapshot = vi.hoisted(() => ({
   loaded: true,
 }));
 
-vi.mock('../profileStore', () => ({
+vi.mock('../features/account/profileStore', () => ({
   ensureProfileLoaded: vi.fn(),
   getProfileState: () => profileSnapshot,
   subscribeProfile: () => () => {},

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePrimary } from '../../middleware/requireAdmin';
-import { parsePage, pageMeta } from '../../lib/pagination';
+import { parsePage, pageMeta } from '../../lib/core/pagination';
 
 const router = Router();
 router.use(requirePrimary);

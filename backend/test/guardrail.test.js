@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const dbPath = require.resolve('../dist/db');
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma: {} } };
-const G = require('../dist/lib/guardrail');
+const G = require('../dist/lib/feed/guardrail');
 
 // Deterministic pseudo-random so the statistical tests never flake.
 function rng(seed) { let s = seed; return () => ((s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296); }

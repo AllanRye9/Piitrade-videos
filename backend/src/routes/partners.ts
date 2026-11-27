@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
-import { HttpError } from '../lib/httpError';
-import { cleanApplication, newApplicationToken, tokenMatches } from '../lib/partners';
-import { checkListingApi } from '../lib/sites';
+import { HttpError } from '../lib/core/httpError';
+import { cleanApplication, newApplicationToken, tokenMatches } from '../lib/shops/partners';
+import { checkListingApi } from '../lib/shops/sites';
 import { partnerApplyLimiter, partnerStatusLimiter } from '../middleware/rateLimit';
 
 /**

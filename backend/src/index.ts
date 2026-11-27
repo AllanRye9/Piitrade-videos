@@ -1,7 +1,7 @@
 import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
-import { corsOptions } from './lib/cors';
+import { corsOptions } from './lib/core/cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import multer from 'multer';
@@ -11,6 +11,7 @@ import visualSearchRouter from './routes/visualSearch';
 import authRouter from './routes/auth';
 import adminRouter from './routes/admin';
 import marketplaceRouter from './routes/marketplace';
+import frameSearchRouter from './routes/frameSearch';
 import profileRouter from './routes/profile';
 import accountsRouter from './routes/accounts';
 import accountRouter from './routes/account';
@@ -22,9 +23,9 @@ import eventsRouter from './routes/events';
 import partnersRouter from './routes/partners';
 import configRouter from './routes/config';
 import { enforceSiteSettings } from './middleware/siteSettings';
-import { ensureDefaultSite } from './lib/sites';
+import { ensureDefaultSite } from './lib/shops/sites';
 import { UPLOAD_ROOT, VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR } from './paths';
-import { HttpError } from './lib/httpError';
+import { HttpError } from './lib/core/httpError';
 
 for (const dir of [VIDEOS_DIR, POSTERS_DIR, PRODUCTS_DIR, AVATARS_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
@@ -42,7 +43,7 @@ const PORT = Number(process.env.PORT) || 4000;
 // cross-origin (e.g. if the frontend is served from a different host).
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(compression());
-// Browser origins allowed to call the API (see lib/cors.ts). Set ALLOWED_ORIGIN to add more.
+// Browser origins allowed to call the API (see lib/core/cors.ts). Set ALLOWED_ORIGIN to add more.
 app.use(cors(corsOptions()));
 // The raw bytes are kept for the conversion postback: its HMAC signature is computed over them.
 app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
@@ -60,6 +61,7 @@ app.use('/api/visual-search', visualSearchRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/marketplace', marketplaceRouter);
+app.use('/api/frame-search', frameSearchRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/accounts', accountsRouter);
 app.use('/api/account', accountRouter);

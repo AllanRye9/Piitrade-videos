@@ -1,0 +1,259 @@
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { Link } from 'react-router-dom';
+import { api, getAccountEmail, setAccountEmail, resetSessionId, requestSignIn } from '../../lib/api';
+import { setProfileDisplayName, setProfileHandle } from './profileStore';
+import { getMuted, setMuted, subscribeMuted } from '../../lib/soundPreference';
+import { X, Volume2, VolumeX, Store, Loader2, Check, ExternalLink, KeyRound, LogOut } from 'lucide-react';
+import { piitradeUrl } from '../../lib/config';
+
+interface Props {
+  displayName: string | null;
+  handle?: string | null;
+  onClose: () => void;
+}
+
+export default function ProfileSettings({ displayName, handle, onClose }: Props) {
+  const [nameInput, setNameInput] = useState(displayName || '');
+  const [savingName, setSavingName] = useState(false);
+  const [nameSaved, setNameSaved] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+
+  const [handleInput, setHandleInput] = useState(handle || '');
+  const [savingHandle, setSavingHandle] = useState(false);
+  const [handleSaved, setHandleSaved] = useState(false);
+  const [handleError, setHandleError] = useState<string | null>(null);
+
+  const muted = useSyncExternalStore(subscribeMuted, getMuted);
+
+  // null for a guest (anyone can browse without an account): the Account section then offers sign-in
+  // through the shared SignInDialog instead of an inline form.
+  const accountEmail = getAccountEmail();
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  async function requestPasswordReset() {
+    if (!accountEmail) return;
+    setResetBusy(true);
+    try {
+      await api.forgotPassword(accountEmail);
+      setResetSent(true);
+    } catch {
+      // The endpoint always reports success regardless — a thrown
+      // error here means the request itself failed (network, rate
+      // limit), not that the email wasn't found, so just leave the
+      // button as-is for another try rather than claiming it sent.
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  function signOut() {
+    // Clears the "signed in" flag AND starts a fresh, unlinked session
+    // id (see resetSessionId's own comment for exactly why the second
+    // part is required, not optional) — then reloads so the app starts
+    // over as a guest, exactly like a first-ever visit. Does NOT delete the account or
+    // its videos, which stay reachable by logging back in with the
+    // same email/handle from any device.
+    setAccountEmail(null);
+    resetSessionId();
+    window.location.assign('/');
+  }
+
+  async function saveName() {
+    const trimmed = nameInput.trim();
+    setSavingName(true);
+    setNameError(null);
+    setNameSaved(false);
+    try {
+      const res = await api.updateProfile({ displayName: trimmed || null });
+      setProfileDisplayName(res.displayName);
+      setNameSaved(true);
+      setTimeout(() => setNameSaved(false), 1500);
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : 'Could not save name');
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  async function saveHandle() {
+    const trimmed = handleInput.trim().toLowerCase();
+    if (!trimmed) return;
+    setSavingHandle(true);
+    setHandleError(null);
+    setHandleSaved(false);
+    try {
+      const res = await api.updateHandle(trimmed);
+      setProfileHandle(res.handle);
+      setHandleInput(res.handle);
+      setHandleSaved(true);
+      setTimeout(() => setHandleSaved(false), 1500);
+    } catch (err) {
+      setHandleError(err instanceof Error ? err.message : 'Could not save handle');
+    } finally {
+      setSavingHandle(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center sm:justify-center bg-black/70 backdrop-blur-sm">
+      <div className="animate-sheet-in safe-bottom safe-left safe-right modal-max-h-90 w-full sm:max-w-md bg-neutral-900 rounded-t-2xl sm:rounded-2xl overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <span className="text-white font-semibold text-sm">Settings</span>
+          <button type="button" onClick={onClose} aria-label="Close settings" className="tap-target -mr-2 text-white/60">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-6">
+          {/* Account */}
+          <section className="space-y-2">
+            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Account</label>
+            {accountEmail ? (
+              <>
+                <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2.5">
+                  <span className="text-white text-sm truncate">Signed in as {accountEmail}</span>
+                  <button type="button" onClick={signOut} className="tap-target shrink-0 text-white/60 text-xs flex items-center gap-1">
+                    <LogOut size={14} /> Sign out
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={requestPasswordReset}
+                  disabled={resetBusy || resetSent}
+                  className="w-full flex items-center justify-center gap-1.5 text-white/60 text-xs py-1 disabled:opacity-60"
+                >
+                  {resetBusy ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+                  {resetSent ? 'Reset link sent — check your email' : 'Change password'}
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={() => { onClose(); requestSignIn(); }} className="w-full bg-brand-orange text-white text-sm font-semibold rounded-lg px-3 py-2.5">
+                Sign in or create an account
+              </button>
+            )}
+          </section>
+
+          {/* Display name */}
+          <section className="space-y-2">
+            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Display name</label>
+            <div className="flex items-center gap-2">
+              <input
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="Add a name"
+                maxLength={40}
+                className="flex-1 bg-white/10 text-white text-sm rounded-lg px-3 py-2.5 outline-none placeholder:text-white/40"
+              />
+              <button
+                type="button"
+                onClick={saveName}
+                disabled={savingName || nameInput.trim() === (displayName || '')}
+                className="tap-target shrink-0 h-10 px-4 rounded-lg bg-brand-orange text-white text-sm font-semibold disabled:opacity-40 flex items-center gap-1.5"
+              >
+                {savingName ? <Loader2 size={14} className="animate-spin" /> : nameSaved ? <Check size={14} /> : null}
+                {nameSaved ? 'Saved' : 'Save'}
+              </button>
+            </div>
+            {nameError && <p className="text-red-400 text-xs">{nameError}</p>}
+            <p className="text-white/30 text-[11px]">Shown next to your picture in comments on this device.</p>
+          </section>
+
+          {/* Public handle */}
+          <section className="space-y-2">
+            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Public handle</label>
+            <div className="flex items-center gap-2">
+              <span className="text-white/40 text-sm shrink-0">piitrade.com/u/</span>
+              <input
+                value={handleInput}
+                onChange={(e) => setHandleInput(e.target.value.toLowerCase())}
+                placeholder="your-handle"
+                maxLength={30}
+                className="flex-1 min-w-0 bg-white/10 text-white text-sm rounded-lg px-3 py-2.5 outline-none placeholder:text-white/40"
+              />
+              <button
+                type="button"
+                onClick={saveHandle}
+                disabled={savingHandle || !handleInput.trim() || handleInput.trim() === (handle || '')}
+                className="tap-target shrink-0 h-10 px-4 rounded-lg bg-brand-orange text-white text-sm font-semibold disabled:opacity-40 flex items-center gap-1.5"
+              >
+                {savingHandle ? <Loader2 size={14} className="animate-spin" /> : handleSaved ? <Check size={14} /> : null}
+                {handleSaved ? 'Saved' : 'Save'}
+              </button>
+            </div>
+            {handleError && <p className="text-red-400 text-xs">{handleError}</p>}
+            {handle ? (
+              <Link to={`/u/${handle}`} className="text-brand-amber text-xs underline inline-flex items-center gap-1">
+                View your public profile <ExternalLink size={11} />
+              </Link>
+            ) : (
+              <p className="text-white/30 text-[11px]">Lets anyone find your uploaded videos at this address. Set automatically the first time you upload.</p>
+            )}
+          </section>
+
+          {/* Sound */}
+          <section className="space-y-2">
+            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Sound</label>
+            <button
+              type="button"
+              onClick={() => setMuted(!muted)}
+              className="w-full flex items-center justify-between bg-white/5 rounded-lg px-3.5 py-3"
+            >
+              <span className="flex items-center gap-2.5 text-white text-sm">
+                {muted ? <VolumeX size={18} className="text-white/50" /> : <Volume2 size={18} className="text-brand-amber" />}
+                {muted ? 'Muted' : 'Sound on'}
+              </span>
+              <span
+                className={`relative w-11 h-6 rounded-full transition-colors ${muted ? 'bg-white/20' : 'bg-brand-orange'}`}
+                aria-hidden="true"
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                    muted ? '' : 'translate-x-5'
+                  }`}
+                />
+              </span>
+            </button>
+            <p className="text-white/30 text-[11px]">Applies to every video in the feed on this device.</p>
+          </section>
+
+          {/* piitrade.com — the classifieds marketplace this app refers viewers to.
+              Nothing is linked or stored here: contacting a seller, saving
+              listings and posting ads all happen on piitrade.com with its
+              own account. */}
+          <section className="space-y-2">
+            <label className="text-white/50 text-xs font-medium uppercase tracking-wide">Piitrade marketplace</label>
+            <a
+              href={piitradeUrl('/')}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between bg-white/5 rounded-lg px-3.5 py-3 text-white text-sm"
+            >
+              <span className="flex items-center gap-2.5">
+                <Store size={18} className="text-brand-orange" />
+                Open piitrade.com
+              </span>
+              <ExternalLink size={16} className="text-white/40" />
+            </a>
+            <p className="text-white/30 text-[11px]">
+              Listings you find in videos open on piitrade.com, where you message sellers and save items with your
+              Piitrade account.
+            </p>
+          </section>
+
+          <div className="flex items-center justify-center gap-3 pt-1 text-white/30 text-xs">
+            <Link to="/legal/terms" className="underline">
+              Terms
+            </Link>
+            <Link to="/legal/privacy" className="underline">
+              Privacy
+            </Link>
+            <Link to="/legal/dmca" className="underline">
+              Copyright
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { requireAdmin, AuthedRequest } from '../../middleware/requireAdmin';
-import { RESOURCES } from '../../lib/permissions';
+import { RESOURCES } from '../../lib/core/permissions';
 import usersRouter from './users';
 import videosRouter from './videos';
 import commentsRouter from './comments';
@@ -20,7 +20,7 @@ import systemRouter from './system';
 /**
  * Everything under /api/admin. Every request is authenticated by requireAdmin
  * (which re-loads the admin from the DB) and each route then declares the
- * permission it needs — see lib/permissions.ts. Admin management and the audit
+ * permission it needs — see lib/core/permissions.ts. Admin management and the audit
  * log are primary-admin only.
  */
 const router = Router();

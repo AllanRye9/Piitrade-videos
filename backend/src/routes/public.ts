@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import cors from 'cors';
 import { prisma } from '../db';
-import { HttpError } from '../lib/httpError';
-import { normalizeProductUrl } from '../lib/attribution';
-import { resolveFrameAncestors, ShopEmbedRule } from '../lib/embedOrigins';
-import { embedPageHtml, oembedJson, permalinkPageHtml, videoIdFromUrl, widgetScript, PageCtx, PageProduct, PageVideo } from '../lib/embedPages';
+import { HttpError } from '../lib/core/httpError';
+import { normalizeProductUrl } from '../lib/shops/attribution';
+import { resolveFrameAncestors, ShopEmbedRule } from '../lib/shops/embedOrigins';
+import { embedPageHtml, oembedJson, permalinkPageHtml, videoIdFromUrl, widgetScript, PageCtx, PageProduct, PageVideo } from '../lib/shops/embedPages';
 import { resolveAssetUrl } from './videos';
 import { redirectLimiter } from '../middleware/rateLimit';
 

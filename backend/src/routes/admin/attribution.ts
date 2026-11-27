@@ -1,12 +1,12 @@
 import { Router, Response } from 'express';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
-import { HttpError } from '../../lib/httpError';
-import { audit } from '../../lib/audit';
-import { canTransition, PAYOUT_STATUSES } from '../../lib/attribution';
-import { fromMinor } from '../../lib/money';
-import { pageMeta, parsePage } from '../../lib/pagination';
-import { compare, holdoutPct, summarize, utcDay, CohortSums } from '../../lib/guardrail';
+import { HttpError } from '../../lib/core/httpError';
+import { audit } from '../../lib/core/audit';
+import { canTransition, PAYOUT_STATUSES } from '../../lib/shops/attribution';
+import { fromMinor } from '../../lib/core/money';
+import { pageMeta, parsePage } from '../../lib/core/pagination';
+import { compare, holdoutPct, summarize, utcDay, CohortSums } from '../../lib/feed/guardrail';
 
 const router = Router();
 

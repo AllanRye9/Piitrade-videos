@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
-import { hashPassword, verifyPassword, signAdminToken } from '../lib/auth';
-import { HttpError } from '../lib/httpError';
+import { hashPassword, verifyPassword, signAdminToken } from '../lib/core/auth';
+import { HttpError } from '../lib/core/httpError';
 import { requireAdmin, toCurrentAdmin, AuthedRequest } from '../middleware/requireAdmin';
 import { authLimiter } from '../middleware/rateLimit';
-import { ALL_PERMISSIONS } from '../lib/permissions';
+import { ALL_PERMISSIONS } from '../lib/core/permissions';
 
 const router = Router();
 

@@ -72,7 +72,7 @@ test('every upload/transcode setting the backend reads is documented in .env.exa
 });
 
 test('the shared helper files the tests rely on exist', () => {
-  for (const f of ['backend/src/index.ts', 'mobile/src/api.ts', 'frontend/src/api.ts', 'frontend/nginx.conf', '.github/workflows/ci.yml', '.github/workflows/android-apk.yml']) {
+  for (const f of ['backend/src/index.ts', 'mobile/src/api.ts', 'frontend/src/lib/api.ts', 'frontend/nginx.conf', '.github/workflows/ci.yml', '.github/workflows/android-apk.yml']) {
     assert.ok(exists(f), `${f} is missing`);
   }
 });

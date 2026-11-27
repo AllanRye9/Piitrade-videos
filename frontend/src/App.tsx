@@ -1,17 +1,17 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { api, isSignedIn, requestSignIn } from './api';
-import GuestNudge from './components/GuestNudge';
+import { api, isSignedIn, requestSignIn } from './lib/api';
+import GuestNudge from './features/feed/GuestNudge';
 import SiteBanners from './components/SiteBanners';
-import type { Video } from './types';
-import VideoFeed from './components/VideoFeed';
+import type { Video } from './lib/types';
+import VideoFeed from './features/feed/VideoFeed';
 import TopBar, { FeedMode } from './components/TopBar';
-import UploadModal from './components/UploadModal';
-import UploadStatus from './components/UploadStatus';
-import { setUploadedHandler } from './uploadManager';
-import ProfileSettings from './components/ProfileSettings';
-import NotificationsPanel from './components/NotificationsPanel';
-import { registerFirstInteractionAutoUnmute } from './soundPreference';
-import { ensureProfileLoaded, getProfileState, subscribeProfile } from './profileStore';
+import UploadModal from './features/upload/UploadModal';
+import UploadStatus from './features/upload/UploadStatus';
+import { setUploadedHandler } from './features/upload/uploadManager';
+import ProfileSettings from './features/account/ProfileSettings';
+import NotificationsPanel from './features/account/NotificationsPanel';
+import { registerFirstInteractionAutoUnmute } from './lib/soundPreference';
+import { ensureProfileLoaded, getProfileState, subscribeProfile } from './features/account/profileStore';
 
 // How often to refresh the unread-notifications badge in the
 // background. There's no WebSocket/push infra in this app (a real

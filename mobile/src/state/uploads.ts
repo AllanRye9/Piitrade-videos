@@ -24,6 +24,8 @@ export interface UploadParams {
   title: string;
   description: string;
   trim: TrimRange | null;
+  /** Editor settings (see lib/editModel.ts); null for a plain upload or trim. */
+  edits?: Record<string, unknown> | null;
   audio: AudioUpload | null;
   draft: UploadDraft;
 }
@@ -61,7 +63,7 @@ export function startUpload(params: UploadParams, onDone?: (v: Video) => void, k
   lastKey = key ?? newUploadKey();
   set({ ...IDLE, phase: 'uploading', title: params.title });
   api
-    .uploadVideo(params.file, params.title, params.description, (pct) => set({ progress: pct, phase: pct >= 100 ? 'processing' : 'uploading' }), params.trim, params.audio, lastKey ?? undefined)
+    .uploadVideo(params.file, params.title, params.description, (pct) => set({ progress: pct, phase: pct >= 100 ? 'processing' : 'uploading' }), params.trim, params.audio, lastKey ?? undefined, undefined, params.edits)
     .then((res) => {
       lastParams = null;
       lastKey = null;

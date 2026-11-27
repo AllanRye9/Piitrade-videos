@@ -5,7 +5,7 @@ import { isNetworkError } from './net';
 import { OFFLINE_BODY, OFFLINE_TITLE, openWebLink } from './links';
 import { embedSnippet as embedSnippetFor, parseVideoLink as parseVideoLinkFor } from './productLogic';
 
-export { activeProducts, clock, frameRect } from './productLogic';
+export { activeProducts, clock, frameFit, frameRect } from './productLogic';
 export type { Frame } from './productLogic';
 
 export const parseVideoLink = (url: string | null | undefined) => parseVideoLinkFor(url, WEB_URL);

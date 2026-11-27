@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { PRODUCTION_API_BASE, resolveApiBase } from '../src/apiBase.ts';
+import { PRODUCTION_API_BASE, resolveApiBase } from '../src/lib/apiBase.ts';
 
 test('production domain ignores stale build-time API overrides', () => {
   assert.equal(resolveApiBase('https://stale.example.com/', 'yotweek.com'), PRODUCTION_API_BASE);

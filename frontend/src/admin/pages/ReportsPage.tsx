@@ -3,7 +3,7 @@ import { CheckCheck, Play, Trash2 } from 'lucide-react';
 import { adminApi, ReportGroup } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useFetch } from '../hooks';
-import { mediaUrl } from '../../config';
+import { mediaUrl } from '../../lib/config';
 import { Badge, Button, Card, ConfirmDialog, EmptyState, ErrorState, Modal, PageHeader, Spinner, fmtDateTime, useToast } from '../ui';
 
 export default function ReportsPage() {

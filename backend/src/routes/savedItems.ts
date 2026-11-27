@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
-import { HttpError } from '../lib/httpError';
+import { HttpError } from '../lib/core/httpError';
 import { writeLimiter } from '../middleware/rateLimit';
 import { getSessionId, resolveAssetUrl } from './videos';
 

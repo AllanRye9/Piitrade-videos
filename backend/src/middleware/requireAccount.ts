@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../db';
-import { HttpError } from '../lib/httpError';
+import { HttpError } from '../lib/core/httpError';
 
 /**
  * Guards every write (like, comment, follow, upload, profile edits…).

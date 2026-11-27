@@ -5,10 +5,10 @@ import { v4 as uuid } from 'uuid';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePermission } from '../../middleware/requireAdmin';
 import { uploadImage } from '../../middleware/upload';
-import { computeImageHash } from '../../lib/phash';
-import { HttpError } from '../../lib/httpError';
-import { toJpeg } from '../../lib/image';
-import { audit } from '../../lib/audit';
+import { computeImageHash } from '../../lib/search/phash';
+import { HttpError } from '../../lib/core/httpError';
+import { toJpeg } from '../../lib/core/image';
+import { audit } from '../../lib/core/audit';
 import { PRODUCTS_DIR } from '../../paths';
 
 const router = Router();

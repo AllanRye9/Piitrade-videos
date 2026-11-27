@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
 import { resolveAvatarUrl } from './profile';
 import { resolveAssetUrl, getSessionId } from './videos';
-import { HttpError } from '../lib/httpError';
+import { HttpError } from '../lib/core/httpError';
 import { writeLimiter } from '../middleware/rateLimit';
 import { requireAccount } from '../middleware/requireAccount';
 

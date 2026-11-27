@@ -1,4 +1,4 @@
-import type { SavedItem, Video, Comment, MarketplaceSearchResponse, AccountSummary, AppNotification, TrendingHashtag, Earnings, ProductPin, ProductSuggestion, SiteInfo, SiteConfig } from './types';
+import type { SavedItem, Video, Comment, MarketplaceSearchResponse, AccountSummary, AppNotification, TrendingHashtag, Earnings, ProductPin, ProductSuggestion, SiteInfo, SiteConfig, FrameSearchResponse } from './types';
 import { fetchWithTimeout, isNetworkError } from './lib/net';
 import { setOffline } from './state/network';
 import { API_BASE } from './config';
@@ -118,6 +118,9 @@ export const api = {
   getMyProducts: (videoId: string) => request<{ products: ProductPin[] }>(`/api/videos/${videoId}/products`),
   setProducts: (videoId: string, products: ProductPin[]) => request<{ products: unknown[] }>(`/api/videos/${videoId}/products`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ products }) }),
   suggestProducts: (videoId: string) => request<{ suggestions: ProductSuggestion[] }>(`/api/videos/${videoId}/suggest-products`, { method: 'POST' }),
+  /** Screenshot search: the server cuts the frame at `atMs` out of the stored video, has the AI read it, and tries nearby frames if it can't. */
+  frameSearch: (videoId: string, atMs: number) =>
+    request<FrameSearchResponse>('/api/frame-search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, atMs: Math.max(0, Math.round(atMs)) }) }),
   shareVideo: (id: string) => request<{ shares: number }>(`/api/videos/${id}/share`, { method: 'POST' }),
 
   uploadVideo: (
@@ -128,7 +131,8 @@ export const api = {
     trim?: TrimRange | null,
     audio?: AudioUpload | null,
     idempotencyKey?: string,
-    products?: ProductPin[]
+    products?: ProductPin[],
+    edits?: Record<string, unknown> | null
   ) =>
     new Promise<{ video: Video }>((resolve, reject) => {
       const form = new FormData();
@@ -137,6 +141,8 @@ export const api = {
       form.append('title', title);
       form.append('description', description);
       if (products && products.length) form.append('products', JSON.stringify(products));
+      // Editor settings (cuts, speed, crop, look, text…); the server re-validates and renders them. With edits present it ignores trimStart/trimEnd.
+      if (edits) form.append('edits', JSON.stringify(edits));
       if (trim) {
         form.append('trimStart', trim.start.toFixed(3));
         form.append('trimEnd', trim.end.toFixed(3));

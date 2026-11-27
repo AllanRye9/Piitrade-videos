@@ -35,7 +35,7 @@ function SheetHost() {
     case 'notifications': return <NotificationsSheet />;
     case 'comments': return <CommentsSheet video={sheet.video} onCountChange={sheet.onCountChange} />;
     case 'more': return <MoreSheet video={sheet.video} onDeleted={sheet.onDeleted} />;
-    case 'find': return <FindSheet initialQuery={sheet.initialQuery} videoId={sheet.videoId} />;
+    case 'find': return <FindSheet initialQuery={sheet.initialQuery} videoId={sheet.videoId} positionMs={sheet.positionMs} />;
     case 'products': return <ProductsSheet video={sheet.video} />;
     case 'earnings': return <EarningsSheet />;
     case 'saved': return <SavedItemsSheet />;

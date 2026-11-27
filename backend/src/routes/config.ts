@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getSettings } from '../lib/settings';
+import { getSettings } from '../lib/core/settings';
 
 /**
  * GET /api/config — what the web and mobile apps need to know at start-up: when to ask guests to sign in,

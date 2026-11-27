@@ -1,5 +1,5 @@
-import { API_BASE } from '../config';
-import { getAdminToken, setAdminToken } from '../api';
+import { API_BASE } from '../lib/config';
+import { getAdminToken, setAdminToken } from '../lib/api';
 
 // ---------- types ----------
 export type Role = 'PRIMARY' | 'SECONDARY';
@@ -197,7 +197,7 @@ export interface PartnerApplicationRecord {
   reviewedAt: string | null;
 }
 
-/** Mirrors backend/src/lib/settings.ts. */
+/** Mirrors backend/src/lib/core/settings.ts. */
 export interface SiteSettings {
   guestPrompt: { enabled: boolean; firstAfterSeconds: number; baseGapSeconds: number; backoff: number; maxPerSession: number; autoHideSeconds: number };
   maintenance: { enabled: boolean; message: string };

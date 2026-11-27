@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Pin, PinOff, Play, Trash2 } fr
 import { adminApi, ProductPin, VideoRecord } from '../adminApi';
 import { useAdminAuth } from '../AdminAuthContext';
 import { useDebounced, useFetch } from '../hooks';
-import { mediaUrl } from '../../config';
+import { mediaUrl } from '../../lib/config';
 import { LocationSelect, formatDuration } from '../shared';
 import {
   Badge, ConfirmDialog, EmptyState, ErrorState, Field, FormModal, IconButton, Modal, PageHeader, Pagination, SearchInput, Select, Spinner, Table, Td, Th, Toolbar, fmtDate, fmtNum, inputCls, useToast,

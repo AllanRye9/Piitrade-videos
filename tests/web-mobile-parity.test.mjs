@@ -3,7 +3,7 @@
 // same answers — the guard that keeps the two UIs behaving consistently.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import * as web from '../frontend/src/productLogic.ts';
+import * as web from '../frontend/src/features/products/productLogic.ts';
 import * as mobile from '../mobile/src/lib/productLogic.ts';
 
 const products = [
@@ -59,4 +59,27 @@ test('hotspot positions land inside the picture on the web, and docked tags have
       assert.ok(pos.top >= frame.top && pos.top <= frame.top + frame.height);
     }
   }
+});
+
+test('both apps choose fill-or-whole for a video the same way (the display standard)', () => {
+  const cards = [[390, 844], [360, 640], [1080, 1920], [300, 300], [820, 1180]];
+  const videos = [[1080, 1920], [1920, 1080], [1000, 1000], [640, 360], [720, 1280], [1080, 1350], [2160, 3840]];
+  for (const [cw, ch] of cards) {
+    for (const [vw, vh] of videos) {
+      assert.equal(mobile.frameFit(cw, ch, { w: vw, h: vh }), web.frameFit(cw, ch, vw, vh), `card ${cw}x${ch}, video ${vw}x${vh}`);
+    }
+    assert.equal(mobile.frameFit(cw, ch, null), web.frameFit(cw, ch, 0, 0));
+  }
+});
+
+test('display standard: vertical clips fill a phone card, landscape and square clips are shown whole', () => {
+  assert.equal(web.frameFit(390, 844, 1080, 1920), 'cover');
+  assert.equal(web.frameFit(390, 844, 720, 1280), 'cover');
+  assert.equal(web.frameFit(390, 844, 1920, 1080), 'contain');
+  assert.equal(web.frameFit(390, 844, 1000, 1000), 'contain');
+  assert.equal(web.frameFit(0, 0, 1920, 1080), 'cover'); // not measured yet: old behaviour
+  // "whole" really is whole: the contained frame sits inside the card
+  const f = web.frameRect(390, 844, 1920, 1080, 'contain');
+  assert.ok(f.left >= 0 && f.top >= 0 && f.left + f.width <= 390 + 1e-6 && f.top + f.height <= 844 + 1e-6);
+  assert.ok(Math.abs(f.width / f.height - 1920 / 1080) < 1e-9);
 });

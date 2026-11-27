@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { randomBytes, createHash } from 'crypto';
 import { prisma } from '../db';
-import { hashPassword, verifyPassword } from '../lib/auth';
-import { HttpError } from '../lib/httpError';
-import { sendEmail } from '../lib/email';
+import { hashPassword, verifyPassword } from '../lib/core/auth';
+import { HttpError } from '../lib/core/httpError';
+import { sendEmail } from '../lib/core/email';
 import { ensureHandle, resolveAvatarUrl } from './profile';
 import { authLimiter } from '../middleware/rateLimit';
 

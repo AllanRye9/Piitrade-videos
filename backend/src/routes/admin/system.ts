@@ -3,9 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { prisma } from '../../db';
 import { AuthedRequest, requirePrimary } from '../../middleware/requireAdmin';
-import { audit } from '../../lib/audit';
-import { invalidateShopCache } from '../../lib/searchSites';
-import { clearSettingsCache } from '../../lib/settings';
+import { audit } from '../../lib/core/audit';
+import { invalidateShopCache } from '../../lib/search/searchSites';
+import { clearSettingsCache } from '../../lib/core/settings';
 
 /** Primary-admin only: is the deployment healthy and fully configured? */
 const router = Router();

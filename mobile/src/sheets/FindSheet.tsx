@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Image } from 'expo-image';
 import { api } from '../api';
-import type { VisualSearchResult } from '../types';
+import type { FrameSearchResponse, VisualSearchResult } from '../types';
 import Sheet from '../components/Sheet';
 import { ErrorText, Icon } from '../components/ui';
 import { mediaUrl } from '../config';
@@ -11,8 +11,16 @@ import { openWebLink } from '../lib/links';
 import { useApp } from '../state/AppContext';
 import { colors, radius, space } from '../theme';
 
-/** "Find on Piitrade" — type what you saw in the video, get matching marketplace listings. */
-export default function FindSheet({ initialQuery, videoId }: { initialQuery?: string; videoId?: string }) {
+const mmss = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
+
+/**
+ * "Find on Piitrade". Opened from a video, it takes a screenshot of the video at the moment the viewer tapped
+ * (the server cuts the frame out of the stored file — a phone can't screenshot a native video surface, it comes
+ * out black), has the AI say what it shows, and lists matching listings. If a frame can't be read or what it
+ * shows isn't listed, the server tries nearby frames and finally the video's own title, and says which it used.
+ * The box underneath still lets the viewer type what they saw.
+ */
+export default function FindSheet({ initialQuery, videoId, positionMs }: { initialQuery?: string; videoId?: string; positionMs?: number }) {
   const { closeSheet } = useApp();
   const [query, setQuery] = useState((initialQuery || '').replace(/^#/, ''));
   const [results, setResults] = useState<VisualSearchResult[] | null>(null);
@@ -21,6 +29,9 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestId = useRef(0);
+  // The screenshot that was analysed and what the AI made of it.
+  const [shot, setShot] = useState<{ frame?: string; identification?: string; atMs?: number; note?: string; source: 'frame' | 'title' } | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   // Taps are logged against this video (so the creator and shop can be credited); with no video
   // context (shouldn't happen) fall back to opening the link directly.
@@ -29,6 +40,8 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
   const search = useCallback(async (q: string) => {
     if (!q.trim()) return;
     const id = ++requestId.current;
+    setShot(null);
+    setScanning(false);
     setLoading(true);
     setError(null);
     setResults(null);
@@ -46,10 +59,51 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
     }
   }, []);
 
+  const applyShot = (res: FrameSearchResponse) => {
+    setResults(res.results);
+    setBrowseUrl(res.browseUrl ?? null);
+    setUnavailable((res.shops?.failed ?? []).map((f) => f.name));
+    setShot({ frame: res.frame, identification: res.identification, atMs: res.atMs, note: res.note, source: res.source });
+    if (res.source === 'title' && res.query) setQuery(res.query);
+    else if (res.identification) setQuery(res.identification);
+  };
+
+  const scan = useCallback(async (vid: string, atMs: number, fallback: string) => {
+    const id = ++requestId.current;
+    setLoading(true);
+    setScanning(true);
+    setError(null);
+    setResults(null);
+    setShot(null);
+    try {
+      const res = await api.frameSearch(vid, atMs);
+      if (id !== requestId.current) return;
+      applyShot(res);
+    } catch (e) {
+      if (id !== requestId.current) return;
+      // The screenshot route failed (offline, server error): do what this sheet always did — search by the video's own tag/title.
+      setScanning(false);
+      if (fallback.trim()) {
+        setLoading(false);
+        void search(fallback);
+        setError(`Couldn’t analyse the picture (${e instanceof Error ? e.message : 'search failed'}) — showing results for “${fallback.trim()}” instead.`);
+      } else {
+        setError(e instanceof Error ? e.message : 'Search failed');
+      }
+    } finally {
+      if (id === requestId.current) {
+        setLoading(false);
+        setScanning(false);
+      }
+    }
+  }, [search]);
+
   useEffect(() => {
-    if (initialQuery?.trim()) void search(initialQuery.replace(/^#/, ''));
+    const fallback = (initialQuery || '').replace(/^#/, '');
+    if (videoId && positionMs !== undefined) void scan(videoId, positionMs, fallback);
+    else if (fallback.trim()) void search(fallback);
     return () => { requestId.current++; };
-  }, [initialQuery, search]);
+  }, [initialQuery, videoId, positionMs, scan, search]);
 
   // Name the shop on each row only when the results come from more than one.
   const showShop = new Set((results ?? []).map((r) => r.shop?.id).filter(Boolean)).size > 1;
@@ -63,7 +117,27 @@ export default function FindSheet({ initialQuery, videoId }: { initialQuery?: st
         </View>
       </View>
       <ErrorText>{error}</ErrorText>
-      {loading && <ActivityIndicator color={colors.text} style={{ marginTop: 40 }} />}
+      {scanning && (
+        <View style={styles.scan}>
+          <ActivityIndicator color={colors.text} />
+          <Text style={styles.scanText}>Taking a screenshot and analysing it…</Text>
+        </View>
+      )}
+      {!loading && shot && (
+        <View style={styles.shot}>
+          {shot.frame ? <Image source={{ uri: shot.frame }} style={styles.shotImg} contentFit="cover" /> : null}
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={styles.shotTitle}>
+              {shot.source === 'frame' && shot.identification ? `Looks like “${shot.identification}”` : 'Searched by the video’s title'}
+            </Text>
+            <Text style={styles.meta}>
+              {shot.source === 'frame' && shot.atMs !== undefined ? `From the picture at ${mmss(shot.atMs)}` : shot.note ?? ''}
+            </Text>
+            {shot.source === 'frame' ? null : shot.identification ? <Text style={styles.meta}>The picture looked like “{shot.identification}”.</Text> : null}
+          </View>
+        </View>
+      )}
+      {loading && !scanning && <ActivityIndicator color={colors.text} style={{ marginTop: 40 }} />}
       {!loading && results && (
         <FlatList
           style={{ flex: 1 }}
@@ -113,6 +187,11 @@ const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: 14, fontWeight: '700' },
   price: { color: colors.brandSoft, fontSize: 14, fontWeight: '800' },
   meta: { color: colors.textMuted, fontSize: 12 },
+  scan: { flexDirection: 'row', alignItems: 'center', gap: space.md, justifyContent: 'center', marginTop: 40, paddingHorizontal: space.xl },
+  scanText: { color: colors.textMuted, fontSize: 14 },
+  shot: { flexDirection: 'row', gap: space.md, alignItems: 'center', marginHorizontal: space.lg, marginBottom: space.sm, padding: space.md, borderRadius: radius.md, backgroundColor: colors.surfaceRaised },
+  shotImg: { width: 56, height: 56, borderRadius: radius.sm, backgroundColor: colors.surfaceHigh },
+  shotTitle: { color: colors.text, fontSize: 14, fontWeight: '800' },
   browse: { alignItems: 'center', padding: space.lg },
   browseText: { color: colors.brandSoft, fontWeight: '700' },
 });

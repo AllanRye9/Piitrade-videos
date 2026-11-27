@@ -1,7 +1,7 @@
 const { test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const G = require('../dist/lib/guardrail');
+const G = require('../dist/lib/feed/guardrail');
 
 const db = { videos: [], products: [], stats: [], siteStats: [], failFirstUpsert: false };
 const fake = {
@@ -34,7 +34,7 @@ require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: {
 require('express-async-errors');
 const express = require('express');
 const events = require('../dist/routes/events');
-const { attachProducts } = require('../dist/lib/videoProducts');
+const { attachProducts } = require('../dist/lib/shops/videoProducts');
 
 let server, base;
 before(async () => {

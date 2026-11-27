@@ -7,6 +7,9 @@ import type { LocalFile } from '../api';
 import Sheet from '../components/Sheet';
 import { Button, ErrorText, Icon, SectionLabel, TextField } from '../components/ui';
 import { MAX_VIDEO_SECONDS } from '../config';
+import EditTools from '../components/EditTools';
+import { buildEditsPayload, defaultEdit, fitTextsToLength, isUnedited, outputSeconds } from '../lib/editModel';
+import type { EditState } from '../lib/editModel';
 import { PickedVideo, pickVideo } from '../lib/pickers';
 import { useApp } from '../state/AppContext';
 import { UploadDraft, isUploadBusy, startUpload } from '../state/uploads';
@@ -16,12 +19,16 @@ const AUDIO_EXT = ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'oga', 'opus', 'flac', 'we
 const MAX_AUDIO_MB = 50;
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
-function Preview({ uri }: { uri: string }) {
+function Preview({ uri, speed }: { uri: string; speed: number }) {
   const player = useVideoPlayer(uri, (p) => {
     p.loop = true;
     p.muted = true;
     p.play();
   });
+  // The edited speed is previewed here; colour, crop, rotation and text appear in the posted video.
+  useEffect(() => {
+    player.playbackRate = Math.min(4, Math.max(0.25, speed));
+  }, [player, speed]);
   return <VideoView player={player} style={styles.preview} contentFit="contain" nativeControls />;
 }
 
@@ -48,9 +55,15 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
   const [audioVol, setAudioVol] = useState(0.7);
   const [audioStart, setAudioStart] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [edit, setEdit] = useState<EditState>(defaultEdit);
 
   const needsTrim = sourceDuration !== null && sourceDuration > MAX_VIDEO_SECONDS + 0.05;
   const maxLen = needsTrim ? Math.min(MAX_VIDEO_SECONDS, (sourceDuration as number) - trimStart) : MAX_VIDEO_SECONDS;
+
+  // The part of the source being worked on: the trim window for a long video, else the whole video.
+  const clipWindow = sourceDuration !== null ? (needsTrim ? { start: trimStart, end: trimStart + trimLength } : { start: 0, end: sourceDuration }) : null;
+  const editedByTools = !isUnedited(edit);
+  const editedLength = clipWindow && editedByTools ? outputSeconds(clipWindow, edit) : null;
 
   useEffect(() => {
     if (needsTrim && trimLength > maxLen) setTrimLength(Math.max(1, maxLen));
@@ -70,6 +83,7 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
       setSourceDuration(v.duration);
       setTrimStart(0);
       setTrimLength(Math.min(v.duration ?? MAX_VIDEO_SECONDS, MAX_VIDEO_SECONDS));
+      setEdit(defaultEdit());
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open that video');
     }
@@ -97,12 +111,20 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
       setError('Another video is still uploading — wait for it to finish.');
       return;
     }
+    if (editedLength !== null && (editedLength < 1 - 0.05 || editedLength > MAX_VIDEO_SECONDS + 0.05)) {
+      setError(`The edited video must be between 1 and ${MAX_VIDEO_SECONDS} seconds — open Edit and shorten it.`);
+      return;
+    }
+    // Edits are sent as one JSON field and replace the plain trim; without edits the trim clipWindow is sent as before.
+    // The phone doesn't know the frame size exactly (rotation), so a crop goes as a shape for the server to place.
+    const edits = clipWindow && editedByTools ? buildEditsPayload(clipWindow, { ...edit, texts: fitTextsToLength(edit.texts, editedLength ?? 0) }, null) : null;
     // Hand off and get out of the way; <UploadStatus /> shows the progress.
     startUpload({
       file: picked.file,
       title: title.trim() || 'Untitled',
       description: description.trim(),
-      trim: needsTrim ? { start: trimStart, end: trimStart + trimLength } : null,
+      edits,
+      trim: edits ? null : needsTrim ? { start: trimStart, end: trimStart + trimLength } : null,
       audio: audio ? { file: audio, audioVolume: audioVol, audioStart } : null,
       draft: { file: picked.file, uri: picked.uri, duration: sourceDuration, title, description },
     });
@@ -126,7 +148,7 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
         ) : (
           <>
             <View>
-              <Preview uri={picked.uri} />
+              <Preview uri={picked.uri} speed={edit.speed} />
               {sourceDuration ? (
                 <View style={styles.durBadge}>
                   <Text style={styles.durText}>{fmt(sourceDuration)}</Text>
@@ -150,7 +172,7 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
                 </View>
                 {/* Timeline: the lit segment is the part that gets posted */}
                 <View style={styles.timeline}>
-                  <View style={[styles.window, { left: `${startPct}%`, width: `${lenPct}%` }]} />
+                  <View style={[styles.clipWindow, { left: `${startPct}%`, width: `${lenPct}%` }]} />
                 </View>
                 <Text style={styles.value}>
                   {fmt(trimStart)} → {fmt(trimStart + trimLength)} · {Math.round(trimLength)}s
@@ -158,6 +180,10 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
                 <Tune label="Start" value={trimStart} min={0} max={Math.max(0, (sourceDuration as number) - 1)} onChange={setTrimStart} />
                 <Tune label="Length" value={trimLength} min={1} max={Math.max(1, maxLen)} onChange={setTrimLength} />
               </View>
+            )}
+
+            {clipWindow && (
+              <EditTools window={clipWindow} edit={edit} onChange={setEdit} maxSeconds={MAX_VIDEO_SECONDS} hasMusic={!!audio} />
             )}
 
             <View style={{ gap: 4 }}>
@@ -200,7 +226,7 @@ export default function UploadSheet({ draft }: { draft?: UploadDraft }) {
       {/* Sticky action bar — always reachable, however long the form gets */}
       {picked && (
         <View style={styles.footer}>
-          <Button title={needsTrim ? `Post ${Math.round(trimLength)}s clip` : 'Post video'} icon="cloud-upload-outline" onPress={post} />
+          <Button title={editedLength !== null ? `Post ${Math.round(editedLength * 10) / 10}s clip` : needsTrim ? `Post ${Math.round(trimLength)}s clip` : 'Post video'} icon="cloud-upload-outline" onPress={post} />
           <Text style={styles.hint}>You can keep watching while it uploads.</Text>
         </View>
       )}
@@ -223,7 +249,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surfaceRaised, borderRadius: radius.lg, padding: space.lg, gap: space.sm },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   timeline: { height: 10, borderRadius: 5, backgroundColor: colors.surfaceHigh, overflow: 'hidden' },
-  window: { position: 'absolute', top: 0, bottom: 0, backgroundColor: colors.brand, borderRadius: 5 },
+  clipWindow: { position: 'absolute', top: 0, bottom: 0, backgroundColor: colors.brand, borderRadius: 5 },
   value: { color: colors.text, fontSize: 15, fontWeight: '700' },
   small: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
   counter: { color: colors.textFaint, fontSize: 11, textAlign: 'right' },

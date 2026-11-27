@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../db';
 import { uploadImage } from '../middleware/upload';
-import { computeImageHash, hammingDistance, similarityScore } from '../lib/phash';
-import { identifyImage } from '../lib/aiSearch';
-import { toSearchResultDto, browseUrlFor } from '../lib/marketplace';
-import { searchSites, searchConfigured } from '../lib/searchSites';
+import { computeImageHash, hammingDistance, similarityScore } from '../lib/search/phash';
+import { identifyImage } from '../lib/search/aiSearch';
+import { toSearchResultDto, browseUrlFor } from '../lib/search/marketplace';
+import { searchSites, searchConfigured } from '../lib/search/searchSites';
 import { searchLimiter } from '../middleware/rateLimit';
 
 const router = Router();
@@ -56,7 +56,7 @@ router.post('/', searchLimiter, uploadImage.single('image'), async (req: Request
   }
 
   // Fallback: local perceptual-hash match against the seeded product
-  // catalog (see backend/src/lib/phash.ts). This is what runs when
+  // catalog (see backend/src/lib/search/phash.ts). This is what runs when
   // AI_SEARCH / MARKETPLACE_API are not configured, e.g. local dev.
   console.log(
     `[VisualSearch] pipeline: local phash catalog (${!process.env.AI_SEARCH ? 'AI_SEARCH' : 'MARKETPLACE_API'} not configured)`

@@ -1,0 +1,410 @@
+import type {
+  Video,
+  Comment,
+  VisualSearchResult,
+  MarketplaceSearchResponse,
+  AccountSummary,
+  AppNotification,
+  TrendingHashtag, SavedItem, ProductPin, ProductSuggestion, SiteInfo,
+  PartnerApplicationForm, PartnerApplicationStatus, PartnerApiCheck, SiteConfig, FrameSearchResponse
+} from './types';
+import { API_BASE } from './config';
+
+const SESSION_KEY = 'piitrade_session_id';
+const ADMIN_TOKEN_KEY = 'piitrade_admin_token';
+const ACCOUNT_EMAIL_KEY = 'piitrade_account_email';
+
+/** The signed-up email for this session, if any — purely a local UI
+ *  flag ("Signed in as …" vs "Sign up / Log in" in Settings); the
+ *  server never reads this back, only X-Session-Id. */
+export function getAccountEmail(): string | null {
+  return localStorage.getItem(ACCOUNT_EMAIL_KEY);
+}
+
+export function setAccountEmail(email: string | null) {
+  if (email) localStorage.setItem(ACCOUNT_EMAIL_KEY, email);
+  else localStorage.removeItem(ACCOUNT_EMAIL_KEY);
+}
+
+/**
+ * `crypto.randomUUID()` is only available in secure contexts (HTTPS)
+ * on fairly recent browsers (Safari 15.4+, Chrome/Edge 92+, Firefox
+ * 95+) — older engines, and plain-HTTP local/LAN testing, don't have
+ * it. This falls back to `crypto.getRandomValues` (near-universal),
+ * and finally to `Math.random` so the app still works end-to-end
+ * everywhere rather than throwing on session creation.
+ */
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function getSessionId(): string {
+  let id = localStorage.getItem(SESSION_KEY);
+  if (!id) {
+    id = generateUUID();
+    localStorage.setItem(SESSION_KEY, id);
+  }
+  return id;
+}
+
+/**
+ * Adopts `id` as this browser's X-Session-Id from now on — used after
+ * a successful login (see api.login below), where the server returns
+ * the CANONICAL sessionId for that account (the one its videos/handle
+ * are actually attached to), which is usually not the id this browser
+ * had been using. Every other request already just reads whatever's
+ * in SESSION_KEY, so nothing else needs to change for the switch to
+ * take effect.
+ */
+/**
+ * Starts a brand-new, unlinked anonymous session — used by sign-out
+ * (see ProfileSettings) so a signed-out browser genuinely stops being
+ * the previous account's identity. This matters more than it sounds:
+ * without it, X-Session-Id keeps pointing at the account's canonical,
+ * already-userId-linked SessionProfile even after "signing out" — and
+ * signing up again from that same browser would silently re-point
+ * that SAME SessionProfile (with its existing handle and videos) onto
+ * the new account, since SessionProfile.userId is a plain update keyed
+ * on sessionId. Generating a fresh id here is what actually severs
+ * that link.
+ */
+export function resetSessionId(): string {
+  const id = generateUUID();
+  localStorage.setItem(SESSION_KEY, id);
+  return id;
+}
+
+export function setSessionId(id: string) {
+  localStorage.setItem(SESSION_KEY, id);
+}
+
+export function getAdminToken(): string | null {
+  return localStorage.getItem(ADMIN_TOKEN_KEY);
+}
+
+export function setAdminToken(token: string | null) {
+  if (token) localStorage.setItem(ADMIN_TOKEN_KEY, token);
+  else localStorage.removeItem(ADMIN_TOKEN_KEY);
+}
+
+/** An error from the backend, carrying its machine-readable `code` when it
+ *  sent one (e.g. VIDEO_TOO_LONG, which opens the trim editor) and the
+ *  real duration it measured. */
+export class ApiError extends Error {
+  code?: string;
+  duration?: number;
+  maxSeconds?: number;
+  status?: number;
+  /** The whole JSON error body, for callers that need more than the message (e.g. the partner API check's issue list). */
+  body?: any;
+  constructor(message: string, extra: { code?: string; duration?: number; maxSeconds?: number; status?: number; body?: any } = {}) {
+    super(message);
+    this.code = extra.code;
+    this.duration = extra.duration;
+    this.maxSeconds = extra.maxSeconds;
+    this.status = extra.status;
+    this.body = extra.body;
+  }
+}
+
+/**
+ * Anyone can watch without an account; the server answers 401 SIGN_IN_REQUIRED to a write (like, comment,
+ * follow, upload…) from a guest. Every such answer raises this event so one dialog (SignInDialog) can ask
+ * the person to sign in, instead of each screen showing a raw error.
+ */
+export const SIGN_IN_REQUIRED_EVENT = 'piitrade:sign-in-required';
+
+export function requestSignIn() {
+  window.dispatchEvent(new Event(SIGN_IN_REQUIRED_EVENT));
+}
+
+export function isSignedIn(): boolean {
+  return !!getAccountEmail();
+}
+
+/** An audio file that replaces a video's sound. Volumes are 0–1. */
+export interface AudioUpload {
+  file: File;
+  /** Volume of the added audio. */
+  audioVolume: number;
+  /** Where in the added audio to start, in seconds. */
+  audioStart: number;
+}
+
+/** Where in the source video to keep, in seconds. Sent to the backend,
+ *  which does the actual cut (so it works for every accepted format). */
+export interface TrimRange {
+  start: number;
+  end: number;
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      'X-Session-Id': getSessionId(),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    if (res.status === 401 && body.code === 'SIGN_IN_REQUIRED') requestSignIn();
+    throw new ApiError(body.error || `Request failed: ${res.status}`, { code: body.code, status: res.status, body });
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}
+
+export const api = {
+  listVideos: (cursor?: string | null) =>
+    request<{ videos: Video[]; nextCursor: string | null }>(`/api/videos${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+
+  getTrendingVideos: () => request<{ videos: Video[] }>('/api/videos/trending'),
+
+  searchVideos: (q: string) => request<{ videos: Video[] }>(`/api/videos/search?q=${encodeURIComponent(q)}`),
+
+  getHashtagVideos: (tag: string, cursor?: string | null) =>
+    request<{ tag: string; videos: Video[]; nextCursor: string | null }>(
+      `/api/videos/hashtag/${encodeURIComponent(tag)}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`
+    ),
+
+  getTrendingHashtags: () => request<{ hashtags: TrendingHashtag[] }>('/api/videos/hashtags/trending'),
+
+  reportVideo: (id: string, reason: 'spam' | 'inappropriate' | 'copyright' | 'other') =>
+    request<{ reported: boolean }>(`/api/videos/${id}/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    }),
+
+  shareVideo: (id: string) => request<{ shares: number }>(`/api/videos/${id}/share`, { method: 'POST' }),
+
+  getVideo: (id: string) => request<{ video: Video }>(`/api/videos/${id}`),
+
+  /** Logs a product tap and returns the destination with attribution params (the session id stays in a header, never a URL). */
+  clickThrough: (videoId: string, target: { productId?: string; url?: string }) =>
+    request<{ url: string }>('/api/attribution/click', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, ...target }) }),
+  /** Saves a pinned product to the viewer's list. Idempotent; works for guests (no sign-in prompt). */
+  saveProduct: (videoId: string, productId: string) =>
+    request<{ saved: boolean; id: string; count: number }>('/api/saved-items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoId, productId }) }),
+  getSavedItems: () => request<{ items: SavedItem[] }>('/api/saved-items'),
+  deleteSavedItem: (id: string) => request<void>(`/api/saved-items/${id}`, { method: 'DELETE' }),
+  /** Batched viewing analytics (watch time, tag impressions). Best-effort; see analytics.ts. */
+  sendEvents: (events: unknown[]) =>
+    request<{ accepted: number }>('/api/events', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }) }),
+  getConfig: () => request<SiteConfig>('/api/config'),
+  getSites: () => request<{ sites: SiteInfo[] }>('/api/marketplace/sites'),
+
+  // Partner onboarding — see backend/src/routes/partners.ts and docs/PARTNERS.md. Public; no account needed.
+  applyAsPartner: (form: PartnerApplicationForm) =>
+    request<{ application: PartnerApplicationStatus; statusToken: string; check: PartnerApiCheck }>('/api/partners/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    }),
+  getPartnerApplication: (id: string, token: string) =>
+    request<{ application: PartnerApplicationStatus; partner?: { slug: string; name: string; commissionPct: number }; credentials?: { postbackSecret: string; note: string } }>(
+      `/api/partners/applications/${encodeURIComponent(id)}`,
+      { headers: { 'X-Application-Token': token } }
+    ),
+  getMyProducts: (videoId: string) => request<{ products: ProductPin[] }>(`/api/videos/${videoId}/products`),
+  setProducts: (videoId: string, products: ProductPin[]) =>
+    request<{ products: unknown[] }>(`/api/videos/${videoId}/products`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ products }) }),
+  suggestProducts: (videoId: string) => request<{ suggestions: ProductSuggestion[] }>(`/api/videos/${videoId}/suggest-products`, { method: 'POST' }),
+
+  uploadVideo: (file: File, title: string, description: string, onProgress?: (pct: number) => void, trim?: TrimRange | null, audio?: AudioUpload | null, products?: ProductPin[], edits?: Record<string, unknown> | null) => {
+    return new Promise<{ video: Video }>((resolve, reject) => {
+      const form = new FormData();
+      form.append('video', file);
+      form.append('title', title);
+      form.append('description', description);
+      if (products && products.length) form.append('products', JSON.stringify(products));
+      // Editor settings (cuts, speed, crop, look, text…). The server re-validates and applies them; with edits present it ignores trimStart/trimEnd.
+      if (edits) form.append('edits', JSON.stringify(edits));
+      if (trim) {
+        // Fixed to millisecond precision so the server never sees a
+        // float like 12.300000000000001.
+        form.append('trimStart', trim.start.toFixed(3));
+        form.append('trimEnd', trim.end.toFixed(3));
+      }
+      if (audio) {
+        form.append('audioVolume', String(audio.audioVolume));
+        form.append('audioStart', audio.audioStart.toFixed(3));
+        form.append('audio', audio.file);
+      }
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/api/videos`);
+      xhr.setRequestHeader('X-Session-Id', getSessionId());
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText));
+        } else {
+          try {
+            const body = JSON.parse(xhr.responseText);
+            if (xhr.status === 401 && body.code === 'SIGN_IN_REQUIRED') requestSignIn();
+            reject(new ApiError(body.error || 'Upload failed', { code: body.code, duration: body.duration, maxSeconds: body.maxSeconds, status: xhr.status }));
+          } catch {
+            reject(new ApiError('Upload failed'));
+          }
+        }
+      };
+      xhr.onerror = () => reject(new Error('Upload failed — network error'));
+      xhr.send(form);
+    });
+  },
+
+  like: (id: string) => request<{ liked: boolean; likes: number }>(`/api/videos/${id}/like`, { method: 'POST' }),
+  favorite: (id: string) => request<{ favorited: boolean }>(`/api/videos/${id}/favorite`, { method: 'POST' }),
+  save: (id: string) => request<{ saved: boolean }>(`/api/videos/${id}/save`, { method: 'POST' }),
+
+  getComments: (id: string) => request<{ comments: Comment[] }>(`/api/videos/${id}/comments`),
+  getReplies: (id: string, commentId: string) => request<{ replies: Comment[] }>(`/api/videos/${id}/comments/${commentId}/replies`),
+  likeComment: (id: string, commentId: string) =>
+    request<{ liked: boolean; likes: number }>(`/api/videos/${id}/comments/${commentId}/like`, { method: 'POST' }),
+  postComment: (id: string, text: string, author?: string, parentId?: string) =>
+    request<{ comment: Comment; comments: number }>(`/api/videos/${id}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, author, parentId }),
+    }),
+
+  visualSearch: (imageBlob: Blob) => {
+    const form = new FormData();
+    form.append('image', imageBlob, 'crop.jpg');
+    console.log(`[VisualSearch] POST /api/visual-search — sending ${imageBlob.size} byte ${imageBlob.type || 'image/jpeg'} selection`);
+    const startedAt = Date.now();
+    return request<MarketplaceSearchResponse>('/api/visual-search', {
+      method: 'POST',
+      body: form,
+    })
+      .then((res) => {
+        console.log(
+          `[VisualSearch] got ${res.results.length} result(s) in ${Date.now() - startedAt}ms` +
+            (res.identification ? ` — identified as "${res.identification}"` : ' — local catalog match (no AI identification)') +
+            (res.matchedQuery && res.matchedQuery !== res.identification ? ` — matched via shortened query "${res.matchedQuery}"` : '')
+        );
+        return res;
+      })
+      .catch((err) => {
+        console.error(`[VisualSearch] failed after ${Date.now() - startedAt}ms:`, err instanceof Error ? err.message : err);
+        throw err;
+      });
+  },
+
+  /** Screenshot search: the server cuts the frame at `atMs` out of the stored video, has the AI read it and, if needed, tries nearby frames. */
+  frameSearch: (videoId: string, atMs: number, region?: { x: number; y: number; w: number; h: number } | null) =>
+    request<FrameSearchResponse>('/api/frame-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, atMs: Math.max(0, Math.round(atMs)), ...(region ? { region } : {}) }),
+    }),
+
+  // Manual, user-typed search — independent of the AI-identify pipeline.
+  // Lets a viewer type their own words and verify directly whether the
+  // marketplace carries something (or refine a poor AI identification).
+  marketplaceSearch: (query: string) => {
+    console.log(`[MarketplaceSearch] GET /api/marketplace/search?q=${query}`);
+    const startedAt = Date.now();
+    return request<MarketplaceSearchResponse>(`/api/marketplace/search?q=${encodeURIComponent(query)}`)
+      .then((res) => {
+        console.log(
+          `[MarketplaceSearch] got ${res.results.length} result(s) in ${Date.now() - startedAt}ms` +
+            (res.matchedQuery && res.matchedQuery !== query ? ` — matched via shortened query "${res.matchedQuery}"` : '')
+        );
+        return res;
+      })
+      .catch((err) => {
+        console.error(`[MarketplaceSearch] failed after ${Date.now() - startedAt}ms:`, err instanceof Error ? err.message : err);
+        throw err;
+      });
+  },
+
+  getProfile: () =>
+    request<{ avatar: string | null; displayName: string | null; handle: string | null; bio: string | null }>('/api/profile'),
+
+  updateProfile: (fields: { displayName?: string | null; bio?: string | null }) =>
+    request<{ displayName: string | null; bio: string | null }>('/api/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields),
+    }),
+
+  updateHandle: (handle: string) =>
+    request<{ handle: string }>('/api/profile/handle', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle }),
+    }),
+
+  uploadAvatar: (file: File) => {
+    const form = new FormData();
+    form.append('avatar', file);
+    return request<{ avatar: string }>('/api/profile/avatar', { method: 'POST', body: form });
+  },
+
+  deleteAvatar: () => request<void>('/api/profile/avatar', { method: 'DELETE' }),
+
+  // Public account discovery — see backend/src/routes/accounts.ts.
+  discoverAccounts: (q?: string) =>
+    request<{ accounts: AccountSummary[] }>(`/api/accounts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+
+  getAccount: (handle: string) => request<{ account: AccountSummary; videos: Video[] }>(`/api/accounts/${encodeURIComponent(handle)}`),
+
+  followAccount: (handle: string) =>
+    request<{ following: boolean; followersCount: number }>(`/api/accounts/${encodeURIComponent(handle)}/follow`, { method: 'POST' }),
+
+  getNotifications: (cursor?: string | null) =>
+    request<{ notifications: AppNotification[]; nextCursor: string | null; unreadCount: number }>(
+      `/api/notifications${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`
+    ),
+
+  markNotificationsRead: () => request<{ ok: boolean }>('/api/notifications/read-all', { method: 'POST' }),
+
+  // Real accounts — see backend/src/routes/account.ts. Both calls
+  // return the CANONICAL sessionId for the account; callers must pass
+  // it to setSessionId() (exported above) to actually adopt it, which
+  // is what makes the account's existing videos/handle show up.
+  signup: (email: string, password: string) =>
+    request<{ sessionId: string; email: string; handle: string | null; displayName: string | null; avatar: string | null; bio: string | null }>(
+      '/api/account/signup',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }
+    ),
+
+  login: (emailOrHandle: string, password: string) =>
+    request<{ sessionId: string; email: string; handle: string | null; displayName: string | null; avatar: string | null; bio: string | null }>(
+      '/api/account/login',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emailOrHandle, password }) }
+    ),
+
+  forgotPassword: (emailOrHandle: string) =>
+    request<{ message: string }>('/api/account/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emailOrHandle }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    request<{ reset: boolean }>('/api/account/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password }),
+    }),
+};

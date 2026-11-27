@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyAdminToken } from '../lib/auth';
+import { verifyAdminToken } from '../lib/core/auth';
 import { prisma } from '../db';
-import { ALL_PERMISSIONS } from '../lib/permissions';
+import { ALL_PERMISSIONS } from '../lib/core/permissions';
 
 export interface CurrentAdmin {
   id: string;

@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { encodeCursor, decodeCursor, olderThan } = require('../dist/lib/cursor');
+const { encodeCursor, decodeCursor, olderThan } = require('../dist/lib/core/cursor');
 
 test('cursor round-trips createdAt (to the millisecond) and id', () => {
   const d = new Date('2026-11-16T10:20:30.123Z');

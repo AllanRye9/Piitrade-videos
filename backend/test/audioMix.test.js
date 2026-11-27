@@ -1,5 +1,5 @@
-// Tests for adding an audio track to a video (backend/src/lib/audioMix.ts
-// and the audio path of lib/videoTranscode.ts). The first group is pure
+// Tests for adding an audio track to a video (backend/src/lib/video/audioMix.ts
+// and the audio path of lib/video/videoTranscode.ts). The first group is pure
 // logic; the last group runs real ffmpeg and is skipped if it isn't installed.
 //
 // Run with: npm test  (after `npm run build` — this requires dist/).
@@ -10,8 +10,8 @@ const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { resolveAudioMix, buildAudioFilter } = require('../dist/lib/audioMix.js');
-const { HttpError } = require('../dist/lib/httpError.js');
+const { resolveAudioMix, buildAudioFilter } = require('../dist/lib/video/audioMix.js');
+const { HttpError } = require('../dist/lib/core/httpError.js');
 
 function expectInvalid(fn) {
   try {
@@ -75,7 +75,7 @@ function meanDb(file) {
 }
 
 test('real ffmpeg: audio is added, cut to the clip, and honours volume + start', { skip: !haveFfmpeg }, async () => {
-  const { transcodeToMp4 } = require('../dist/lib/videoTranscode.js');
+  const { transcodeToMp4 } = require('../dist/lib/video/videoTranscode.js');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audiomix-'));
   const silentVideo = path.join(dir, 'silent.mp4');
   const music = path.join(dir, 'music.mp3');

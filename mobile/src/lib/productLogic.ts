@@ -1,5 +1,5 @@
 // Pure helpers (no React Native imports) so they can be unit-tested under plain Node.
-// The backend mirror of activeProducts lives in backend/src/lib/shoppable.ts.
+// The backend mirror of activeProducts lives in backend/src/lib/shops/shoppable.ts.
 
 export interface Timed {
   startMs: number;
@@ -23,6 +23,23 @@ export interface Frame {
  * the card when the source and viewport aspect ratios differ; hotspots use
  * this rectangle so they stay aligned with the cropped image.
  */
+/** The most of a video's picture the feed may crop away to fill the card. */
+export const MAX_CROPPED_SHARE = 0.25;
+
+/**
+ * Feed display standard: a video fills the card (cover) only when that crops little of it — a vertical clip on a
+ * phone-shaped card. A landscape or square clip is shown whole (contain, with bars) instead of being zoomed until
+ * most of it is cut off and what remains is enlarged and soft. Unknown size keeps the old fill behaviour.
+ * Same rule as frameFit in frontend/src/features/products/productLogic.ts.
+ */
+export function frameFit(cardW: number, cardH: number, dims: { w: number; h: number } | null): 'cover' | 'contain' {
+  if (!cardW || !cardH || !dims || !dims.w || !dims.h) return 'cover';
+  const card = cardW / cardH;
+  const video = dims.w / dims.h;
+  const croppedShare = 1 - Math.min(card / video, video / card);
+  return croppedShare <= MAX_CROPPED_SHARE ? 'cover' : 'contain';
+}
+
 export function frameRect(cardW: number, cardH: number, dims: { w: number; h: number } | null, fit: 'cover' | 'contain'): Frame {
   if (!dims || !dims.w || !dims.h) return { left: 0, top: 0, width: cardW, height: cardH };
   const scale = fit === 'cover'

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { isDockedProduct, productPosition } from '../src/productLogic.ts';
+import { isDockedProduct, productPosition } from '../src/features/products/productLogic.ts';
 
 test('product tags with missing coordinates are docked instead of positioned', () => {
   const frame = { left: 10, top: 20, width: 100, height: 200 };

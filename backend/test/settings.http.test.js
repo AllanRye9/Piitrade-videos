@@ -17,7 +17,7 @@ mock('../dist/middleware/requireAdmin', { requireAdmin: (_q, _s, n) => n(), requ
 
 require('express-async-errors');
 const express = require('express');
-const settings = require('../dist/lib/settings');
+const settings = require('../dist/lib/core/settings');
 const { enforceSiteSettings } = require('../dist/middleware/siteSettings');
 const configRouter = require('../dist/routes/config').default;
 const adminSettings = require('../dist/routes/admin/settings').default;
